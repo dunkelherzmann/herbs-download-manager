@@ -1,0 +1,15 @@
+# Skills for Herb's Downloader (in addition to ~/.agents/skills-core.txt). Run `sh ~/.agents/sync-skills.sh` after editing.
+appkit-interop
+swiftpm-macos
+build-run-debug
+signing-entitlements
+packaging-notarization
+test-triage
+security-diff-scan
+
+# Reviews (adapted from ECC)
+review-swift
+review-security
+review-reliability
+review-accessibility
+review-test-coverage

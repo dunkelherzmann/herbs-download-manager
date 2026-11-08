@@ -1,0 +1,369 @@
+# Herb's Downloader — Specification
+
+Herb's Downloader is a download manager for macOS, Linux and Windows. It downloads one file over many connections
+at once, from one server or from several mirrors of the same file, and stops and resumes without losing what it has.
+Its main inspiration is Progressive Downloader (threads and mirrors per task). Its window, menu bar, toolbar and
+icons follow AB Download Manager's layout. There are no tags.
+
+The macOS version is the reference. The Linux and Windows versions look and work 1:1 like it, except the window
+controls: minimize, maximize and close sit on the right, and the main menu takes the left corner of the title bar.
+
+Section 12 summarizes the reference apps this design was drawn from, with sources.
+
+## 1. Platforms and build
+
+| Platform | App | Build |
+|---|---|---|
+| macOS 15+, Apple silicon | Swift 6 + AppKit host over the shared core | built on the Mac |
+| Windows 11 | Win32 host over the shared core, one static portable `.exe` (no installer, nothing added to the system) | built on the Windows PC |
+| Linux | Qt 6 host over the shared core, Flatpak `org.herbsdownloader.app` | built on the Linux machine |
+
+- **Shared core** (`core/`, C++20): the download engine (sources, segments, connections, mirrors, resume state,
+  speed limits, queue) with no UI. Each host draws its native UI over it.
+- **Networking** uses what ships with each OS: URLSession on macOS, WinHTTP on Windows, libcurl from the Flatpak
+  runtime on Linux, behind one transport interface in the core. Proxies come from the system settings.
+- Protocols: HTTP and HTTPS.
+
+## 2. Main window
+
+The layout, top to bottom:
+
+1. **Title bar**: the menu bar sits at the left of the title bar on Linux and Windows (on macOS the menu bar is the
+   system menu bar), the title "Herb's Downloader" is centered, and the **search field** is at the right.
+2. **Toolbar** (§3).
+3. **Sidebar** on the left, resizable by dragging its edge: the status filters (§2.1).
+4. **Download list** (§2.2) to the right of the sidebar.
+5. **Footer**: number of selected downloads, number of active downloads, total download speed.
+
+Dropping links, text or `.txt`/`.html` files on the window adds every link found (§5.4); while dragging, the
+window dims and shows "Drop links here".
+
+### 2.1 Sidebar filters
+
+| Id | Filter | Shows | Icon |
+|---|---|---|---|
+| F1 | All | every download | folder |
+| F2 | Downloading | running and connecting downloads | arrow down |
+| F3 | Paused | paused and waiting (queued) downloads | pause |
+| F4 | Finished | completed downloads | folder with checkmark |
+| F5 | Unfinished | everything not finished, failed included | folder with clock |
+
+Each filter shows its count. Under each filter, file-type groups (Compressed, Documents, Music, Pictures, Video,
+Programs, Other) narrow the list by file extension. The groups are fixed; there are no tags and no user labels.
+
+### 2.2 Download list
+
+Columns, all sortable, every column but Name can be hidden from the header's context menu:
+
+| Id | Column | Content |
+|---|---|---|
+| L1 | Name | file icon by type, file name, thin progress bar under the name while unfinished |
+| L2 | Status | Waiting, Connecting, Downloading 47%, Paused 47%, Finished, Failed (reason) |
+| L3 | Size | downloaded / total ("1.2 GB / 4.0 GB"; total "Unknown" when the server sends none) |
+| L4 | Speed | current speed |
+| L5 | Time Left | estimated time left |
+| L6 | Connections | active connections / allowed ("6 / 8") |
+| L7 | Mirrors | sources in use / known ("2 / 3") |
+| L8 | Date Added | default sort, newest first |
+| L9 | Date Finished | |
+| L10 | Location | destination folder |
+
+Double-clicking a finished download opens the file; an unfinished one opens its Download window (§6).
+
+## 3. Toolbar
+
+Left to right, each a monochrome icon button with a hover bubble (what it is, what it does, its shortcut) and an
+accessibility label. Buttons that don't apply to the selection are disabled.
+
+| Id | Button | Hover text | Shortcut (macOS / Linux, Windows) |
+|---|---|---|---|
+| T1 | New Download | "New Download: add a link to download" | ⌘N / Ctrl+N |
+| T2 | Resume | "Resume: continue the selected downloads" | ⌘R / Ctrl+R |
+| T3 | Pause | "Pause: stop the selected downloads, keeping what's downloaded" | ⌘. / Ctrl+. |
+| T4 | Start Queue | "Start Queue: download waiting items one after another" | ⇧⌘R / Ctrl+Shift+R |
+| T5 | Stop Queue | "Stop Queue: stop starting new items from the queue" | — |
+| T6 | Stop All | "Stop All: pause every running download" | ⌥⌘. / Ctrl+Alt+. |
+| T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
+| T8 | Settings | "Settings" | ⌘, / Ctrl+, |
+
+Separators group T2–T3, T4–T5, T6, T7 and T8, as in AB Download Manager.
+
+Icons use each platform's own monochrome symbols, never another app's artwork:
+
+| Action | macOS (SF Symbols) | Linux (Adwaita symbolic) | Windows (Segoe Fluent Icons) |
+|---|---|---|---|
+| New Download | `link.badge.plus` | `list-add-symbolic` | Add |
+| Resume | `play.fill` | `media-playback-start-symbolic` | Play |
+| Pause | `pause.fill` | `media-playback-pause-symbolic` | Pause |
+| Start Queue | `text.line.first.and.arrowtriangle.forward` | `media-seek-forward-symbolic` | Next |
+| Stop Queue | `stop.circle` | `media-playback-stop-symbolic` | Stop |
+| Stop All | `stop.fill` | `process-stop-symbolic` | Stop (filled) |
+| Delete | `trash` | `user-trash-symbolic` | Delete |
+| Settings | `gearshape` | `emblem-system-symbolic` | Settings |
+
+## 4. Menus
+
+The menu bar follows AB Download Manager's File / Tasks / Tools / Help, fitted to each platform's conventions (on
+macOS, About, Settings and Quit live in the app menu, and Edit and Window are the standard menus).
+
+| Menu | Items |
+|---|---|
+| Herb's Downloader (macOS) | About Herb's Downloader · Settings… ⌘, · Hide / Hide Others / Show All · Quit ⌘Q |
+| File | New Download… ⌘N · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
+| Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (focuses the search field) |
+| Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
+| View | Show Sidebar ⌃⌘S · Columns ▸ · Show Download Window ⌘O |
+| Window | standard (macOS) |
+| Help | Herb's Downloader on GitHub · About (Linux, Windows) |
+
+### 4.1 Download context menu
+
+Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in Folder) · — · Resume · Pause ·
+Restart · — · **Add Mirror…** · **Connections ▸** (Add Connection, Remove Connection, the live list) · — ·
+Copy Link · Properties · — · Delete. Items that don't apply are hidden (Connections for finished downloads) or
+disabled.
+
+## 5. Adding downloads
+
+### 5.1 New Download window (⌘N)
+
+| Id | Field | Behaviour |
+|---|---|---|
+| A1 | Link | the address; filled from the clipboard when it holds a link |
+| A2 | Mirrors | one address per line: other servers that hold the same file (§7). Optional. |
+| A3 | Name | taken from the server's `Content-Disposition` or the URL, editable |
+| A4 | Save to | folder, with a Choose… button; defaults to the Downloads folder |
+| A5 | Connections | 1–32, defaults to Settings ▸ Connections per download |
+| A6 | Size | shown once the first source answers ("4.0 GB, resumable" or "size unknown, can't resume") |
+
+Buttons: **Cancel**, **Add** (adds the download to the queue, paused if the queue is stopped) and **Download** (the
+default: starts it now). If a file of that name exists in the folder, the window offers: save as a numbered name
+("file (2).iso", listed first), replace the file, or show the existing file.
+
+### 5.2 Add from Clipboard (⇧⌘V)
+
+Every link in the clipboard's text opens the Add Links window (§5.3).
+
+### 5.3 Add Links window (several links)
+
+A list of the links found, each with a checkbox, name, size and folder, and a filter field. **Treat as mirrors of
+one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
+Buttons: Cancel, Add, Download.
+
+### 5.4 Drag and drop
+
+Links, text, and `.txt` or `.html` files dropped on the window or the Dock icon open the Add Links window with
+every link they contain.
+
+### 5.5 Batch Download (⇧⌘N)
+
+A link with a range placeholder makes a series: `https://example.com/img^(###1-100).jpg` gives `img001.jpg` …
+`img100.jpg`. Ranges are decimal (`#` pads to that many digits), hexadecimal (`H` or `h` after the range) or
+alphabetical (`a-z`, `AA-BZ`), and several ranges are separated by commas. A preview shows the first and last
+links and the count before they go to the Add Links window.
+
+## 6. Download window
+
+Opens for a download from the list (double-click or ⌘O). Its title is the file name.
+
+- **Header**: progress bar drawn as the file's segments (each segment colored by state, the gaps still to fetch
+  left empty), percentage, downloaded / total, speed, time left.
+- **Buttons**: Resume / Pause (one toggling button), Close. Closing the window never stops the download.
+- **Tabs**:
+  - **Info**: link, folder, size, resumable or not, date added, date finished.
+  - **Connections**: one row per connection: source (host), byte range, downloaded, speed, state (Connecting,
+    Downloading, Idle, Retrying in 5 s, Failed: reason). Buttons **+** and **−** add or remove a connection now.
+  - **Mirrors**: the sources list (§7.3), with **Add Mirror…** and **Remove**.
+  - **Options**: connections for this download, speed limit for this download, checksum to verify at the end
+    (algorithm MD5, SHA-1, SHA-256 or SHA-512, and the expected value).
+
+## 7. Mirrors
+
+A download has one or more **sources**: the link it was added with and any mirrors, all serving the same file.
+Connections are spread over the working sources, so one file is fetched from several servers at once.
+
+### 7.1 Adding mirrors
+
+Mirrors can be added at every stage:
+
+| Id | When | How |
+|---|---|---|
+| M1 | Before | the Mirrors field of the New Download window (§5.1), or "Treat as mirrors of one file" (§5.3) |
+| M2 | During | Add Mirror… (⌥⌘M, context menu, Mirrors tab) on a running download: the mirror is checked at once and new or freed connections start using it without a pause |
+| M3 | After | Add Mirror… on a paused, waiting, failed or finished download: the mirror is saved with the download and used when it resumes or restarts |
+
+Add Mirror… takes one address per line. A mirror equal to an existing source is ignored.
+
+### 7.2 Checking a mirror
+
+Before a mirror gets connections, a ranged request (`Range: bytes=0-0`) checks it:
+
+- **Same file**: the total size must equal the download's size. A different size marks it "Different file" and it
+  is never used. When the download's size is still unknown, the first source that reports one sets it.
+- **Ranges**: a mirror that answers without range support can serve only a download that has one connection and
+  starts from zero; otherwise it is marked "No resume support" and not used.
+- **Validator**: each source keeps its own `Last-Modified` or `ETag` from its first answer and sends it as
+  `If-Range` on every later range request. If a source's file changes, it answers with the whole file, which is
+  refused, and the source is marked "File changed" and dropped. Mirrors never share validators, since each server
+  has its own.
+- When a checksum is set (§6), it is verified at the end over the whole file, whichever sources served it.
+
+### 7.3 Sources list
+
+The Mirrors tab lists every source: on/off checkbox, address, state (Checking, Working, Idle, Slow, Failed: reason,
+Different file, File changed, No resume support), active connections, speed and bytes served. Unchecking a source
+moves its connections to the others; checking it again makes it available. The original link can be unchecked too,
+as long as one source stays on.
+
+### 7.4 Spreading connections
+
+- A download uses up to its **connections** setting in total (§9), and at most **connections per server** on any
+  one host.
+- A new connection goes to the working source with the fewest connections for its host; when the sources are equal,
+  to the one with the best measured speed.
+- A source that fails is retried after a delay (5 s, then 10, 20, 40, up to 60 s); its byte ranges go back to the
+  pool for the other sources at once. After **retries** consecutive failures (§9) it is marked Failed until the
+  download is restarted or the source is turned back on.
+- A connection that is far slower than the others (under a quarter of the download's average per-connection speed
+  for 15 s) gives its remaining range to a faster source; its source is marked Slow.
+- A download fails only when no source is left working, and says why ("All sources failed: 404 Not Found").
+
+## 8. Connections and segments
+
+- **Dynamic segmentation**: a download starts with one connection over the whole file. When the size is known and
+  ranges work, more connections open up to the limit; each new or freed connection takes the second half of the
+  largest remaining range and starts at its midpoint. No range is split below 256 KiB.
+- **Takeover**: a connection that receives nothing for 20 s is closed, its range goes back to the pool, and the
+  connection reconnects (to the same or another source).
+- **Writing**: data goes to `<name>.hdpart` next to the destination, written in place at its offset, and the file
+  is renamed to its final name only once every byte is in and the checksum (if set) matches. The file is
+  preallocated where the file system allows holes; on FAT32 and exFAT it grows in steps so Pause still works.
+- **No range support**: one connection, no mirrors in use, and the download is marked "can't resume" (§10).
+
+## 9. Settings
+
+| Id | Setting | Default | Range |
+|---|---|---|---|
+| S1 | Save downloads to | Downloads folder | |
+| S2 | Connections per download | 8 | 1–32; above 16 the field warns that servers may block many connections |
+| S3 | Connections per server | 4 | 1–16 |
+| S4 | Downloads at once (queue) | 3 | 1–10 |
+| S5 | Speed limit (all downloads) | Off | KB/s or MB/s |
+| S6 | Retries per source | 5 | 0–20 |
+| S7 | When a file exists | Ask | Ask, Numbered name, Replace |
+| S8 | Look for checksum files | On | fetches `<file>.sha256` (and `.sha512`, `.sha1`, `.md5`) next to the link and verifies with it |
+| S9 | Show a notification when a download finishes | On | |
+
+## 10. Stop and resume
+
+- **Pause** stops a download's connections and keeps every downloaded byte. The resume state (sources, validators,
+  remaining ranges) is saved with each pause, every 5 seconds while downloading, and on quit.
+- **Resume** reconnects to the working sources and fetches only the remaining ranges. It works after quitting the
+  app, a crash, a restart or a power loss: at launch, downloads that were running come back Paused, with their
+  ranges checked against the `.hdpart` file.
+- **Can't resume**: when no source supports ranges, Pause asks "This download can't be resumed and will start over.
+  Pause anyway?" with Cancel as the default.
+- **Expired link**: adding a working mirror (§7.1 M3) to a failed or paused download replaces the dead source and
+  continues from where it stopped.
+- **Restart** discards the downloaded data (after confirming, Cancel the default) and starts again from all sources.
+- **Quit** while downloads run asks "Downloads are running. Pause them and quit?" (Cancel the default); quitting
+  pauses them, and they resume at the next launch if they were running.
+- **Delete** asks whether to remove only the list entry (the default) or the file as well.
+
+## 11. Queue
+
+One queue holds downloads that were added but not started. **Start Queue** starts waiting downloads in list order
+while fewer than "Downloads at once" are running; **Stop Queue** stops starting new ones and lets running ones
+finish. A download started with Download (§5.1) or Resume runs at once, whatever the queue's limit.
+
+## 12. Reference apps
+
+The design above comes from studying five download managers on 2026-11-08. Facts are labelled by their source:
+**official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (static
+inspection of the installed app's resources; the app was not run).
+
+### Progressive Downloader 10.0.1 (macOS) — main inspiration
+
+Sources: shipped app (Info.plist, interface files, English strings); official site macpsd.net (Main Window, Task
+Properties, Link Box, Drag 'n' Drop, Active Hours, F.A.Q. guides).
+
+- **Tasks have threads and mirrors.** The task context menu has *Threads* (the live connections, with control
+  over their count) and *Mirrors* (alternative sources; one can be locked so only it is used). Task properties
+  have a Mirrors tab; the add-links field is labelled "Mirrors". Mirrors are "alternative source addresses" used
+  during one download to find the fastest way to get the file. An optional *Mirror Search* looks for copies on
+  faster servers at download start and warns that a mirror may serve malicious files.
+- Threads: initial and maximum thread count per task, automatic thread count control, a warning against too many
+  threads for one task, per-segment status ("Segment size … Speed …"), a *New Thread* command, and warnings when a
+  task can't be resumed after Stop or Quit.
+- Main window: sidebar filters Running, Suspended, Complete, Incomplete, and Schedules (Waiting, Complete), plus
+  Groups and Tags; columns Progress, Size, Speed, Elapsed, Est. Time, Start, Finish, Threads, Priority, Hostname.
+- Menus: File (Add Task, Import/Export Links, Open, Open in Finder), View (Visible Columns, Filters, Customize
+  Toolbar), Task (Start, Stop, Restart, Remove, Remove with Data, Remove Complete, Priority ⌘1–⌘5, New Thread,
+  Mirrors, Rename), Start All / Stop All, Link Box ⌘D, File Browser, History.
+- Task properties: General (source, destination, maximum threads, priority, action on adding: enqueue, suspend,
+  start), Authentication, Mirrors, Schedule, Checksum (method + hash), Files and Trackers (torrents).
+- Link Box and Link Generator with `^(####0-100)` ranges (decimal, hexadecimal, alphabetical, several ranges);
+  drag and drop of text and text files onto the list, Link Box or Dock icon; Active Hours; resource queues and
+  per-host connection limits; error control (retries, retry interval, idle disconnect, reconnect when speed drops);
+  checksum verification; command line `-add url … destination …`; AppleScript.
+- Also has torrents, video sites, FTP/SFTP/WebDAV browser and a phone companion (out of scope here).
+- A reputable secondary review (Softpedia) gives the default thread count as 3.
+
+### AB Download Manager 1.11.4 (Windows, macOS, Linux, Android) — UI model
+
+Sources: source code (github.com/amir1376/ab-download-manager, Apache-2.0); official site abdownloadmanager.com.
+
+- Window: menu bar merged into the left of the title bar, search at the right; sidebar with status filters All,
+  Finished, Unfinished, each expanding into file-type categories, and a Queues section; resizable split; footer with
+  selection count, active downloads and total speed; drop links or files on the window to import them.
+- Menu bar: File (New Download, Import from Clipboard, Batch Download, Exit), Tasks (Start Queue, Stop Queue, Stop
+  All, Delete ▸ All Missing Files / All Finished / All Unfinished / Entire List), Tools (Browser Integration,
+  Per-host Settings, Settings), Help.
+- Toolbar: Add URL, then Resume, Pause | Start Queue, Stop Queue, Queues | Stop All | Delete | Settings.
+- Context menu: Open, Open With, Open Folder, Resume, Pause | Delete, Restart | Move to Queue, Move to Category |
+  Copy ▸ | Edit, File Checksum, Properties.
+- Columns: Name, Status, Size, Speed, Time Left, Date Added (default sort), Date Started, Date Finished, Location.
+- One monochrome vector icon set (Resume, Pause, QueueStart, QueueStop, StopAll, Delete, Settings, AddLink,
+  Folder / FolderFinished / FolderUnfinished, file types, Speed, Clock).
+- Engine: 8 connections per download by default, dynamic part creation (finished connections split the largest
+  remaining part), 512 KiB minimum part, sparse files, optional `.part` extension, global and per-download speed
+  limits, retries. **No mirror support.**
+- Add download: link, name, folder, queue, connections; Add or Download; if the file exists: numbered name,
+  overwrite, update the link of the existing item, or show the file. Batch download with `*` wildcards.
+- Queues: maximum concurrent downloads, stop when empty, scheduler (days, start and stop times), shut down when done.
+
+### XDM — Xtreme Download Manager (Windows, macOS, Linux)
+
+Sources: source code (github.com/subhra74/xdm, GPL-3.0; behaviour studied, nothing copied).
+
+- Multi-connection segmented downloads, resume after network drops, crashes or power loss, refresh of expired links
+  without starting over, browser integration, HLS/DASH video grabber, batch and clipboard lists, scheduler and queues,
+  HTTP/SOCKS proxies, antivirus scan.
+- Resume validation sends the first answer's `Last-Modified` as `If-Range`, deliberately not the ETag, because each
+  mirror has its own ETag. A range request answered with the whole file marks the server as having no range support.
+  Herb's Downloader keeps a validator per source instead (§7.2).
+- Segment stealing: a finished segment's connection takes the second half of the largest remaining range (minimum
+  256 KiB); a silent segment is taken over after the read timeout; the last small piece of a range is raced on a
+  second connection; on FAT32/exFAT the part file grows in steps so Pause stays responsive.
+- Checksum auto-detection looks for `file.sha256` / `.sha512` / `.sha1` / `.md5` sidecars, then the folder's
+  `SHA256SUMS`.
+
+### Free Download Manager 6 (Windows, macOS, Linux, Android)
+
+Sources: official site freedownloadmanager.org (Features).
+
+- Splits files into sections downloaded at once; resumes interrupted downloads; organizes files by type into
+  folders; scheduler; traffic modes so browsing stays usable; BitTorrent; preview of audio and video while
+  downloading; remote control from Android; tags.
+- Downloading one file from several mirrors at once is listed only for the legacy 3.9 release, not for current FDM.
+
+### Internet Download Manager (Windows)
+
+Sources: official site internetdownloadmanager.com (Features). Its menus and toolbar were not inspected (Windows-only
+app).
+
+- Dynamic segmentation: when a connection becomes free, the largest remaining segment is split in half and the new
+  connection starts at its midpoint; connections are reused without reconnecting.
+- Resume after dropped connections, shutdowns or power loss; scheduler and several queues with shutdown when done;
+  categories; download quotas; customizable toolbar and columns; drag and drop; Basic, Negotiate, NTLM and Kerberos
+  authentication; antivirus scan on completion.

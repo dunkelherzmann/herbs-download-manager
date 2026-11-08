@@ -1,0 +1,29 @@
+# Herb's Downloader
+
+A download manager for macOS, Linux and Windows. It downloads one file over many connections at once, from one
+server or from several mirrors of the same file, and pauses and resumes without losing what it has.
+
+- **Many connections per file**, split dynamically: a free connection takes half of the largest piece still to fetch.
+- **Mirrors**: give other servers that hold the same file, before, during or after adding a download, and the
+  connections are spread over all of them.
+- **Pause and resume**, across quits, crashes and restarts.
+- A simple window: menu bar, toolbar, status filters, the download list.
+
+How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
+
+## Status
+
+In design: the specification is written and the macOS version is built first, then Linux and Windows.
+What each version still lacks is in [pending.md](pending.md), [linux/pending.md](linux/pending.md) and
+[windows/pending.md](windows/pending.md).
+
+## Support
+
+Herb's Downloader is a testing app, shared publicly so others can benefit from it. It is provided as is: no
+support is promised or given.
+
+What has been reported and what's done is tracked in the open: [bugs.md](bugs.md) and [enhancements.md](enhancements.md).
+
+## Licence
+
+MIT: use it, change it, share it. See [LICENSE](LICENSE). By dunkelherzmann (github.com/dunkelherzmann).
