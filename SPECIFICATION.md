@@ -279,8 +279,8 @@ finish. A download started with Download (§5.1) or Resume runs at once, whateve
 ## 12. Reference apps
 
 The design above comes from studying five download managers on 2026-11-08. Facts are labelled by their source:
-**official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (static
-inspection of the installed app's resources; the app was not run).
+**official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (the
+installed app's resources, read without running it unless the section says it was run).
 
 ### Progressive Downloader 10.0.1 (macOS) — main inspiration
 
@@ -357,11 +357,26 @@ Sources: official site freedownloadmanager.org (Features).
   downloading; remote control from Android; tags.
 - Downloading one file from several mirrors at once is listed only for the legacy 3.9 release, not for current FDM.
 
-### Internet Download Manager (Windows)
+### Internet Download Manager 6.43 (Windows)
 
-Sources: official site internetdownloadmanager.com (Features). Its menus and toolbar were not inspected (Windows-only
-app).
+Sources: shipped app (the signed official installer, installed on a Windows test machine: menus, toolbar, dialogs and
+strings read from `IDMan.exe`'s resources, and its main window captured once while running); official site
+internetdownloadmanager.com (Features).
 
+- Main window: menus Tasks, File, Downloads, View, Help, Registration. Toolbar of large labelled buttons: Add URL,
+  Resume, Stop, Stop All, Delete, Delete Completed, Options, Scheduler, Start Queue ▾ and Stop Queue ▾ (a drop-down
+  picks the queue), Tell a Friend. A closable Categories tree: All Downloads (Compressed, Documents, Music, Programs,
+  Video), Unfinished, Finished, Grabber Projects, Queues. Columns File Name, Q (queue), Size, Status, Time left,
+  Transfer rate, Last try date, Description; View ▸ Arrange files sorts by any of them. Dark mode follows the system.
+- New download: URL, category, Save As, description; Start Download or Download Later. If the link is already in the
+  list: add with a numbered name, overwrite, or resume the existing one.
+- Download progress window: status, size, downloaded, transfer rate, time left and "Resume capability", a list of
+  start positions and progress per connection, Pause and Cancel, plus Speed Limiter and Options on completion tabs.
+- Settings: a default maximum of connections, with per-server limits (server patterns with `*`); download quotas;
+  categories with file types and folders; a temporary folder for the file parts.
+- Batch download with a `*` wildcard (numbers or letters, from–to, wildcard size). Scheduler with named queues,
+  start and stop times, days, retries and what to do when done.
+- No mirrors: nothing in its menus, dialogs or strings offers alternative sources for a download.
 - Dynamic segmentation: when a connection becomes free, the largest remaining segment is split in half and the new
   connection starts at its midpoint; connections are reused without reconnecting.
 - Resume after dropped connections, shutdowns or power loss; scheduler and several queues with shutdown when done;

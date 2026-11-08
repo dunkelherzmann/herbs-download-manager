@@ -26,3 +26,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **Study IDM on the Windows PC with Craft Anything and REA** instead of only its website: its menus, toolbar, dialogs and strings from `IDMan.exe`, and its main window while running. *Requested 2026-11-08.* Done in #2 (`SPECIFICATION.md` §12).
