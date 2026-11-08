@@ -1,0 +1,4 @@
+.investigation/
+.DS_Store
+.build/
+dist/
