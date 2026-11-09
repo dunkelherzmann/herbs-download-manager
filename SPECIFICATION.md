@@ -230,6 +230,8 @@ as long as one source stays on.
 - A source that fails is retried after a delay (5 s, then 10, 20, 40, up to 60 s); its byte ranges go back to the
   pool for the other sources at once. After **retries** consecutive failures (§9) it is marked Failed until the
   download is restarted or the source is turned back on.
+- Answers that retrying can't fix (404 Not Found, 403 Forbidden, 410 Gone and other 4xx except 408 and 429) mark
+  the source Failed at once.
 - A server that turns away extra connections (429 Too Many Requests, 503, or connections reset as they open) keeps
   the ones it accepted; the download stops opening more to that host and tries again one at a time after 60 s.
 - A connection that is far slower than the others (under a quarter of the download's average per-connection speed

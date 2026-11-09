@@ -24,6 +24,8 @@ pub struct MockFile {
     pub content_length: bool,
     /// Stop sending (without closing) after this many body bytes in each response.
     pub stall_after: Option<u64>,
+    /// Stall only the first this many requests (0: every request).
+    pub stall_first: u64,
     /// Bytes per second for each response.
     pub rate: Option<u64>,
     /// Refuse requests with 503 while this many are already being answered.
@@ -40,6 +42,7 @@ impl MockFile {
             ranges: true,
             content_length: true,
             stall_after: None,
+            stall_first: 0,
             rate: None,
             max_connections: None,
             etag,
@@ -239,7 +242,7 @@ async fn serve(mut stream: TcpStream, state: Arc<State>, mut stop: watch::Receiv
     let Some(req) = read_request(&mut stream).await? else { return Ok(()) };
     let file = state.files.lock().unwrap().get(&req.path).cloned();
     let stats = state.stats(&req.path);
-    stats.requests.fetch_add(1, Ordering::SeqCst);
+    let number = stats.requests.fetch_add(1, Ordering::SeqCst) + 1;
 
     let Some(file) = file else {
         return respond_simple(&mut stream, "404 Not Found").await;
@@ -247,13 +250,16 @@ async fn serve(mut stream: TcpStream, state: Arc<State>, mut stop: watch::Receiv
     if req.method != "GET" && req.method != "HEAD" {
         return respond_simple(&mut stream, "405 Method Not Allowed").await;
     }
-    if let Some(max) = file.max_connections {
-        if stats.active.load(Ordering::SeqCst) >= max {
+    if let Some(max) = file.max_connections
+        && stats.active.load(Ordering::SeqCst) >= max {
             stats.refused.fetch_add(1, Ordering::SeqCst);
             return respond_simple(&mut stream, "503 Service Unavailable").await;
         }
-    }
     stats.active.fetch_add(1, Ordering::SeqCst);
+    let mut file = file;
+    if file.stall_first > 0 && number > file.stall_first {
+        file.stall_after = None;
+    }
     let result = send_file(&mut stream, &req, &file, &stats, &mut stop).await;
     stats.active.fetch_sub(1, Ordering::SeqCst);
     result

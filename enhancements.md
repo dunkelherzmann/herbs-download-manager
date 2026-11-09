@@ -5,7 +5,7 @@ A box is ticked once the change has shipped. A request that covers several platf
 
 - [x] **Set up the project, locally and on GitHub,** with `SPECIFICATION.md`, `bugs.md`, `enhancements.md` and `pending.md`. *Requested 2026-11-08.* Done in #1.
 - [x] **Study Internet Download Manager, Free Download Manager, XDM, Progressive Downloader and AB Download Manager** with Craft Anything and REA, Progressive Downloader as the main inspiration, and record their features in the spec. *Requested 2026-11-08.* Done in #1 (`SPECIFICATION.md` §12).
-- [ ] **Multi-threaded downloading:** many connections per file, split dynamically. *Requested 2026-11-08.* Mac, Linux and Windows. (§8)
+- [ ] **Multi-threaded downloading:** many connections per file, split dynamically. *Requested 2026-11-08.* Mac, Linux and Windows. (§8) The shared engine does it (#5); each app still needs its window.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
@@ -32,4 +32,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4.
+- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5.

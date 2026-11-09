@@ -15,12 +15,12 @@ No open bugs in `bugs.md`.
 - [x] **Project skeleton**: Rust core (Cargo workspace) with UniFFI Swift bindings, Swift 6 AppKit app,
   `scripts/build-macos.sh`, `scripts/test.sh`, the `hd-mock` test server (ranges on/off, mirrors, changing files,
   stalls, connection limits). (§1) #4
-- [ ] **Single-source download engine**: one connection, `.hdpart` file, rename at the end. (§8)
-- [ ] **Dynamic segmentation**: up to N connections, largest-range halving, 256 KiB minimum, takeover of silent
-  connections. (§8)
-- [ ] **Pause and resume**: state saved on pause, every 5 s and on quit; resume after relaunch; can't-resume
+- [x] **Single-source download engine**: one connection, `.hdpart` file, rename at the end. (§8) #5
+- [x] **Dynamic segmentation**: up to N connections, largest-range halving, 256 KiB minimum, takeover of silent
+  connections. (§8) #5
+- [ ] **Pause and resume** (pausing already stops every connection and keeps the `.hdpart`): state saved on pause, every 5 s and on quit; resume after relaunch; can't-resume
   question. (§10)
-- [ ] **Mirrors**: sources per download, mirror check (size, ranges, per-source validator), spreading connections,
+- [ ] **Mirrors**: sources per download, handing a slow connection's range to a faster source, mirror check (size, ranges, per-source validator), spreading connections,
   retries and failover, sources list. (§7)
 - [ ] **Add mirrors before, during and after** (M1–M3). (§7.1)
 - [ ] **Main window**: title bar, toolbar, sidebar filters, download list with columns, footer, search. (§2, §3)
