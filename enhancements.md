@@ -64,3 +64,48 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+
+- [ ] **Check the free space before a download starts.** When the file's size is known and it won't fit, say so before downloading, counting the space macOS frees on demand as Finder does; warn too when a file over 4 GB goes to a FAT32 drive. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Verify with a checksum the server announces.** Servers that send the file's hash in their answer (`Digest`, `Repr-Digest`, `Content-MD5`, `x-goog-hash`) get the finished file checked against it, as with a checksum the user gives (§6) or a checksum file (S8). *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Remember how many connections each server allows.** A server that turns away extra connections keeps the limit it showed for later downloads too, instead of each download learning it again; forgotten after a while, and shown in Settings. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Check that the file hasn't changed when a download resumes,** also on servers that give no `ETag` or `Last-Modified`: a reconnecting connection fetches again the last bytes it wrote and compares them. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Download links that need a login.** A user name and password per site (kept in the system's keychain), and the cookies and referer a link needs. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **More to do with a finished download:** Open and Show in Finder on the "finished" notification, Delete Completed, Move/Rename a finished file, and optionally the file's date from the server. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A command line and an MCP server,** so scripts and AI assistants can list, add, pause and remove downloads; the feature tests can drive the app through it too. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Start downloading while the New Download window is still open,** so no time is lost while choosing the folder; Cancel discards what was fetched. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A note of your own on each download,** shown in a column and found by the search. *Requested 2026-11-09, from studying Mister Download Manager.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
