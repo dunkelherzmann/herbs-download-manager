@@ -655,3 +655,70 @@ fn the_feature_scenario_passes_against_the_core() {
     let report = hd_core::scenario::report(&results);
     assert!(results.len() >= 11 && results.iter().all(|r| r.passed), "{report}");
 }
+
+#[test]
+fn a_checksum_the_server_announces_is_verified() {
+    use base64::Engine;
+    let data = pattern(MIB, 43);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let dir = folder("announced");
+    let good = sha256_of(&data, &dir);
+    let bytes: Vec<u8> = (0..good.len()).step_by(2).map(|i| u8::from_str_radix(&good[i..i + 2], 16).unwrap()).collect();
+    let mut right = MockFile::new(data.clone());
+    right.headers.push(format!("Repr-Digest: sha-256=:{}:", base64::engine::general_purpose::STANDARD.encode(&bytes)));
+    s.put("/right.bin", right);
+    let mut wrong = MockFile::new(data.clone());
+    wrong.headers.push(format!("Repr-Digest: sha-256=:{}:", base64::engine::general_purpose::STANDARD.encode([0u8; 32])));
+    s.put("/wrong.bin", wrong);
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/right.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(m.detail(id).unwrap().verified.as_deref(), Some("SHA-256 matches (announced by the server)"));
+    let id = m.add(new(s.url("/wrong.bin"), &dir, true));
+    let status = wait(&m, id, |s| matches!(s, Status::Failed(_)));
+    assert!(matches!(&status, Status::Failed(r) if r.contains("announced by the server")), "{status:?}");
+}
+
+#[test]
+fn a_server_s_connection_limit_is_remembered_for_the_next_download() {
+    let data = pattern(4 * MIB, 44);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    for path in ["/a.bin", "/b.bin"] {
+        let mut f = MockFile::new(data.clone());
+        f.rate = Some(2 * MIB as u64);
+        f.max_connections = Some(2);
+        s.put(path, f);
+    }
+    let dir = folder("host-limits");
+    // A refused connection waits 60 s before trying again; the test shortens that.
+    let quick = hd_core::transfer::Tuning { refusal_wait: Duration::from_millis(200), ..Default::default() };
+    let m = Manager::open_with(&dir, quick.clone()).unwrap();
+    let mut first = new(s.url("/a.bin"), &dir, true);
+    first.connections = 8;
+    let id = m.add(first);
+    wait(&m, id, |s| *s == Status::Finished);
+    let limits = m.host_limits();
+    assert_eq!(limits.len(), 1, "{limits:?}");
+    assert!(limits[0].1 <= 2, "{limits:?}");
+    drop(m);
+    // A new run reads it back; the second download stays within it from the start.
+    let m = Manager::open_with(&dir, quick).unwrap();
+    assert_eq!(m.host_limits().len(), 1);
+    let mut second = new(s.url("/b.bin"), &dir, true);
+    second.connections = 8;
+    let id = m.add(second);
+    let mut most = 0;
+    loop {
+        let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+        most = most.max(row.active_connections);
+        if row.status == Status::Finished {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(most <= 2, "the second download opened {most} connections");
+    m.forget_host_limits();
+    assert!(m.host_limits().is_empty());
+}

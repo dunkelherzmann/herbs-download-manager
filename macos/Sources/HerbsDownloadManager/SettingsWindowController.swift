@@ -94,6 +94,8 @@ final class SettingsWindowController: NSWindowController {
     private let speed = SpeedLimitControl(what: "all downloads together")
     private let retries = NSPopUpButton()
     private let whenExists = NSPopUpButton()
+    private let hostLimits = NSTextField(labelWithString: "")
+    private let forgetLimits = NSButton(title: "Forget", target: nil, action: nil)
     private let checksumFiles = NSButton(checkboxWithTitle: "Look for checksum files next to the link", target: nil, action: nil)
     private let notify = NSButton(checkboxWithTitle: "Show a notification when a download finishes", target: nil,
                                   action: nil)
@@ -158,6 +160,10 @@ final class SettingsWindowController: NSWindowController {
         whenExists.setAccessibilityLabel("When a file exists")
         speed.onChange = { [weak self] _ in self?.save(nil) }
         speed.box.setAccessibilityIdentifier("settings-speed-limit")
+        forgetLimits.target = self
+        forgetLimits.action = #selector(forgetHostLimits(_:))
+        forgetLimits.toolTip = "Forget every server's remembered limit; downloads learn them again"
+        forgetLimits.setAccessibilityIdentifier("settings-forget-limits")
         checksumFiles.target = self
         checksumFiles.action = #selector(save(_:))
         checksumFiles.toolTip = "When a download has no checksum set, look for <file>.sha256 (or .sha512, .sha1, .md5) "
@@ -177,6 +183,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Speed limit:"), speed],
             [label("Retries per source:"), retries],
             [label("When a file exists:"), whenExists],
+            [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
             [NSGridCell.emptyContentView, checksumFiles],
             [NSGridCell.emptyContentView, notify],
         ])
@@ -208,6 +215,7 @@ final class SettingsWindowController: NSWindowController {
         speed.limit = s.speedLimit
         whenExists.selectItem(at: Self.existsChoices.firstIndex { $0.1 == s.whenFileExists } ?? 0)
         checksumFiles.state = s.lookForChecksumFiles ? .on : .off
+        showHostLimits()
         notify.state = s.notifyWhenFinished ? .on : .off
     }
 
@@ -224,6 +232,20 @@ final class SettingsWindowController: NSWindowController {
         s.notifyWhenFinished = notify.state == .on
         AppModel.shared.settings = s
         if s.notifyWhenFinished, (sender as? NSButton) === notify { AppModel.shared.askToNotify() }
+    }
+
+    /// Servers that turned away extra connections, remembered for a week so later downloads start within the limit.
+    private func showHostLimits() {
+        let limits = AppModel.shared.manager.hostLimits()
+        let text = hostLimitsText(limits: limits)
+        hostLimits.stringValue = text.summary
+        hostLimits.toolTip = text.detail
+        forgetLimits.isEnabled = !limits.isEmpty
+    }
+
+    @objc private func forgetHostLimits(_ sender: Any?) {
+        AppModel.shared.manager.forgetHostLimits()
+        showHostLimits()
     }
 
     @objc private func chooseFolder(_ sender: Any?) {

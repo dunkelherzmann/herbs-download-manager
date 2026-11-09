@@ -32,6 +32,10 @@ pub struct MockFile {
     pub max_connections: Option<usize>,
     /// The file's ETag; changes whenever the contents change.
     pub etag: String,
+    /// Send the ETag (otherwise the server gives no validator, and If-Range is ignored).
+    pub validators: bool,
+    /// More header lines to send ("Repr-Digest: sha-256=:…:").
+    pub headers: Vec<String>,
 }
 
 impl MockFile {
@@ -46,6 +50,8 @@ impl MockFile {
             rate: None,
             max_connections: None,
             etag,
+            validators: true,
+            headers: Vec::new(),
         }
     }
 }
@@ -280,7 +286,7 @@ async fn send_file(
 ) -> std::io::Result<()> {
     let len = file.data.len() as u64;
     // A Range with an If-Range that no longer matches gets the whole file, as RFC 9110 says.
-    let if_range_ok = req.headers.get("if-range").is_none_or(|v| *v == file.etag);
+    let if_range_ok = !file.validators || req.headers.get("if-range").is_none_or(|v| *v == file.etag);
     let range = match req.headers.get("range") {
         Some(v) if file.ranges && if_range_ok => parse_range(v, len),
         _ => None,
@@ -295,7 +301,14 @@ async fn send_file(
         Some(Ok((a, b))) => ("206 Partial Content", a, b + 1),
         None => ("200 OK", 0, len),
     };
-    let mut head = format!("HTTP/1.1 {status}\r\nETag: {}\r\nConnection: close\r\n", file.etag);
+    let mut head = format!("HTTP/1.1 {status}\r\nConnection: close\r\n");
+    if file.validators {
+        head.push_str(&format!("ETag: {}\r\n", file.etag));
+    }
+    for line in &file.headers {
+        head.push_str(line);
+        head.push_str("\r\n");
+    }
     head.push_str("Content-Type: application/octet-stream\r\n");
     if file.ranges {
         head.push_str("Accept-Ranges: bytes\r\n");

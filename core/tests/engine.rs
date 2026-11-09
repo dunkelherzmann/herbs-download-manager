@@ -318,6 +318,43 @@ async fn resuming_a_file_that_changed_fails() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_changed_file_on_a_server_without_validators_is_caught_by_the_overlap() {
+    let server = MockServer::start().await.unwrap();
+    let mut file = MockFile::new(pattern(8 * MIB, 13));
+    file.rate = Some(2 * MIB as u64);
+    file.validators = false;
+    server.put("/v.bin", file);
+    let dir = folder("resume-overlap");
+    let req = saving(&dir, server.url("/v.bin"), 4);
+    let (control, progress, task) = spawn(req.clone(), fast());
+    wait_for_bytes(&progress, MIB as u64).await;
+    control.pause();
+    task.await.unwrap();
+    server.change("/v.bin", pattern(8 * MIB, 14));
+    let (outcome, _) = run(req, fast()).await;
+    assert_eq!(outcome, Outcome::Failed("File changed on the server".into()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unchanged_file_on_a_server_without_validators_resumes_whole() {
+    let server = MockServer::start().await.unwrap();
+    let data = pattern(8 * MIB, 17);
+    let mut file = MockFile::new(data.clone());
+    file.rate = Some(2 * MIB as u64);
+    file.validators = false;
+    server.put("/u.bin", file);
+    let dir = folder("resume-overlap-same");
+    let req = saving(&dir, server.url("/u.bin"), 4);
+    let (control, progress, task) = spawn(req.clone(), fast());
+    wait_for_bytes(&progress, MIB as u64).await;
+    control.pause();
+    task.await.unwrap();
+    server.update("/u.bin", |f| f.rate = None);
+    let (outcome, _) = run(req, fast()).await;
+    assert_eq!(std::fs::read(finished(&outcome)).unwrap(), data);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_missing_partial_file_starts_over_under_the_same_name() {
     let server = MockServer::start().await.unwrap();
     let data = pattern(4 * MIB, 15);

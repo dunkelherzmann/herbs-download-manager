@@ -75,6 +75,47 @@ impl Checksum {
     }
 }
 
+/// A checksum the server announces in its answer's headers (enhancements.md), the strongest it gives:
+/// `Repr-Digest: sha-256=:BASE64:` and Google's `x-goog-hash: md5=BASE64` cover the whole file even in a partial
+/// answer; `Digest: SHA-256=BASE64` and `Content-MD5: BASE64` cover only the body sent, so they count only when
+/// `whole_body` (the server sent the whole file).
+pub fn announced(headers: &reqwest::header::HeaderMap, whole_body: bool) -> Option<Checksum> {
+    use base64::Engine;
+    let decode = |v: &str| base64::engine::general_purpose::STANDARD.decode(v.trim().trim_matches(':')).ok();
+    let hex = |b: Vec<u8>| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let algorithm = |name: &str| match name.trim().to_ascii_lowercase().as_str() {
+        "md5" => Some(Algorithm::Md5),
+        "sha" | "sha1" | "sha-1" => Some(Algorithm::Sha1),
+        "sha-256" | "sha256" => Some(Algorithm::Sha256),
+        "sha-512" | "sha512" => Some(Algorithm::Sha512),
+        _ => None,
+    };
+    let mut found: Vec<Checksum> = Vec::new();
+    let mut take = |header: &str, pairs: bool| {
+        for value in headers.get_all(header).iter().filter_map(|v| v.to_str().ok()) {
+            let items: Vec<(&str, &str)> = if pairs {
+                value.split(',').filter_map(|p| p.split_once('=')).collect()
+            } else {
+                vec![("md5", value)]
+            };
+            for (name, encoded) in items {
+                if let (Some(a), Some(bytes)) = (algorithm(name), decode(encoded))
+                    && let Ok(c) = Checksum::new(a, &hex(bytes))
+                {
+                    found.push(c);
+                }
+            }
+        }
+    };
+    take("repr-digest", true);
+    take("x-goog-hash", true);
+    if whole_body {
+        take("digest", true);
+        take("content-md5", false);
+    }
+    found.into_iter().max_by_key(|c| c.algorithm.hex_len())
+}
+
 /// The file's hash as lowercase hex. Reads it in 1 MiB pieces; call it off the async threads.
 pub fn hash_file(path: &Path, algorithm: Algorithm) -> std::io::Result<String> {
     use sha2::Digest;
@@ -168,6 +209,22 @@ mod tests {
         assert_eq!(parse(&format!("SHA256 (other.bin) = {B}\nSHA256 (f.bin) = {A}"), Algorithm::Sha256, "f.bin").as_deref(), Some(A));
         assert_eq!(parse(&format!("{B}  other.bin"), Algorithm::Sha256, "f.bin"), None);
         assert_eq!(parse("<html>not found</html>", Algorithm::Sha256, "f.bin"), None);
+    }
+
+    #[test]
+    fn checksums_the_server_announces() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        let mut h = HeaderMap::new();
+        // "test": MD5 CY9rzUYh03PK3k6DJie09g==, SHA-256 n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg=
+        h.insert("content-md5", HeaderValue::from_static("CY9rzUYh03PK3k6DJie09g=="));
+        assert_eq!(announced(&h, false), None, "Content-MD5 covers only the body sent");
+        assert_eq!(announced(&h, true).unwrap().value, "098f6bcd4621d373cade4e832627b4f6");
+        h.insert("repr-digest", HeaderValue::from_static("sha-256=:n4bQgYhMfWWaL+qgxVrQFaO/TxsrC4Is0V1sFbDwCgg=:"));
+        let c = announced(&h, false).unwrap();
+        assert_eq!((c.algorithm, c.value.as_str()), (Algorithm::Sha256, A));
+        let mut g = HeaderMap::new();
+        g.insert("x-goog-hash", HeaderValue::from_static("crc32c=n03x6A==, md5=CY9rzUYh03PK3k6DJie09g=="));
+        assert_eq!(announced(&g, false).unwrap().algorithm, Algorithm::Md5);
     }
 
     #[test]

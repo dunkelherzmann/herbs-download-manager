@@ -2,7 +2,9 @@
 
 pub mod addflow;
 pub mod checksum;
+pub mod disk;
 pub mod format;
+pub mod hosts;
 pub mod http;
 pub mod limit;
 pub mod links;

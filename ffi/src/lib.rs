@@ -676,3 +676,42 @@ impl DownloadManager {
         hd_core::scenario::report(&results)
     }
 }
+
+/// Why a file of `size` bytes won't fit in `folder` (not enough space, or a FAT32 drive and 4 GB or more), or `None`.
+#[uniffi::export]
+pub fn space_problem(folder: String, size: u64) -> Option<String> {
+    hd_core::disk::space_problem(std::path::Path::new(&folder), size)
+}
+
+#[derive(uniffi::Record)]
+pub struct HostLimitRow {
+    pub host: String,
+    pub connections: u32,
+}
+
+#[uniffi::export]
+impl DownloadManager {
+    /// Servers' remembered connection limits (Settings).
+    pub fn host_limits(&self) -> Vec<HostLimitRow> {
+        self.inner.host_limits().into_iter().map(|(host, connections)| HostLimitRow { host, connections }).collect()
+    }
+
+    /// Settings ▸ Forget.
+    pub fn forget_host_limits(&self) {
+        self.inner.forget_host_limits();
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct HostLimitsText {
+    pub summary: String,
+    pub detail: String,
+}
+
+/// Settings' line for the remembered limits and its hover text.
+#[uniffi::export]
+pub fn host_limits_text(limits: Vec<HostLimitRow>) -> HostLimitsText {
+    let pairs: Vec<(String, u32)> = limits.into_iter().map(|r| (r.host, r.connections)).collect();
+    let (summary, detail) = hd_core::hosts::describe(&pairs);
+    HostLimitsText { summary, detail }
+}

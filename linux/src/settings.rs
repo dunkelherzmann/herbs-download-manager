@@ -83,6 +83,31 @@ pub fn open(ctx: &Ctx) {
     behaviour.add(&checksum_files);
     behaviour.add(&notify);
 
+    // Remembered connection limits: servers that turned away extra connections, for a week.
+    let limits = adw::ActionRow::builder().title("Server limits").build();
+    let forget = gtk::Button::builder().label("Forget").valign(gtk::Align::Center).build();
+    forget.set_tooltip_text(Some("Forget every server's remembered limit; downloads learn them again"));
+    limits.add_suffix(&forget);
+    let show_limits = {
+        let (manager, limits, forget) = (ctx.manager.clone(), limits.clone(), forget.clone());
+        move || {
+            let all = manager.host_limits();
+            let (summary, detail) = hd_core::hosts::describe(&all);
+            limits.set_subtitle(&summary);
+            crate::explain_row(&limits, &detail);
+            forget.set_sensitive(!all.is_empty());
+        }
+    };
+    show_limits();
+    {
+        let manager = ctx.manager.clone();
+        forget.connect_clicked(move |_| {
+            manager.forget_host_limits();
+            show_limits();
+        });
+    }
+    connections.add(&limits);
+
     let save = {
         let (manager, limit, limit_value, unit) = (ctx.manager.clone(), limit.clone(), limit_value.clone(), unit.clone());
         let (at_once, per_download, per_server, retries, exists, notify, checksum_files) = (at_once.clone(), per_download.clone(),

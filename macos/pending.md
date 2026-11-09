@@ -52,10 +52,10 @@ No open bugs in `bugs.md`.
 - [x] **Hover text, accessibility labels and menu commands on every control.** (§3, §4) #47: `scripts/test.sh` runs an audit of every window (`--a11y-report`).
 - [x] **App icon** in the Mac, Linux and Windows formats. (§1) — PR #18 (the Linux and Windows apps use it when they are built)
 - [x] **Feature tests** driving the app's own commands against the mock server, results per feature. (all) #49: `tests/features.scenario`, run by `macos/scripts/features.sh` (also in `scripts/test.sh`).
-- [ ] **Free space check** before a download starts, and the FAT32 4 GB warning. (enhancements.md)
-- [ ] **Checksums the server announces** (`Digest`, `Repr-Digest`, `Content-MD5`, `x-goog-hash`). (§6, enhancements.md)
-- [ ] **Remembered connection limits per server.** (§7.4, §8, enhancements.md)
-- [ ] **Overlap check on resume** for servers without validators. (§10, enhancements.md)
+- [x] **Free space check** before a download starts, and the FAT32 4 GB warning. (enhancements.md)
+- [x] **Checksums the server announces** (`Digest`, `Repr-Digest`, `Content-MD5`, `x-goog-hash`). (§6, enhancements.md)
+- [x] **Remembered connection limits per server.** (§7.4, §8, enhancements.md)
+- [x] **Overlap check on resume** for servers without validators. (§10, enhancements.md)
 - [ ] **Links that need a login**: per-site user name and password in the Keychain, cookies, referer. (enhancements.md)
 - [ ] **Finished downloads**: Open and Show in Finder on the notification, Delete Completed, Move/Rename, server's file date. (enhancements.md)
 - [ ] **Start while New Download is open.** (§5.1, enhancements.md)

@@ -63,6 +63,8 @@ const S_RETRIES: u16 = 79;
 const S_EXISTS: u16 = 80;
 const S_NOTIFY: u16 = 81;
 const S_CHECKSUM_FILES: u16 = 82;
+const S_LIMITS: u16 = 83;
+const S_FORGET: u16 = 84;
 const S_CLOSE: u16 = 2;
 
 const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
@@ -469,7 +471,8 @@ pub fn settings(ctx: &Ctx) {
     let s = ctx.manager.settings();
     let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
     let folder = crate::save_folder(&ctx.manager).display().to_string();
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 420), &[
+    let (limits_text, limits_detail) = hd_core::hosts::describe(&ctx.manager.host_limits());
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 456), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -490,7 +493,10 @@ pub fn settings(ctx: &Ctx) {
         (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 266, 230, 160),
         (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 302, 340, 24),
         (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 330, 340, 24),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 374, 85, 30),
+        (0, w!("STATIC"), "Server limits:", LABEL, 12, 366, 170, 20),
+        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 366, 250, 20),
+        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 360, 95, 28),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 410, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -505,6 +511,8 @@ pub fn settings(ctx: &Ctx) {
         (S_EXISTS, "", "What happens when a different file already has a new download's name"),
         (S_CHECKSUM_FILES, "", "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)"),
         (S_NOTIFY, "", "Show a notification each time a download finishes"),
+        (S_LIMITS, "Server limits", limits_detail.as_str()),
+        (S_FORGET, "", "Forget every server's remembered limit; downloads learn them again"),
         (S_CLOSE, "", "Close Settings; changes are already saved"),
     ]);
     with_win(hwnd, |w| {
@@ -520,6 +528,9 @@ pub fn settings(ctx: &Ctx) {
         }
         set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
         set_checked(w.controls[&S_CHECKSUM_FILES], s.look_for_checksum_files);
+        unsafe {
+            let _ = EnableWindow(w.controls[&S_FORGET], !w.ctx.manager.host_limits().is_empty());
+        }
     });
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
@@ -712,6 +723,13 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                         })),
                         S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == EN_KILLFOCUS => save_settings(hwnd),
                         S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES => save_settings(hwnd),
+                        S_FORGET => drop(with_win(hwnd, |w| {
+                            w.ctx.manager.forget_host_limits();
+                            let (summary, detail) = hd_core::hosts::describe(&[]);
+                            set_text(w.controls[&S_LIMITS], &summary);
+                            crate::a11y::tip(w.controls[&S_LIMITS], &detail);
+                            let _ = EnableWindow(w.controls[&S_FORGET], false);
+                        })),
                         S_UNIT | S_EXISTS if code == CBN_SELCHANGE => save_settings(hwnd),
                         _ => {}
                     },

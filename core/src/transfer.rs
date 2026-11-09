@@ -42,6 +42,8 @@ pub struct Request {
     pub limits: Vec<Arc<crate::limit::Limiter>>,
     /// S8: with no checksum set, look for `<link>.sha256` and the like before naming the file.
     pub look_for_checksum_files: bool,
+    /// Connection limits learned from servers, shared by every download (and kept by the manager).
+    pub learned: Arc<crate::hosts::Learned>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -168,6 +170,8 @@ pub struct Progress {
     pub finishing: AtomicBool,
     /// The checksum to verify before the file gets its name (§6); can be set while the download runs.
     pub checksum: Mutex<Option<crate::checksum::Checksum>>,
+    /// A checksum the server announced in its first answer's headers.
+    pub announced: Mutex<Option<crate::checksum::Checksum>>,
     /// After a verified finish: "SHA-256 matches (f.bin.sha256)".
     pub verified: Mutex<Option<String>>,
 }
@@ -221,6 +225,8 @@ pub struct Control {
 
 /// Connection slots per download; `allowed` says how many are in use.
 const MAX_CONNECTIONS: usize = 32;
+/// Bytes compared again when a range continues on a server without validators.
+const OVERLAP: u64 = 32 * 1024;
 
 const RUN: u8 = 0;
 const PAUSE: u8 = 1;
@@ -271,6 +277,9 @@ pub struct ResumeState {
     pub resumable: bool,
     pub segments: Vec<Segment>,
     pub sources: Vec<SavedSource>,
+    /// A checksum the server announced in its first answer, kept so a resumed download still checks it.
+    #[serde(default)]
+    pub announced: Option<crate::checksum::Checksum>,
 }
 
 impl ResumeState {
@@ -437,6 +446,7 @@ struct Job {
     per_server: usize,
     limits: Vec<Arc<crate::limit::Limiter>>,
     look_for_checksum_files: bool,
+    learned: Arc<crate::hosts::Learned>,
     sequential: bool,
     /// What gets saved; `segments` and `sources` are filled in at each save.
     state: ResumeState,
@@ -506,6 +516,7 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
                 };
             }
             let segs = Segments::from_saved(state.segments.clone(), tuning.min_split);
+            *progress.announced.lock().unwrap() = state.announced.clone();
             progress.downloaded.store(segs.downloaded(), Ordering::SeqCst);
             let job = Job::new(client, &req, tuning, state.clone(), sources, file, segs, progress, &control, false, max_conns);
             return run(job, None, max_conns, stop).await;
@@ -565,6 +576,8 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
 
     let ranges = first.status() == StatusCode::PARTIAL_CONTENT;
     let size = if ranges { http::content_range_total(first.headers()) } else { first.content_length() };
+    // A checksum the server announces is checked at the end when none was set.
+    *progress.announced.lock().unwrap() = crate::checksum::announced(first.headers(), !ranges);
     let resumable = ranges && size.is_some();
     sources[first_idx].validator = http::validator(first.headers());
     sources[first_idx].status = SourceStatus::Working;
@@ -574,6 +587,12 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
             s.status = SourceStatus::Checking;
             s.validator = None;
         }
+    }
+    // Will it fit? Said before anything is written, so a download never fills the drive (or hits FAT32's 4 GB limit).
+    if let Some(size) = size
+        && let Some(problem) = crate::disk::space_problem(&req.folder, size)
+    {
+        return Outcome::Failed(problem);
     }
     // Starting over keeps the name the download already had.
     let claimed = match &saved {
@@ -595,7 +614,8 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
     // Ranged downloads are split over connections; without ranges or a size, one connection reads to the end.
     let segs = if resumable { Segments::new(size.unwrap_or(0), tuning.min_split) } else { Segments::new(u64::MAX, u64::MAX) };
     progress.downloaded.store(0, Ordering::SeqCst);
-    let state = ResumeState { url: req.url.clone(), dest, size, resumable, segments: Vec::new(), sources: Vec::new() };
+    let announced = progress.announced.lock().unwrap().clone();
+    let state = ResumeState { url: req.url.clone(), dest, size, resumable, segments: Vec::new(), sources: Vec::new(), announced };
     let job = Job::new(client, &req, tuning, state, sources, file, segs, progress, &control, !resumable, max_conns);
     run(job, Some((first_idx, first)), max_conns, stop).await
 }
@@ -706,12 +726,14 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
     // §6, S8: the whole file is checked against its checksum before it gets its name.
     let name = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let set = job.progress.checksum.lock().unwrap().clone();
-    let expected = match set {
-        Some(c) => Some((c, None)),
-        None if job.look_for_checksum_files => {
+    let announced = job.progress.announced.lock().unwrap().clone();
+    let expected = match (set, announced) {
+        (Some(c), _) => Some((c, None)),
+        (None, Some(c)) => Some((c, Some("announced by the server".to_string()))),
+        (None, None) if job.look_for_checksum_files => {
             crate::checksum::look_for(&job.client, &job.state.url, &name).await.map(|(c, from)| (c, Some(from)))
         }
-        None => None,
+        (None, None) => None,
     };
     if let Some((expected, from)) = expected {
         let (part, algorithm) = (part_path(&dest), expected.algorithm);
@@ -756,8 +778,8 @@ async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Resp
         if job.is_stopped() || id >= job.allowed() {
             break;
         }
-        let (src, response) = match first.take() {
-            Some(found) => found,
+        let (src, (response, early)) = match first.take() {
+            Some((src, r)) => (src, (r, Vec::new())),
             None => {
                 if job.segs.lock().unwrap().owned_by(id).is_none() && job.segs.lock().unwrap().take(id).is_none() {
                     break;
@@ -796,7 +818,7 @@ async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Resp
         stat.phase.store(DOWNLOADING, Ordering::SeqCst);
         job.progress.active.fetch_add(1, Ordering::SeqCst);
         job.progress.peak.fetch_max(job.progress.active.load(Ordering::SeqCst), Ordering::SeqCst);
-        let result = job.stream(id, src, response).await;
+        let result = job.stream(id, src, response, early).await;
         stat.phase.store(IDLE, Ordering::SeqCst);
         job.progress.active.fetch_sub(1, Ordering::SeqCst);
         stat.source.store(usize::MAX, Ordering::SeqCst);
@@ -843,6 +865,9 @@ impl Job {
         let stop = merged_stop(control.stop.subscribe(), &stop_tx);
         let allowed = if sequential { 1 } else { max_conns.clamp(1, MAX_CONNECTIONS) };
         progress.allowed.store(allowed, Ordering::SeqCst);
+        let built: Vec<Arc<Source>> = sources.into_iter().filter_map(Source::new).collect();
+        let sources_hosts: Vec<String> = built.iter().map(|s| s.host.clone()).collect();
+        let tuning_wait = tuning.refusal_wait;
         Arc::new(Job {
             allowed: AtomicUsize::new(allowed),
             extra: Mutex::new(Vec::new()),
@@ -852,13 +877,20 @@ impl Job {
             per_server: req.connections_per_server.clamp(1, 32) as usize,
             limits: req.limits.clone(),
             look_for_checksum_files: req.look_for_checksum_files,
+            learned: req.learned.clone(),
             sequential,
             state,
             state_file: req.state_file.clone(),
             file,
             segs: Mutex::new(segs),
-            sources: RwLock::new(sources.into_iter().filter_map(Source::new).collect()),
-            hosts: Mutex::new(HashMap::new()),
+            sources: RwLock::new(built),
+            // Limits learned by earlier downloads apply from the start; past the wait, one more is tried as usual.
+            hosts: Mutex::new(
+                sources_hosts
+                    .iter()
+                    .filter_map(|h| req.learned.get(h).map(|c| (h.clone(), HostLimit { cap: c as usize, until: Instant::now() + tuning_wait })))
+                    .collect(),
+            ),
             pick_lock: Mutex::new(()),
             refusal_gate: tokio::sync::Mutex::new(()),
             conns: (0..MAX_CONNECTIONS).map(|_| ConnStat { source: AtomicUsize::new(usize::MAX), ..Default::default() }).collect(),
@@ -1009,6 +1041,7 @@ impl Job {
             _ => accepted,
         };
         hosts.insert(host.to_string(), HostLimit { cap, until: now + self.tuning.refusal_wait });
+        self.learned.learn(host, cap as u32);
     }
 
     async fn wait_for_change(&self) {
@@ -1039,9 +1072,22 @@ impl Job {
             Problem::Refused => {
                 // Keep the connections the host accepted (those receiving data now); one more is tried after the wait.
                 self.limit_host(&source.host);
-                // A refused connection waits its turn, so a busy server sees at most one new try per wait.
+                // A refused connection waits its turn, so a busy server sees at most one new try per wait. It stops
+                // waiting once every byte is in: the others may finish long before the wait is over.
                 let _gate = self.refusal_gate.lock().await;
-                sleep_unless_stopped(self.tuning.refusal_wait, &self.stop).await
+                let until = Instant::now() + self.tuning.refusal_wait;
+                loop {
+                    if self.segs.lock().unwrap().is_complete() {
+                        return false;
+                    }
+                    let left = until.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return true;
+                    }
+                    if !sleep_unless_stopped(left.min(Duration::from_millis(250)), &self.stop).await {
+                        return false;
+                    }
+                }
             }
             Problem::FileChanged => {
                 self.kill(src, SourceStatus::FileChanged);
@@ -1072,23 +1118,27 @@ impl Job {
     }
 
     /// Opens a request on `src` for the rest of the range this connection owns.
-    async fn open(&self, id: usize, src: usize) -> Result<reqwest::Response, Problem> {
+    async fn open(&self, id: usize, src: usize) -> Result<(reqwest::Response, Vec<u8>), Problem> {
         let source = self.source(src);
         let mut req = self.client.get(source.url.clone()).header(ACCEPT_ENCODING, "identity");
-        let (start, end) = if self.sequential {
+        let (start, end, written_from) = if self.sequential {
             // Without ranges a failed download starts over.
             let mut segs = self.segs.lock().unwrap();
             *segs = Segments::new(u64::MAX, u64::MAX);
             segs.take(id);
             self.progress.downloaded.store(0, Ordering::SeqCst);
-            (0, u64::MAX)
+            (0, u64::MAX, 0)
         } else {
             let segs = self.segs.lock().unwrap();
             let s = segs.get(segs.owned_by(id).ok_or(Problem::Stopped)?);
-            (s.pos, s.end)
+            (s.pos, s.end, s.start)
         };
+        // Overlap check (§10): a server without validators can't say the file changed, so the range starts a little
+        // before the bytes this connection's range already holds, and those are compared first.
+        let overlap = if self.sequential || source.validator.lock().unwrap().is_some() { 0 } else { OVERLAP.min(start - written_from) };
+        let from = start - overlap;
         if !self.sequential {
-            req = req.header(RANGE, format!("bytes={start}-{}", end - 1));
+            req = req.header(RANGE, format!("bytes={from}-{}", end - 1));
             if let Some(v) = source.validator.lock().unwrap().as_ref() {
                 req = req.header(IF_RANGE, v);
             }
@@ -1100,10 +1150,12 @@ impl Job {
         };
         let status = response.status();
         if self.sequential {
-            return if status.is_success() { Ok(response) } else { Err(status_problem(status)) };
+            return if status.is_success() { Ok((response, Vec::new())) } else { Err(status_problem(status)) };
         }
         match status {
-            StatusCode::PARTIAL_CONTENT if http::content_range_start(response.headers()) == Some(start) => Ok(response),
+            StatusCode::PARTIAL_CONTENT if http::content_range_start(response.headers()) == Some(from) => {
+                self.compare_overlap(response, from, overlap).await
+            }
             StatusCode::PARTIAL_CONTENT => Err(Problem::Transient("The server sent the wrong range".into())),
             // A full answer to a range request with If-Range: the file is no longer the same.
             StatusCode::OK => Err(Problem::FileChanged),
@@ -1111,11 +1163,40 @@ impl Job {
         }
     }
 
-    /// Reads a response into the file until the connection's range is done.
-    async fn stream(&self, id: usize, src: usize, mut response: reqwest::Response) -> Result<(), Problem> {
+    /// Reads the first `overlap` bytes of the answer and compares them with the file at `from`: a difference means
+    /// the file changed on the server. Returns the answer with the bytes read past the overlap.
+    async fn compare_overlap(&self, mut response: reqwest::Response, from: u64, overlap: u64) -> Result<(reqwest::Response, Vec<u8>), Problem> {
+        let mut got: Vec<u8> = Vec::new();
+        while (got.len() as u64) < overlap {
+            let mut stop = self.stop.clone();
+            let next = tokio::select! {
+                r = tokio::time::timeout(self.tuning.stall_timeout, response.chunk()) => r,
+                _ = stopped_ref(&mut stop) => return Err(Problem::Stopped),
+            };
+            match next {
+                Err(_) => return Err(Problem::Stalled),
+                Ok(Err(e)) => return Err(Problem::Transient(error_text(&e))),
+                Ok(Ok(None)) => return Err(Problem::Transient("The server closed the connection early".into())),
+                Ok(Ok(Some(bytes))) => got.extend_from_slice(&bytes),
+            }
+        }
+        if overlap > 0 {
+            let mut have = vec![0u8; overlap as usize];
+            read_at(&self.file, &mut have, from).map_err(|e| Problem::Permanent(format!("Can't read the file: {e}")))?;
+            if have != got[..overlap as usize] {
+                return Err(Problem::FileChanged);
+            }
+        }
+        Ok((response, got.split_off(overlap as usize)))
+    }
+
+    /// Reads a response into the file until the connection's range is done; `early` holds bytes already read from it.
+    async fn stream(&self, id: usize, src: usize, mut response: reqwest::Response, early: Vec<u8>) -> Result<(), Problem> {
         let source = self.source(src);
         let stat = &self.conns[id];
-        let mut buf: Vec<u8> = Vec::with_capacity(self.tuning.write_buffer);
+        stat.received.fetch_add(early.len() as u64, Ordering::SeqCst);
+        let mut buf: Vec<u8> = Vec::with_capacity(self.tuning.write_buffer.max(early.len()));
+        buf.extend_from_slice(&early);
         let mut stop = self.stop.clone();
         loop {
             let next = tokio::select! {
@@ -1502,6 +1583,25 @@ impl Job {
 #[cfg(unix)]
 fn write_at(file: &File, data: &[u8], offset: u64) -> std::io::Result<()> {
     std::os::unix::fs::FileExt::write_all_at(file, data, offset)
+}
+
+#[cfg(unix)]
+fn read_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, buf, offset)
+}
+
+#[cfg(windows)]
+fn read_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    while !buf.is_empty() {
+        let n = file.seek_read(buf, offset)?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        buf = &mut buf[n..];
+        offset += n as u64;
+    }
+    Ok(())
 }
 
 #[cfg(windows)]

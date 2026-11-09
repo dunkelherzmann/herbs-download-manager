@@ -168,6 +168,10 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
                 case (let t?, false): "\(t), can't resume"
                 case (nil, _): "size unknown, can't resume"
                 }
+                // Said now rather than when the download fails (free space, FAT32's 4 GB limit).
+                if let total = info.size, let problem = spaceProblem(folder: self.folder.path, size: total) {
+                    self.size.stringValue += " — \(problem)"
+                }
             case .failure(let error):
                 self.size.stringValue = errorText(error)
             }

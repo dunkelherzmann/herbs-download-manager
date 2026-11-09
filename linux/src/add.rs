@@ -171,12 +171,14 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::default();
     {
         let (manager, name, size, probed, pending) = (ctx.manager.clone(), name.clone(), size.clone(), probed.clone(), pending.clone());
+        let folder = folder.clone();
         link_entry.connect_changed(move |entry| {
             if let Some(id) = pending.borrow_mut().take() {
                 id.remove();
             }
             let url = entry.text().trim().to_string();
             let (manager, name, size, probed, pending2) = (manager.clone(), name.clone(), size.clone(), probed.clone(), pending.clone());
+            let folder = folder.clone();
             *pending.borrow_mut() = Some(glib::timeout_add_local_once(std::time::Duration::from_millis(500), move || {
                 pending2.borrow_mut().take();
                 if hd_core::links::find(&url).is_empty() {
@@ -192,11 +194,16 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                                 name.set_text(&p.name);
                             }
                             *probed.borrow_mut() = p.size;
-                            size.set_label(&match (p.size, p.resumable) {
+                            let mut text = match (p.size, p.resumable) {
                                 (Some(s), true) => format!("{}, resumable", format::bytes(s)),
                                 (Some(s), false) => format!("{}, can't resume", format::bytes(s)),
                                 (None, _) => "size unknown, can't resume".into(),
-                            });
+                            };
+                            // Said now rather than when the download fails (free space, FAT32's 4 GB limit).
+                            if let Some(problem) = p.size.and_then(|s| hd_core::disk::space_problem(&folder.borrow(), s)) {
+                                text = format!("{text} — {problem}");
+                            }
+                            size.set_label(&text);
                         }
                         Ok(Err(e)) => size.set_label(&e),
                         Err(_) => size.set_label(""),

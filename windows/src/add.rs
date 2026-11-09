@@ -662,11 +662,16 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                                     set_text(f.controls[&21], &p.name);
                                 }
                                 f.probed_size = p.size;
-                                set_text(f.controls[&24], &match (p.size, p.resumable) {
+                                let mut text = match (p.size, p.resumable) {
                                     (Some(s), true) => format!("{}, resumable", format::bytes(s)),
                                     (Some(s), false) => format!("{}, can't resume", format::bytes(s)),
                                     (None, _) => "size unknown, can't resume".into(),
-                                });
+                                };
+                                // Said now rather than when the download fails (free space, FAT32's 4 GB limit).
+                                if let Some(problem) = p.size.and_then(|s| hd_core::disk::space_problem(&f.folder, s)) {
+                                    text = format!("{text} — {problem}");
+                                }
+                                set_text(f.controls[&24], &text);
                             }
                             Err(e) => set_text(f.controls[&24], e),
                         }

@@ -204,6 +204,8 @@ struct Inner {
     settings: Mutex<Settings>,
     /// Where Delete puts files in tests; `None` is the system's Trash.
     trash_dir: Mutex<Option<PathBuf>>,
+    /// Connection limits learned from servers (host-limits.json).
+    learned: Arc<crate::hosts::Learned>,
     /// S5, shared by every download.
     limiter: Arc<Limiter>,
 }
@@ -286,6 +288,7 @@ impl Manager {
                 limiter: Arc::new(Limiter::new(settings.speed_limit)),
                 settings: Mutex::new(settings),
                 trash_dir: Mutex::new(None),
+                learned: Arc::new(crate::hosts::Learned::open(Some(dir))),
             }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
@@ -455,6 +458,7 @@ impl Manager {
                 state_file: Some(self.state_file(id)),
                 limits: vec![self.inner.limiter.clone(), limiter.clone()],
                 look_for_checksum_files: settings.look_for_checksum_files,
+                learned: self.inner.learned.clone(),
             };
             let progress = Progress::new();
             progress.downloaded.store(e.downloaded, Ordering::SeqCst);
@@ -666,6 +670,16 @@ impl Manager {
             result = attempt();
         }
         result
+    }
+
+    /// Servers' remembered connection limits, by host ("example.com:443"), for Settings.
+    pub fn host_limits(&self) -> Vec<(String, u32)> {
+        self.inner.learned.all().into_iter().map(|(h, l)| (h, l.connections)).collect()
+    }
+
+    /// Settings ▸ Forget: downloads learn every server's limit again.
+    pub fn forget_host_limits(&self) {
+        self.inner.learned.forget();
     }
 
     /// Tests and test copies of the app: "the Trash" is this folder, so they never fill the user's real Trash.
