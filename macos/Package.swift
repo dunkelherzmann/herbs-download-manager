@@ -1,9 +1,9 @@
 // swift-tools-version:6.0
 // macOS app: Swift 6 + AppKit over the Rust core (core/), called through Swift bindings that UniFFI generates
-// from ffi/. Build with scripts/build-macos.sh, which builds the Rust library and the bindings first.
+// from ffi/. Build with macos/scripts/build.sh, which builds the Rust library and the bindings first.
 import PackageDescription
 
-let rustLib = Context.packageDirectory + "/.build/rust"
+let rustLib = Context.packageDirectory + "/../.build/rust"
 
 let package = Package(
     name: "HerbsDownloadManager",
@@ -13,12 +13,12 @@ let package = Package(
     ],
     targets: [
         // Generated: the C header and module map of the Rust library.
-        .systemLibrary(name: "hd_ffiFFI", path: "macos/Sources/hd_ffiFFI"),
+        .systemLibrary(name: "hd_ffiFFI", path: "Sources/hd_ffiFFI"),
         // Generated: the Swift side of the bindings.
         .target(
             name: "HDCore",
             dependencies: ["hd_ffiFFI"],
-            path: "macos/Sources/HDCore",
+            path: "Sources/HDCore",
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
                 .unsafeFlags(["-L", rustLib]), .linkedLibrary("hd_ffi"),
@@ -29,7 +29,7 @@ let package = Package(
         .executableTarget(
             name: "HerbsDownloadManager",
             dependencies: ["HDCore"],
-            path: "macos/Sources/HerbsDownloadManager",
+            path: "Sources/HerbsDownloadManager",
             linkerSettings: [.linkedFramework("AppKit")]
         ),
     ]

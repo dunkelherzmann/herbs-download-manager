@@ -12,7 +12,7 @@ No open bugs in `bugs.md`.
 ## To build
 
 The Linux version is ported once the Mac version has each feature, item by item in the Mac's build order
-([`pending.md`](../pending.md)). Everything is still to build.
+([`macos/pending.md`](../macos/pending.md)). Everything is still to build.
 
 - [ ] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloadmanager.app`, `scripts/build-linux.sh --install`. (§1)
 - [ ] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Linux). (§7, §8, §10)

@@ -1,12 +1,12 @@
 #!/bin/sh
 # Builds "Herb's Download Manager.app" (Apple silicon) in dist/: the Rust core as a static library, its Swift bindings,
 # then the AppKit app. Needs the Xcode Command Line Tools and rustup's stable toolchain.
-# Usage: scripts/build-macos.sh [--install] [--zip]
+# Usage: macos/scripts/build.sh [--install] [--zip]
 #   --install  copies the app to /Applications (quitting a running copy first)
 #   --zip      also writes dist/Herbs-Download-Manager-<version>-macOS.zip
 set -eu
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VERSION="$(sh "$ROOT/scripts/version.sh")"
 NAME="Herb's Download Manager"
 SHORT="Herb's DM"   # the menu bar and anywhere macOS needs a short name
@@ -39,13 +39,13 @@ cp "$BUILD/uniffi/hd_ffi.swift" macos/Sources/HDCore/
 
 printf 'Building the app…\n'
 STATUS=0
-swift build -c release --arch arm64 --scratch-path "$BUILD/swift" >"$BUILD/build-swift.log" 2>&1 || STATUS=$?
+swift build --package-path macos -c release --arch arm64 --scratch-path "$BUILD/swift" >"$BUILD/build-swift.log" 2>&1 || STATUS=$?
 grep -E 'error|warning: ' "$BUILD/build-swift.log" | grep -v 'search path .* not found' | head -40 || true
 [ "$STATUS" = 0 ] || { echo "Build failed; full log: $BUILD/build-swift.log" >&2; exit 1; }
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-BIN="$(swift build -c release --arch arm64 --scratch-path "$BUILD/swift" --show-bin-path)"
+BIN="$(swift build --package-path macos -c release --arch arm64 --scratch-path "$BUILD/swift" --show-bin-path)"
 cp "$BIN/HerbsDownloadManager" "$APP/Contents/MacOS/HerbsDownloadManager"
 strip -x "$APP/Contents/MacOS/HerbsDownloadManager"
 

@@ -1,9 +1,9 @@
 # Mac: what isn't production-ready yet
 
-The macOS version is the reference: its features are the ones in [`SPECIFICATION.md`](SPECIFICATION.md). This file lists
+The macOS version is the reference: its features are the ones in [`SPECIFICATION.md`](../SPECIFICATION.md). This file lists
 what the Mac version still lacks or gets wrong against that list and the project's rules, in build order, each with
 its spec section. Fix broken items first, one pull request each, and tick an item with its PR number once it is built
-and its test passes on the Mac. [`bugs.md`](bugs.md) and [`enhancements.md`](enhancements.md) stay the record of requests and
+and its test passes on the Mac. [`bugs.md`](../bugs.md) and [`enhancements.md`](../enhancements.md) stay the record of requests and
 releases.
 
 ## Bugs to fix
@@ -13,7 +13,7 @@ No open bugs in `bugs.md`.
 ## To build
 
 - [x] **Project skeleton**: Rust core (Cargo workspace) with UniFFI Swift bindings, Swift 6 AppKit app,
-  `scripts/build-macos.sh`, `scripts/test.sh`, the `hd-mock` test server (ranges on/off, mirrors, changing files,
+  `macos/scripts/build.sh`, `scripts/test.sh`, the `hd-mock` test server (ranges on/off, mirrors, changing files,
   stalls, connection limits). (§1) #4
 - [x] **Single-source download engine**: one connection, `.hdpart` file, rename at the end. (§8) #5
 - [x] **Dynamic segmentation**: up to N connections, largest-range halving, 256 KiB minimum, takeover of silent
