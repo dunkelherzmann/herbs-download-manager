@@ -116,6 +116,24 @@ fn main() -> gtk::glib::ExitCode {
                         });
                     }
                 }
+                // The "Download finished" notification's Open and Show in Folder buttons.
+                for (name, show) in [("open-file", false), ("show-file", true)] {
+                    let action = gtk::gio::SimpleAction::new(name, Some(gtk::glib::VariantTy::UINT64));
+                    let manager = manager.clone();
+                    let app2 = app.clone();
+                    action.connect_activate(move |_, id| {
+                        let id = id.and_then(|v| v.get::<u64>());
+                        // The file may have been renamed or moved since: look it up now.
+                        let Some(path) = manager.rows().into_iter().find(|r| Some(r.id) == id).and_then(|r| r.path).filter(|p| p.exists()) else { return };
+                        let file = gtk::gio::File::for_path(&path);
+                        if show {
+                            gtk::FileLauncher::new(Some(&file)).open_containing_folder(app2.active_window().as_ref(), None::<&gtk::gio::Cancellable>, |_| {});
+                        } else {
+                            let _ = gtk::gio::AppInfo::launch_default_for_uri(&file.uri(), None::<&gtk::gio::AppLaunchContext>);
+                        }
+                    });
+                    app.add_action(&action);
+                }
                 let window = window::build(app, manager.clone());
                 features::run_if_asked(app, &manager);
                 window.present();

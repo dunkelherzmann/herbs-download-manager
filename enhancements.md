@@ -85,10 +85,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **More to do with a finished download:** Open and Show in Finder on the "finished" notification, Delete Completed, Move/Rename a finished file, and optionally the file's date from the server. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **More to do with a finished download:** Open and Show in Finder on the "finished" notification, Delete Completed, Move/Rename a finished file, and optionally the file's date from the server. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #53: the notification's Open and Show buttons (a click on Windows' balloon shows the file), Delete ▸ All Finished (already there), Rename… and Move To…, and S12 for the server's date.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.*
   - [ ] Mac
   - [ ] Linux
@@ -126,8 +126,9 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Delete sends files to the Trash instead of erasing them,** so they can be put back. *Requested 2026-11-09* (after a 6.6 GB file deleted with "Delete Files Too" couldn't be recovered). The button is now "Move to Trash Too"; the Recycle Bin on Windows, the desktop's trash on Linux; a file that can't go to the Trash stays where it is and the footer says so. Done in the shared core, and for the Mac's dialog, in #34.
+- [ ] **Delete sends files to the Trash instead of erasing them,** so they can be put back. *Requested 2026-11-09* (after a 6.6 GB file deleted with "Delete Files Too" couldn't be recovered). The button is now "Move to Trash Too"; the Recycle Bin on Windows, the desktop's trash on Linux; a file that can't go to the Trash stays where it is and the footer says so. Done in the shared core, and for the Mac's dialog, in #34; Linux and Windows have it since their delete dialogs (#43, #44), checked by the feature test on all three.
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
+  - [x] Linux
+  - [x] Windows
 - [x] **Natural wording in the spec's platform table:** "Built on Mac", "Built on Windows", "Built on Linux". *Requested 2026-11-09.* Done in the Download window PR for Linux.
+- [ ] **Make the repository public when releases are ready to go on it.** *Requested 2026-11-09.* Before switching it: a scan for secrets and private details (in the code and in the history), stale branches removed, a description and topics, and a README with install steps for Mac, Linux and Windows. Public repositories get GitHub Actions free, so the automatic checks on pull requests can come back then.

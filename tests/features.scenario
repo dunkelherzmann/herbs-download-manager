@@ -99,3 +99,16 @@ sign-in 127.0.0.1 herb test-password
 do resume f12/login.bin
 wait f12/login.bin finished 30
 expect f12/login.bin file-size 2097152
+
+feature Rename and move a finished file, with the server's date
+setting keep-server-date on
+add f13 start $L/dated.bin
+wait f13/dated.bin finished 30
+expect f13/dated.bin file-date 784111777
+do rename f13/dated.bin renamed.bin
+expect-file f13/renamed.bin exists
+expect-file f13/dated.bin absent
+do move f13/renamed.bin f13-moved
+expect-file f13-moved/renamed.bin exists
+expect-file f13/renamed.bin absent
+setting keep-server-date off

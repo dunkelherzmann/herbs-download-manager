@@ -309,6 +309,10 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         let openWith = menu.addItem(withTitle: "Open With", action: nil, keyEquivalent: "")
         openWith.submenu = openWithMenu(rows)
         menu.addItem(withTitle: "Show in Finder", action: #selector(W.showInFinder(_:)), keyEquivalent: "")
+        if rows.count == 1, rows[0].status.isFinished {
+            menu.addItem(withTitle: "Rename…", action: #selector(W.renameFile(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Move To…", action: #selector(W.moveFile(_:)), keyEquivalent: "")
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Resume", action: #selector(W.resumeSelected(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Pause", action: #selector(W.pauseSelected(_:)), keyEquivalent: "")

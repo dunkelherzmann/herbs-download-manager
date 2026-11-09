@@ -24,6 +24,7 @@ pub struct Settings {
     pub when_file_exists: WhenFileExists,
     pub look_for_checksum_files: bool,
     pub notify_when_finished: bool,
+    pub keep_server_date: bool,
 }
 
 impl From<settings::Settings> for Settings {
@@ -43,6 +44,7 @@ impl From<settings::Settings> for Settings {
             },
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
+            keep_server_date: s.keep_server_date,
         }
     }
 }
@@ -64,6 +66,7 @@ impl From<Settings> for settings::Settings {
             },
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
+            keep_server_date: s.keep_server_date,
         }
     }
 }
@@ -829,4 +832,22 @@ impl DownloadManager {
 #[uniffi::export]
 pub fn site_of(text: String) -> String {
     hd_core::vault::site_of(&text)
+}
+
+// --- Finished downloads ---------------------------------------------------------------------------------------------
+
+#[uniffi::export]
+impl DownloadManager {
+    /// Rename…: a finished download's file gets a new name in its folder; returns the new path.
+    pub fn rename_file(&self, id: u64, name: String) -> Result<String, CoreError> {
+        self.inner.rename_file(id, &name).map(|p| p.display().to_string()).map_err(|message| CoreError::Message { message })
+    }
+
+    /// Move To…: a finished download's file goes to `target` (a full path); returns it.
+    pub fn move_file(&self, id: u64, target: String) -> Result<String, CoreError> {
+        self.inner
+            .move_file(id, std::path::Path::new(&target))
+            .map(|p| p.display().to_string())
+            .map_err(|message| CoreError::Message { message })
+    }
 }

@@ -42,6 +42,8 @@ pub struct Request {
     pub limits: Vec<Arc<crate::limit::Limiter>>,
     /// S8: with no checksum set, look for `<link>.sha256` and the like before naming the file.
     pub look_for_checksum_files: bool,
+    /// S12: the finished file gets the server's date for it.
+    pub keep_server_date: bool,
     /// Connection limits learned from servers, shared by every download (and kept by the manager).
     pub learned: Arc<crate::hosts::Learned>,
     /// Sign-ins for links that need a login: each request gets its host's user name, password, cookies and referer.
@@ -286,6 +288,9 @@ pub struct ResumeState {
     /// A checksum the server announced in its first answer, kept so a resumed download still checks it.
     #[serde(default)]
     pub announced: Option<crate::checksum::Checksum>,
+    /// The file's date on the server (seconds since 1970), from its first answer (S12).
+    #[serde(default)]
+    pub server_date: Option<u64>,
 }
 
 impl ResumeState {
@@ -452,6 +457,7 @@ struct Job {
     per_server: usize,
     limits: Vec<Arc<crate::limit::Limiter>>,
     look_for_checksum_files: bool,
+    keep_server_date: bool,
     learned: Arc<crate::hosts::Learned>,
     vault: Arc<crate::vault::Vault>,
     sequential: bool,
@@ -626,7 +632,8 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
     let segs = if resumable { Segments::new(size.unwrap_or(0), tuning.min_split) } else { Segments::new(u64::MAX, u64::MAX) };
     progress.downloaded.store(0, Ordering::SeqCst);
     let announced = progress.announced.lock().unwrap().clone();
-    let state = ResumeState { url: req.url.clone(), dest, size, resumable, segments: Vec::new(), sources: Vec::new(), announced };
+    let server_date = http::last_modified(first.headers());
+    let state = ResumeState { url: req.url.clone(), dest, size, resumable, segments: Vec::new(), sources: Vec::new(), announced, server_date };
     let job = Job::new(client, &req, tuning, state, sources, file, segs, progress, &control, !resumable, max_conns);
     run(job, Some((first_idx, first)), max_conns, stop).await
 }
@@ -765,6 +772,13 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
     }
     match std::fs::rename(part_path(&dest), &dest) {
         Ok(()) => {
+            // S12: the server's date for the file, when it gives one.
+            if job.keep_server_date
+                && let Some(secs) = job.state.server_date
+                && let Ok(file) = std::fs::OpenOptions::new().write(true).open(&dest)
+            {
+                let _ = file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(secs));
+            }
             if let Some(path) = &job.state_file {
                 let _ = std::fs::remove_file(path);
             }
@@ -888,6 +902,7 @@ impl Job {
             per_server: req.connections_per_server.clamp(1, 32) as usize,
             limits: req.limits.clone(),
             look_for_checksum_files: req.look_for_checksum_files,
+            keep_server_date: req.keep_server_date,
             learned: req.learned.clone(),
             vault: req.vault.clone(),
             sequential,

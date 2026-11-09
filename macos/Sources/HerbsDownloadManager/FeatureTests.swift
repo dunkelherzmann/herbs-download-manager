@@ -53,6 +53,13 @@ final class FeatureHost: ScenarioHost, @unchecked Sendable {
             default: nil
             }
             return model.manager.setChecksum(id: id, algorithm: algorithm, value: args[1])  // the Options tab's field
+        // Rename…'s sheet and Move To…'s folder picker, answered.
+        case "rename":
+            guard let id = ids.first, let name = args.first else { return "rename needs a name" }
+            do { _ = try model.manager.renameFile(id: id, name: name) } catch { return errorText(error) }
+        case "move":
+            guard let id = ids.first, let target = args.first else { return "move needs a folder" }
+            do { _ = try model.manager.moveFile(id: id, target: target) } catch { return errorText(error) }
         default: return "no command \(name)"
         }
         return nil

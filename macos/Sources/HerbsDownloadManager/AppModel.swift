@@ -133,9 +133,12 @@ final class AppModel {
         content.title = "Download finished"
         content.body = row.name
         content.sound = .default
+        content.categoryIdentifier = FinishedNotifications.category
+        content.userInfo = ["id": row.id]
         let id = "finished-\(row.id)"
         Task {
             let center = UNUserNotificationCenter.current()
+            FinishedNotifications.shared.register()
             guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
             try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
         }

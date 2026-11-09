@@ -247,7 +247,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(deleteAllUnfinished(_:)): return rows.contains { !$0.status.isFinished }
         case #selector(deleteMissingFiles(_:)): return !Self.missing(rows).isEmpty
         case #selector(deleteEntireList(_:)): return !rows.isEmpty
-        case #selector(openSelected(_:)), #selector(showInFinder(_:)):
+        case #selector(openSelected(_:)), #selector(showInFinder(_:)), #selector(renameFile(_:)), #selector(moveFile(_:)):
             return selected.count == 1 && selected[0].path.map { FileManager.default.fileExists(atPath: $0) } == true
         case #selector(copyLink(_:)): return !selected.isEmpty
         case #selector(addConnection(_:)):
@@ -490,6 +490,61 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     @objc func showInFinder(_ sender: Any?) {
         guard let path = targets.first?.path else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    /// Rename… a finished download's file, in a sheet with its name selected up to the extension.
+    @objc func renameFile(_ sender: Any?) {
+        guard let row = targets.first, row.status.isFinished, let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename “\(row.name)”"
+        alert.informativeText = "The file keeps its folder and stays in the list."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = row.name
+        field.toolTip = "The file's new name"
+        field.setAccessibilityLabel("New name")
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                guard response == .alertFirstButtonReturn, field.stringValue != row.name else { return }
+                do { _ = try AppModel.shared.manager.renameFile(id: row.id, name: field.stringValue) } catch { self.showError(error) }
+                AppModel.shared.refresh()
+            }
+        }
+        // The name without its extension is selected, as in Finder.
+        DispatchQueue.main.async {
+            let stem = (row.name as NSString).deletingPathExtension
+            field.currentEditor()?.selectedRange = NSRange(location: 0, length: (stem as NSString).length)
+        }
+    }
+
+    /// Move To… : a folder picker; the file keeps its name.
+    @objc func moveFile(_ sender: Any?) {
+        guard let row = targets.first, row.status.isFinished, let window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Move Here"
+        panel.message = "Choose where “\(row.name)” goes"
+        if let path = row.path { panel.directoryURL = URL(fileURLWithPath: path).deletingLastPathComponent() }
+        panel.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                guard response == .OK, let folder = panel.url else { return }
+                let target = folder.appendingPathComponent(row.name).path
+                do { _ = try AppModel.shared.manager.moveFile(id: row.id, target: target) } catch { self.showError(error) }
+                AppModel.shared.refresh()
+            }
+        }
+    }
+
+    private func showError(_ error: Error) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = errorText(error)
+        alert.beginSheetModal(for: window)
     }
 
     @objc func copyLink(_ sender: Any?) {

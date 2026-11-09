@@ -759,3 +759,39 @@ fn a_link_that_needs_a_login_waits_for_one_then_finishes() {
     assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
     assert!(m.rows()[0].needs_login.is_none());
 }
+
+#[test]
+fn a_finished_file_can_be_renamed_and_moved_and_keep_the_server_s_date() {
+    let data = pattern(MIB, 46);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let mut f = MockFile::new(data.clone());
+    f.headers = vec!["Last-Modified: Sun, 06 Nov 1994 08:49:37 GMT".into()];
+    s.put("/dated.bin", f);
+    let dir = folder("rename");
+    let m = Manager::open(&dir).unwrap();
+    m.set_settings(hd_core::settings::Settings { keep_server_date: true, ..m.settings() });
+    let id = m.add(new(s.url("/dated.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Finished);
+    let path = m.rows()[0].path.clone().unwrap();
+    let date = std::fs::metadata(&path).unwrap().modified().unwrap();
+    assert_eq!(date.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(), 784_111_777);
+
+    assert!(m.rename_file(id, "a/b").is_err());
+    let renamed = m.rename_file(id, "renamed.bin").unwrap();
+    let files = path.parent().unwrap().to_path_buf();
+    assert_eq!(renamed, files.join("renamed.bin"));
+    assert!(!path.exists());
+    assert_eq!(m.rows()[0].name, "renamed.bin");
+    std::fs::write(files.join("taken.bin"), b"x").unwrap();
+    assert!(m.rename_file(id, "taken.bin").unwrap_err().contains("already there"));
+
+    let other = dir.join("elsewhere");
+    std::fs::create_dir_all(&other).unwrap();
+    let moved = m.move_file(id, &other.join("renamed.bin")).unwrap();
+    assert_eq!(std::fs::read(&moved).unwrap(), data);
+    assert_eq!(m.rows()[0].folder, other);
+    drop(m);
+    let m = Manager::open(&dir).unwrap();
+    assert_eq!(m.rows()[0].path.as_deref(), Some(moved.as_path()), "the new place is saved");
+}

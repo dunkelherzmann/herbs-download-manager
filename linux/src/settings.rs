@@ -80,8 +80,13 @@ pub fn open(ctx: &Ctx) {
     crate::explain_row(&exists, "What happens when a different file already has a new download's name");
     crate::explain_row(&notify, "Show a notification each time a download finishes");
     crate::explain_row(&checksum_files, "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)");
+    let server_date = adw::SwitchRow::builder().title("Keep the server's date for finished files")
+        .subtitle("The date the server gives the file, instead of when it finished downloading")
+        .active(s.keep_server_date).build();
+    crate::explain_row(&server_date, "A finished file gets the date the server gives it (Last-Modified) instead of the time it finished downloading");
     behaviour.add(&exists);
     behaviour.add(&checksum_files);
+    behaviour.add(&server_date);
     behaviour.add(&notify);
 
     // Remembered connection limits: servers that turned away extra connections, for a week.
@@ -113,6 +118,7 @@ pub fn open(ctx: &Ctx) {
         let (manager, limit, limit_value, unit) = (ctx.manager.clone(), limit.clone(), limit_value.clone(), unit.clone());
         let (at_once, per_download, per_server, retries, exists, notify, checksum_files) = (at_once.clone(), per_download.clone(),
             per_server.clone(), retries.clone(), exists.clone(), notify.clone(), checksum_files.clone());
+        let server_date = server_date.clone();
         move || {
             let s = Settings {
                 downloads_at_once: at_once.value() as u32,
@@ -124,6 +130,7 @@ pub fn open(ctx: &Ctx) {
                 when_file_exists: EXISTS[(exists.selected() as usize).min(3)].1,
                 notify_when_finished: notify.is_active(),
                 look_for_checksum_files: checksum_files.is_active(),
+                keep_server_date: server_date.is_active(),
                 ..manager.settings()
             };
             manager.set_settings(s);
@@ -144,6 +151,10 @@ pub fn open(ctx: &Ctx) {
     {
         let save = save.clone();
         checksum_files.connect_active_notify(move |_| save());
+    }
+    {
+        let save = save.clone();
+        server_date.connect_active_notify(move |_| save());
     }
     notify.connect_active_notify(move |_| save());
 

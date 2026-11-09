@@ -98,6 +98,7 @@ final class SettingsWindowController: NSWindowController {
     private let manageSignIns = NSButton(title: "Manage…", target: nil, action: nil)
     private let hostLimits = NSTextField(labelWithString: "")
     private let forgetLimits = NSButton(title: "Forget", target: nil, action: nil)
+    private let serverDate = NSButton(checkboxWithTitle: "Keep the server's date for finished files", target: nil, action: nil)
     private let checksumFiles = NSButton(checkboxWithTitle: "Look for checksum files next to the link", target: nil, action: nil)
     private let notify = NSButton(checkboxWithTitle: "Show a notification when a download finishes", target: nil,
                                   action: nil)
@@ -175,6 +176,10 @@ final class SettingsWindowController: NSWindowController {
         checksumFiles.toolTip = "When a download has no checksum set, look for <file>.sha256 (or .sha512, .sha1, .md5) "
             + "next to its link and check the file with it"
         checksumFiles.setAccessibilityIdentifier("settings-checksum-files")
+        serverDate.target = self
+        serverDate.action = #selector(save(_:))
+        serverDate.toolTip = "A finished file gets the date the server gives it (Last-Modified) instead of the time it finished downloading"
+        serverDate.setAccessibilityIdentifier("settings-server-date")
         notify.target = self
         notify.action = #selector(save(_:))
         notify.toolTip = "Show a macOS notification each time a download finishes"
@@ -192,6 +197,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
             [label("Sign-ins:"), NSStackView(views: [signInsText, manageSignIns])],
             [NSGridCell.emptyContentView, checksumFiles],
+            [NSGridCell.emptyContentView, serverDate],
             [NSGridCell.emptyContentView, notify],
         ])
         grid.column(at: 0).xPlacement = .trailing
@@ -222,6 +228,7 @@ final class SettingsWindowController: NSWindowController {
         speed.limit = s.speedLimit
         whenExists.selectItem(at: Self.existsChoices.firstIndex { $0.1 == s.whenFileExists } ?? 0)
         checksumFiles.state = s.lookForChecksumFiles ? .on : .off
+        serverDate.state = s.keepServerDate ? .on : .off
         showHostLimits()
         showSignIns()
         notify.state = s.notifyWhenFinished ? .on : .off
@@ -237,6 +244,7 @@ final class SettingsWindowController: NSWindowController {
         s.speedLimit = speed.limit
         s.whenFileExists = Self.existsChoices[max(0, whenExists.indexOfSelectedItem)].1
         s.lookForChecksumFiles = checksumFiles.state == .on
+        s.keepServerDate = serverDate.state == .on
         s.notifyWhenFinished = notify.state == .on
         AppModel.shared.settings = s
         if s.notifyWhenFinished, (sender as? NSButton) === notify { AppModel.shared.askToNotify() }

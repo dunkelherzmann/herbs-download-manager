@@ -67,6 +67,7 @@ const S_LIMITS: u16 = 83;
 const S_FORGET: u16 = 84;
 const S_SIGN_INS: u16 = 85;
 const S_MANAGE: u16 = 86;
+const S_SERVER_DATE: u16 = 87;
 const S_CLOSE: u16 = 2;
 
 const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
@@ -484,7 +485,7 @@ pub fn settings(ctx: &Ctx) {
     let folder = crate::save_folder(&ctx.manager).display().to_string();
     let (limits_text, limits_detail) = hd_core::hosts::describe(&ctx.manager.host_limits());
     let sign_ins = crate::signins::summary(ctx);
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 490), &[
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 518), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -504,14 +505,15 @@ pub fn settings(ctx: &Ctx) {
         (0, w!("STATIC"), "When a file exists:", LABEL, 12, 270, 170, 20),
         (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 266, 230, 160),
         (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 302, 340, 24),
-        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 330, 340, 24),
-        (0, w!("STATIC"), "Server limits:", LABEL, 12, 366, 170, 20),
-        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 366, 250, 20),
-        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 360, 95, 28),
-        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 400, 170, 20),
-        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 400, 250, 20),
-        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 394, 95, 28),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 446, 85, 30),
+        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 330, 340, 24),
+        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 358, 340, 24),
+        (0, w!("STATIC"), "Server limits:", LABEL, 12, 394, 170, 20),
+        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 394, 250, 20),
+        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 388, 95, 28),
+        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 428, 170, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 428, 250, 20),
+        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 422, 95, 28),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 474, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -526,6 +528,7 @@ pub fn settings(ctx: &Ctx) {
         (S_EXISTS, "", "What happens when a different file already has a new download's name"),
         (S_CHECKSUM_FILES, "", "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)"),
         (S_NOTIFY, "", "Show a notification each time a download finishes"),
+        (S_SERVER_DATE, "", "A finished file gets the date the server gives it (Last-Modified) instead of the time it finished downloading"),
         (S_LIMITS, "Server limits", limits_detail.as_str()),
         (S_FORGET, "", "Forget every server's remembered limit; downloads learn them again"),
         (S_MANAGE, "Manage sign-ins", "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"),
@@ -544,6 +547,7 @@ pub fn settings(ctx: &Ctx) {
         }
         set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
         set_checked(w.controls[&S_CHECKSUM_FILES], s.look_for_checksum_files);
+        set_checked(w.controls[&S_SERVER_DATE], s.keep_server_date);
         unsafe {
             let _ = EnableWindow(w.controls[&S_FORGET], !w.ctx.manager.host_limits().is_empty());
         }
@@ -571,6 +575,7 @@ fn save_settings(hwnd: HWND) {
             when_file_exists: EXISTS[selection(w.controls[&S_EXISTS]).min(3)].1,
             notify_when_finished: checked(w.controls[&S_NOTIFY]),
             look_for_checksum_files: checked(w.controls[&S_CHECKSUM_FILES]),
+            keep_server_date: checked(w.controls[&S_SERVER_DATE]),
             ..current
         };
         w.ctx.manager.set_settings(s);
@@ -738,7 +743,7 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
                         })),
                         S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == EN_KILLFOCUS => save_settings(hwnd),
-                        S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES => save_settings(hwnd),
+                        S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES | S_SERVER_DATE => save_settings(hwnd),
                         S_MANAGE => {
                             if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
                                 crate::signins::open(&ctx);

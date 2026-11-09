@@ -37,6 +37,30 @@ pub fn validator(headers: &HeaderMap) -> Option<String> {
     headers.get(LAST_MODIFIED).and_then(|v| v.to_str().ok()).map(str::to_string)
 }
 
+/// The file's date on the server (`Last-Modified`, in the usual "Sun, 06 Nov 1994 08:49:37 GMT" form), as seconds
+/// since 1970.
+pub fn last_modified(headers: &HeaderMap) -> Option<u64> {
+    parse_http_date(headers.get(LAST_MODIFIED)?.to_str().ok()?)
+}
+
+pub fn parse_http_date(text: &str) -> Option<u64> {
+    let parts: Vec<&str> = text.split_whitespace().collect();
+    let [_, day, month, year, time, "GMT"] = parts.as_slice() else { return None };
+    let month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].iter().position(|m| m == month)? as i64 + 1;
+    let (day, year): (i64, i64) = (day.parse().ok()?, year.parse().ok()?);
+    let hms: Vec<i64> = time.split(':').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+    let [h, m, s] = hms.as_slice() else { return None };
+    // Days since 1970 for a date in the proleptic Gregorian calendar (Howard Hinnant's days_from_civil).
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days * 86_400 + h * 3600 + m * 60 + s).ok()
+}
+
 /// The file name from `Content-Disposition`, else the last part of the URL's path, else "download".
 pub fn file_name(headers: &HeaderMap, url: &reqwest::Url) -> String {
     let from_header = headers
@@ -123,6 +147,9 @@ mod tests {
     #[test]
     fn prefers_strong_etag() {
         assert_eq!(validator(&headers(&[(ETAG, "\"abc\""), (LAST_MODIFIED, "x")])), Some("\"abc\"".into()));
+        assert_eq!(parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT"), Some(784_111_777));
+        assert_eq!(parse_http_date("Sat, 29 Feb 2020 00:00:00 GMT"), Some(1_582_934_400));
+        assert_eq!(parse_http_date("yesterday"), None);
         assert_eq!(validator(&headers(&[(ETAG, "W/\"abc\""), (LAST_MODIFIED, "x")])), Some("x".into()));
     }
 

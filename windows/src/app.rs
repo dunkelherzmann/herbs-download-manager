@@ -60,6 +60,16 @@ const C_RESTART: u16 = 140;
 const C_ADD_CONNECTION: u16 = 141;
 const C_REMOVE_CONNECTION: u16 = 142;
 const C_FIND_DONE: u16 = 143;
+const C_RENAME: u16 = 144;
+const C_MOVE: u16 = 145;
+/// The notification area icon's messages (a click on the "Download finished" balloon).
+const WM_TRAY: u32 = WM_APP + 21;
+const NIN_BALLOONUSERCLICK: u32 = 0x405;
+
+thread_local! {
+    /// The download the last "Download finished" balloon was about.
+    static LAST_FINISHED: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
 const C_COLUMN: u16 = 160; // + column index
 const ID_SIDEBAR: u16 = 200;
 const ID_LIST: u16 = 201;
@@ -546,7 +556,7 @@ unsafe fn insert_tree(tree: HWND, parent: HTREEITEM, text: &str, data: isize) ->
 /// The Mac's shortcuts with Ctrl (§3, §4).
 unsafe fn accelerator_table() -> HACCEL {
     let ctrl = FCONTROL | FVIRTKEY;
-    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 19] = [
+    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 20] = [
         (ctrl, b'O' as u16, C_DOWNLOAD_WINDOW),
         (ctrl | FALT, b'M' as u16, C_ADD_MIRROR),
         (ctrl, b'N' as u16, C_NEW),
@@ -565,6 +575,7 @@ unsafe fn accelerator_table() -> HACCEL {
         (ctrl, b'F' as u16, C_FIND),
         (ctrl, b'A' as u16, C_SELECT_ALL),
         (ctrl, b'C' as u16, C_COPY_LINK),
+        (FVIRTKEY, VK_F2.0, C_RENAME),
         (ctrl, b'I' as u16, C_PROPERTIES),
     ];
     let table: Vec<ACCEL> = keys.iter().map(|&(f, key, cmd)| ACCEL { fVirt: f, key, cmd }).collect();
@@ -724,6 +735,7 @@ fn refresh() {
         {
             for r in s.rows.iter().filter(|r| finished.contains(&r.id) && !before.contains(&r.id)) {
                 notify(s.window, &mut s.tray_icon, &r.name);
+                LAST_FINISHED.set(Some(r.id));
             }
         }
         s.finished_ids = Some(finished);
@@ -768,6 +780,7 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
         C_DELETE | C_COPY_LINK => !selected.is_empty(),
         C_OPEN => selected.len() == 1 && selected[0].status == Status::Finished,
         C_SHOW_IN_FOLDER => selected.len() == 1,
+        C_RENAME | C_MOVE => selected.len() == 1 && selected[0].status == Status::Finished && selected[0].path.as_ref().is_some_and(|p| p.exists()),
         C_ADD_CONNECTION => selected.len() == 1 && unfinished && selected[0].allowed_connections < 32,
         C_REMOVE_CONNECTION => selected.len() == 1 && unfinished && selected[0].allowed_connections > 1,
         C_DELETE_FINISHED => rows.iter().any(|r| r.status == Status::Finished),
@@ -824,6 +837,7 @@ unsafe fn show_main_menu(hwnd: HWND, button: HWND) {
         ("Tasks", 0), ("Resume\tCtrl+R", C_RESUME), ("Pause\tCtrl+.", C_PAUSE), ("-", 0),
         ("Start Queue\tCtrl+Shift+R", C_START_QUEUE), ("Stop Queue", C_STOP_QUEUE), ("-", 0),
         ("Stop All\tCtrl+Alt+.", C_STOP_ALL), ("-", 0), ("Add Mirror…\tCtrl+Alt+M", C_ADD_MIRROR), ("Properties\tCtrl+I", C_PROPERTIES), ("-", 0),
+        ("Rename…\tF2", C_RENAME), ("Move To…", C_MOVE), ("-", 0),
         ("Delete", 0), ("Selected\tDelete", C_DELETE), ("All Finished", C_DELETE_FINISHED), ("All Unfinished", C_DELETE_UNFINISHED),
         ("All Missing Files", C_DELETE_MISSING), ("Entire List", C_DELETE_ALL), (")", 0), (")", 0),
         ("View", 0), ("Show Sidebar", C_SIDEBAR), ("Keep on Top\tCtrl+Alt+T", C_KEEP_ON_TOP), ("Columns", 0),
@@ -862,7 +876,8 @@ unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
         COLUMNS.iter().enumerate().skip(1).map(|(i, (name, _, _))| (*name, C_COLUMN + i as u16)).collect()
     } else {
         vec![
-            ("Open", C_OPEN), ("Show in Folder", C_SHOW_IN_FOLDER), ("-", 0), ("Resume", C_RESUME), ("Pause", C_PAUSE),
+            ("Open", C_OPEN), ("Show in Folder", C_SHOW_IN_FOLDER), ("Rename…", C_RENAME), ("Move To…", C_MOVE), ("-", 0),
+            ("Resume", C_RESUME), ("Pause", C_PAUSE),
             ("Restart", C_RESTART), ("-", 0), ("Add Mirror…", C_ADD_MIRROR), ("Connections", 0),
             ("Add Connection", C_ADD_CONNECTION), ("Remove Connection", C_REMOVE_CONNECTION), (")", 0), ("-", 0),
             ("Copy Link", C_COPY_LINK), ("Properties", C_PROPERTIES), ("-", 0), ("Delete", C_DELETE),
@@ -882,7 +897,9 @@ fn notify(hwnd: HWND, added: &mut bool, name: &str) {
             cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: hwnd,
             uID: 1,
-            uFlags: NIF_ICON | NIF_TIP | NIF_INFO,
+            // A click on the balloon shows the file in its folder (WM_TRAY).
+            uFlags: NIF_ICON | NIF_TIP | NIF_INFO | NIF_MESSAGE,
+            uCallbackMessage: WM_TRAY,
             hIcon: LoadIconW(None, IDI_APPLICATION).unwrap_or_default(),
             dwInfoFlags: NIIF_INFO,
             ..Default::default()
@@ -1171,6 +1188,29 @@ fn command(hwnd: HWND, id: u16) {
                     open_path(&p, false);
                 }
             }
+            C_RENAME => {
+                if let Some(r) = sel.first().filter(|r| r.status == Status::Finished)
+                    && let Some(ctx) = add_ctx()
+                    && let Some((v, _)) = crate::signins::form(&ctx, hwnd, "Rename", &format!("Rename “{}”. The file keeps its folder and stays in the list.", r.name),
+                                                               &[crate::signins::Field { label: "New name", value: &r.name, secret: false, help: "The file's new name" }],
+                                                               None, "Rename")
+                    && v[0] != r.name
+                    && let Err(e) = ctx.manager.rename_file(r.id, &v[0])
+                {
+                    message(hwnd, &e);
+                }
+                refresh();
+            }
+            C_MOVE => {
+                if let Some(r) = sel.first().filter(|r| r.status == Status::Finished)
+                    && let Some(folder) = crate::add::choose_folder(hwnd, &format!("Move “{}” To", r.name))
+                    && let Some(manager) = with(|s| s.manager.clone())
+                    && let Err(e) = manager.move_file(r.id, &folder.join(&r.name))
+                {
+                    message(hwnd, &e);
+                }
+                refresh();
+            }
             C_SHOW_IN_FOLDER => {
                 if let Some(r) = sel.first() {
                     match &r.path {
@@ -1364,6 +1404,16 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 }
                 LRESULT(0)
             }
+            WM_TRAY => {
+                if (lparam.0 as u32 & 0xffff) == NIN_BALLOONUSERCLICK
+                    && let Some(id) = LAST_FINISHED.get()
+                    && let Some(r) = with(|s| s.manager.rows().into_iter().find(|r| r.id == id)).flatten()
+                    && let Some(p) = r.path.filter(|p| p.exists())
+                {
+                    open_path(&p, true);
+                }
+                LRESULT(0)
+            }
             crate::features::WM_FEATURE => {
                 crate::features::on_main(hwnd, &mut *(lparam.0 as *mut crate::features::Request));
                 LRESULT(0)
@@ -1405,5 +1455,13 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
+    }
+}
+
+/// A short message over the window.
+fn message(hwnd: HWND, text: &str) {
+    let text = wide(text);
+    unsafe {
+        MessageBoxW(Some(hwnd), PCWSTR(text.as_ptr()), w!("Herb's Download Manager"), MB_OK | MB_ICONINFORMATION);
     }
 }

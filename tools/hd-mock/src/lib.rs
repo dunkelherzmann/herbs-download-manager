@@ -398,6 +398,9 @@ pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServe
         let mut login = MockFile::new(sum.clone());
         login.requires = vec![("authorization".into(), "Basic aGVyYjp0ZXN0LXBhc3N3b3Jk".into())];
         server.put("/login.bin", login);
+        let mut dated = MockFile::new(sum.clone());
+        dated.headers = vec!["Last-Modified: Sun, 06 Nov 1994 08:49:37 GMT".into()];
+        server.put("/dated.bin", dated);
         server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
         servers.push(server);
     }

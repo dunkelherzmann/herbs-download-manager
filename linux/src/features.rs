@@ -74,6 +74,9 @@ fn on_main(name: &str, ids: &[u64], args: &[String]) -> Result<(), String> {
                 ctx.manager.add_mirrors(ids[0], args);
                 Ok(())
             }
+            // Rename…'s dialog and Move To…'s folder picker, answered.
+            "rename" => ctx.manager.rename_file(ids[0], &args[0]).map(|_| ()),
+            "move" => ctx.manager.move_file(ids[0], std::path::Path::new(&args[0])).map(|_| ()),
             // The Options tab's checksum field.
             "set-checksum" => {
                 let algorithm = hd_core::checksum::Algorithm::ALL

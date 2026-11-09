@@ -60,6 +60,10 @@ fn main_menu() -> gio::Menu {
     item(&one, "Add Mirror…", "add-mirror");
     item(&one, "Properties", "properties");
     tasks.append_section(None, &one);
+    let file = gio::Menu::new();
+    item(&file, "Rename…", "rename-file");
+    item(&file, "Move To…", "move-file");
+    tasks.append_section(None, &file);
     let delete = gio::Menu::new();
     item(&delete, "Selected", "delete");
     item(&delete, "All Finished", "delete-finished");
@@ -107,6 +111,8 @@ fn context_menu() -> gio::Menu {
     let open = gio::Menu::new();
     item(&open, "Open", "open");
     item(&open, "Show in Folder", "show-in-folder");
+    item(&open, "Rename…", "rename-file");
+    item(&open, "Move To…", "move-file");
     menu.append_section(None, &open);
     let run = gio::Menu::new();
     item(&run, "Resume", "resume");
@@ -305,6 +311,10 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
                 for r in rows.iter().filter(|r| finished.contains(&r.id) && !before.contains(&r.id)) {
                     let n = gio::Notification::new("Download finished");
                     n.set_body(Some(&r.name));
+                    // Open and Show in Folder (enhancements.md); clicking the notification shows the file too.
+                    n.add_button_with_target_value("Open", "app.open-file", Some(&r.id.to_variant()));
+                    n.add_button_with_target_value("Show in Folder", "app.show-file", Some(&r.id.to_variant()));
+                    n.set_default_action_and_target_value("app.show-file", Some(&r.id.to_variant()));
                     app.send_notification(Some(&format!("finished-{}", r.id)), &n);
                 }
             }
@@ -466,6 +476,9 @@ fn enable(window: &adw::ApplicationWindow, selected: &[Row], rows: &[Row]) {
     set("copy-link", !selected.is_empty());
     set("open", selected.len() == 1 && selected[0].status == Status::Finished);
     set("show-in-folder", selected.len() == 1);
+    let finished_file = selected.len() == 1 && selected[0].status == Status::Finished && selected[0].path.as_ref().is_some_and(|p| p.exists());
+    set("rename-file", finished_file);
+    set("move-file", finished_file);
     set("add-connection", selected.len() == 1 && unfinished && selected[0].allowed_connections < 32);
     set("remove-connection", selected.len() == 1 && unfinished && selected[0].allowed_connections > 1);
     set("delete-finished", rows.iter().any(|r| r.status == Status::Finished));
@@ -541,6 +554,54 @@ fn add_actions(
                 gtk::FileLauncher::new(Some(&gio::File::for_path(target))).open_containing_folder(
                     Some(&window2), None::<&gio::Cancellable>, |_| {});
             }
+        }));
+    }
+    // Rename… and Move To… a finished download's file (enhancements.md).
+    {
+        let (ui, refresh, window2) = (ui.clone(), refresh.clone(), window.clone());
+        add("rename-file", &["F2"], Box::new(move || {
+            let Some(r) = ui.list.selected().into_iter().next().filter(|r| r.status == Status::Finished) else { return };
+            let d = adw::AlertDialog::new(Some(&format!("Rename “{}”", r.name)), Some("The file keeps its folder and stays in the list."));
+            let field = gtk::Entry::builder().text(&r.name).activates_default(true).build();
+            crate::explain(&field, "New name", "The file's new name");
+            d.set_extra_child(Some(&field));
+            d.add_response("cancel", "Cancel");
+            d.add_response("rename", "Rename");
+            d.set_response_appearance("rename", adw::ResponseAppearance::Suggested);
+            d.set_default_response(Some("rename"));
+            // The name without its extension is selected, as in Files.
+            let stem = std::path::Path::new(&r.name).file_stem().map(|s| s.to_string_lossy().chars().count()).unwrap_or(0);
+            field.connect_map(move |f| f.select_region(0, stem as i32));
+            let (ui2, refresh2, window3) = (ui.clone(), refresh.clone(), window2.clone());
+            d.connect_response(Some("rename"), move |_, _| {
+                if field.text() != r.name.as_str()
+                    && let Err(e) = ui2.manager.rename_file(r.id, &field.text())
+                {
+                    tell(&window3, &e);
+                }
+                refresh2();
+            });
+            d.present(Some(&window2));
+        }));
+    }
+    {
+        let (ui, refresh, window2) = (ui.clone(), refresh.clone(), window.clone());
+        add("move-file", &[], Box::new(move || {
+            let Some(r) = ui.list.selected().into_iter().next().filter(|r| r.status == Status::Finished) else { return };
+            let picker = gtk::FileDialog::builder().title(format!("Move “{}” To", r.name)).accept_label("Move Here").build();
+            if let Some(folder) = r.path.as_ref().and_then(|p| p.parent()) {
+                picker.set_initial_folder(Some(&gio::File::for_path(folder)));
+            }
+            let (ui2, refresh2, window3) = (ui.clone(), refresh.clone(), window2.clone());
+            picker.select_folder(Some(&window2), None::<&gio::Cancellable>, move |result| {
+                if let Ok(dir) = result
+                    && let Some(folder) = dir.path()
+                    && let Err(e) = ui2.manager.move_file(r.id, &folder.join(&r.name))
+                {
+                    tell(&window3, &e);
+                }
+                refresh2();
+            });
         }));
     }
     // Delete (§10): the selection, or one of Tasks ▸ Delete's groups.
@@ -710,4 +771,11 @@ pub fn capture_then_quit(app: &adw::Application, window: &adw::ApplicationWindow
         }
         app.quit();
     });
+}
+
+/// A short message over the window.
+fn tell(window: &adw::ApplicationWindow, text: &str) {
+    let d = adw::AlertDialog::new(Some(text), None);
+    d.add_response("ok", "OK");
+    d.present(Some(window));
 }

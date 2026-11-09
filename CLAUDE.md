@@ -5,6 +5,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 ## Checking and merging
 
+- The repository is private until releases are ready; then it goes public (Herbert, 2026-11-09). Before that step:
+  a secrets and privacy scan (code and history), stale branches removed, description and topics, README install
+  steps. Once public, GitHub Actions is free and can check pull requests again.
+
 - No GitHub CI (the repo is private and Actions minutes cost money): check a pushed branch with `scripts/check.sh`,
   which runs the Mac build and tests here and `cargo test --workspace` on linux and windows, then merge.
 - Never run `cargo fmt`: there is no `rustfmt.toml` and the code isn't rustfmt-formatted (about 120-column lines);

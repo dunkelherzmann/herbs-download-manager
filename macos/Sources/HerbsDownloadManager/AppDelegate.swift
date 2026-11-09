@@ -8,6 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pending: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A click on a "Download finished" notification reaches the app even after it was relaunched.
+        if ProcessInfo.processInfo.environment["HD_DATA_DIR"] == nil, Bundle.main.bundleIdentifier != nil {
+            FinishedNotifications.shared.register()
+        }
         InWindowMenu.install(full: MainMenu.build(), appMenu: MainMenu.appMenu(), appName: "Herb's DM")
         let window = MainWindowController()
         mainWindow = window

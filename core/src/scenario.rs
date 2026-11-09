@@ -11,11 +11,14 @@
 //! add-as-mirrors FOLDER URL…       Add Links' "Treat as mirrors of one file", started
 //! do COMMAND [ROW] [ARG…]          an app command with ROW selected: resume, pause, restart, delete,
 //!                                  delete-files, add-mirror (ARG: links), set-checksum (ARG: algorithm, value),
+//!                                  rename (ARG: new name), move (ARG: a folder under $DL),
 //!                                  start-queue, stop-queue, stop-all
 //! setting KEY VALUE                downloads-at-once, speed-limit (bytes a second, 0 for none),
-//!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off)
+//!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off),
+//!                                  keep-server-date (on, off)
 //! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
-//! expect ROW CHECK [VALUE]         file-size N, sources N, status-contains TEXT, verified-contains TEXT, gone
+//! expect ROW CHECK [VALUE]         file-size N, file-date SECONDS, sources N, status-contains TEXT,
+//!                                  verified-contains TEXT, gone
 //! expect-running N                 how many downloads run now
 //! sign-in SITE USER PASSWORD       saves a sign-in (as plain text in the test's own data folder)
 //! expect-file PATH exists|absent   a path under $DL
@@ -93,6 +96,13 @@ impl Run<'_> {
                     "start-queue" | "stop-queue" | "stop-all" => (vec![], &words[2..]),
                     _ => (vec![self.need_row(&arg(2)?)?.id], &words[3..]),
                 };
+                // Move To…'s folder picker answers with a full path: the folder under $DL and the file's name.
+                if command == "move" {
+                    let name = self.need_row(&arg(2)?)?.name;
+                    let target = self.dl.join(arg(3)?).join(name);
+                    std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+                    return self.host.command(&command, &ids, &[target.display().to_string()]);
+                }
                 self.host.command(&command, &ids, rest)
             }
             "sign-in" => {
@@ -118,6 +128,7 @@ impl Run<'_> {
                         }
                     }
                     "look-for-checksum-files" => s.look_for_checksum_files = value == "on",
+                    "keep-server-date" => s.keep_server_date = value == "on",
                     _ => return Err(format!("no setting {key}")),
                 }
                 self.manager.set_settings(s);
@@ -171,6 +182,11 @@ impl Run<'_> {
                         .ok_or(format!("{spec} has {} sources, not {value}", r.sources_known)),
                     "status-contains" => r.status_text.contains(&value).then_some(())
                         .ok_or(format!("{spec}'s status is “{}”", r.status_text)),
+                    "file-date" => {
+                        let secs = r.path.as_ref().and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok())
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+                        (secs == value.parse().ok()).then_some(()).ok_or(format!("{spec}'s file is dated {secs:?}, not {value}"))
+                    }
                     "verified-contains" => {
                         let note = self.manager.detail(r.id).and_then(|d| d.verified).unwrap_or_default();
                         note.contains(&value).then_some(()).ok_or(format!("{spec}'s checksum note is “{note}”"))
@@ -317,6 +333,8 @@ impl Host for DirectHost {
                 m.add_mirrors(ids[0], args);
                 Ok(())
             }
+            "rename" => m.rename_file(ids[0], &args[0]).map(|_| ()),
+            "move" => m.move_file(ids[0], Path::new(&args[0])).map(|_| ()),
             "set-checksum" => {
                 let algorithm = crate::checksum::Algorithm::ALL.into_iter().find(|a| a.name().eq_ignore_ascii_case(&args[0]) || a.extension() == args[0])
                     .ok_or("no such algorithm")?;

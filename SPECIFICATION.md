@@ -144,10 +144,16 @@ and Paste in text fields included.
 
 ### 4.1 Download context menu
 
-Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in Folder) · — · Resume · Pause ·
+Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in Folder) · Rename… · Move To… · — · Resume · Pause ·
 Restart · — · **Add Mirror…** · **Connections ▸** (Add Connection, Remove Connection, the live list) · — ·
 Copy Link · Properties · — · Delete. Items that don't apply are hidden (Connections for finished downloads) or
 disabled.
+
+**Rename…** (F2 on Linux and Windows) and **Move To…** work on one finished download whose file is on disk; they are
+also in the Main Menu's Tasks. Rename asks for the new name, with the part before the extension selected; Move To asks
+for a folder, and the file keeps its name. The download stays in the list with its new name and folder. An existing
+file is never replaced: the app says "A file named “x” is already there". A move to another drive copies the file,
+checks the copy's size and only then removes the original.
 
 ## 5. Adding downloads
 
@@ -315,9 +321,10 @@ as long as one source stays on.
 | S6 | Retries per source | 5 | 0–20 |
 | S7 | When a file exists | Ask | Ask, Keep both, Skip the new link, Replace the existing file (§5.6) |
 | S8 | Look for checksum files | On | fetches `<file>.sha256` (and `.sha512`, `.sha1`, `.md5`) next to the link and verifies with it |
-| S9 | Show a notification when a download finishes | On | |
+| S9 | Show a notification when a download finishes | On | with **Open** and **Show in Finder** (Show in Folder) buttons; clicking it shows the file. Windows' balloon has no buttons: clicking it shows the file |
 | S10 | Server limits | | how many servers limit connections, with **Forget** (§7.4) |
 | S11 | Sign-ins | | how many are saved and how, with **Manage…** (§9.1) |
+| S12 | Keep the server's date for finished files | Off | the file gets the server's `Last-Modified` date instead of the time it finished |
 
 Settings opens with ⌘, (Ctrl+, on Linux and Windows) as one window, and each change applies at once, with no OK
 button. They are kept in `settings.json` in the app's data folder, the same file on every platform; a missing or

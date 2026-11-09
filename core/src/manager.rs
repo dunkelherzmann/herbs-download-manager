@@ -466,6 +466,7 @@ impl Manager {
                 state_file: Some(self.state_file(id)),
                 limits: vec![self.inner.limiter.clone(), limiter.clone()],
                 look_for_checksum_files: settings.look_for_checksum_files,
+                keep_server_date: settings.keep_server_date,
                 learned: self.inner.learned.clone(),
                 vault: self.inner.vault.clone(),
             };
@@ -661,6 +662,79 @@ impl Manager {
         self.save();
         self.pump();
         kept
+    }
+
+    /// Rename… (enhancements.md: more to do with a finished download): gives a finished download's file a new name in
+    /// its folder. Returns the new path, or why it can't.
+    pub fn rename_file(&self, id: u64, name: &str) -> Result<PathBuf, String> {
+        let name = name.trim();
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) || (cfg!(windows) && name.contains([':', '*', '?', '"', '<', '>', '|'])) {
+            return Err("That isn't a file name".into());
+        }
+        let dest = self.finished_file(id)?;
+        let folder = dest.parent().map(Path::to_path_buf).unwrap_or_default();
+        self.move_file(id, &folder.join(name))
+    }
+
+    /// Move To… : moves a finished download's file to `target` (a new path, in this folder or another, on this drive or
+    /// another). An existing file is never replaced. Returns the new path, or why it can't.
+    pub fn move_file(&self, id: u64, target: &Path) -> Result<PathBuf, String> {
+        let dest = self.finished_file(id)?;
+        if target == dest {
+            return Ok(dest);
+        }
+        let shown = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        // A file whose name only changes case is the same file on case-insensitive drives.
+        let same_file = target.parent() == dest.parent()
+            && target.to_string_lossy().to_lowercase() == dest.to_string_lossy().to_lowercase();
+        if target.exists() && !same_file {
+            return Err(format!("A file named “{shown}” is already there"));
+        }
+        if let Err(e) = std::fs::rename(&dest, target) {
+            // Another drive: copy, then remove the original once the copy is whole.
+            let copied = std::fs::copy(&dest, target).and_then(|n| {
+                let size = std::fs::metadata(&dest)?.len();
+                if n != size {
+                    return Err(std::io::Error::other("the copy is incomplete"));
+                }
+                if let Ok(t) = std::fs::metadata(&dest).and_then(|m| m.modified())
+                    && let Ok(f) = std::fs::OpenOptions::new().write(true).open(target)
+                {
+                    let _ = f.set_modified(t);
+                }
+                std::fs::remove_file(&dest)
+            });
+            if let Err(copy) = copied {
+                // The original is still there: drop a partial (or extra) copy.
+                if dest.exists() {
+                    let _ = std::fs::remove_file(target);
+                }
+                return Err(format!("Can't move “{}”: {}", dest.file_name().unwrap_or_default().to_string_lossy(),
+                                   if e.kind() == std::io::ErrorKind::CrossesDevices { copy } else { e }));
+            }
+        }
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            if let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) {
+                slot.entry.dest = Some(target.to_path_buf());
+                slot.entry.name = Some(shown);
+                if let Some(folder) = target.parent() {
+                    slot.entry.folder = folder.to_path_buf();
+                }
+            }
+        }
+        self.save();
+        Ok(target.to_path_buf())
+    }
+
+    fn finished_file(&self, id: u64) -> Result<PathBuf, String> {
+        let slots = self.inner.slots.lock().unwrap();
+        let e = &slots.iter().find(|s| s.entry.id == id).ok_or("That download is no longer in the list")?.entry;
+        match (&e.status, &e.dest) {
+            (Status::Finished, Some(dest)) if dest.exists() => Ok(dest.clone()),
+            (Status::Finished, _) => Err("The file is no longer on disk".into()),
+            _ => Err("Only a finished download's file can be moved or renamed".into()),
+        }
     }
 
     /// Moves a file to the system's Trash (the Recycle Bin on Windows), or into the test trash folder when one is set.

@@ -43,6 +43,8 @@ pub struct Settings {
     pub when_file_exists: WhenFileExists,
     pub look_for_checksum_files: bool,
     pub notify_when_finished: bool,
+    /// S12: a finished file gets the date the server gives it (`Last-Modified`) instead of the time it finished.
+    pub keep_server_date: bool,
 }
 
 impl Default for Settings {
@@ -57,6 +59,7 @@ impl Default for Settings {
             when_file_exists: WhenFileExists::Ask,
             look_for_checksum_files: true,
             notify_when_finished: true,
+            keep_server_date: false,
         }
     }
 }
