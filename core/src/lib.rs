@@ -7,6 +7,7 @@ pub mod http;
 pub mod limit;
 pub mod links;
 pub mod manager;
+pub mod scenario;
 pub mod segments;
 pub mod settings;
 pub mod transfer;

@@ -206,6 +206,17 @@ impl DownloadList {
             .collect()
     }
 
+    /// Selects these downloads (the feature tests' way to point a command at them).
+    pub fn select(&self, ids: &[u64]) {
+        self.selection.unselect_all();
+        for position in 0..self.selection.n_items() {
+            let id = self.selection.item(position).and_downcast::<gtk::StringObject>().and_then(|s| s.string().parse::<u64>().ok());
+            if id.is_some_and(|id| ids.contains(&id)) {
+                self.selection.select_item(position, false);
+            }
+        }
+    }
+
     /// The row at a list position (for double-click).
     pub fn row_at(&self, position: u32) -> Option<Row> {
         let id = self.selection.item(position)?.downcast_ref::<gtk::StringObject>()?.string().parse::<u64>().ok()?;

@@ -1,0 +1,92 @@
+# Feature tests: the same features on the Mac, Linux and Windows, each app doing every step through its own command
+# code (core/src/scenario.rs has the language). Files come from `hd-mock --features`: $L is the link server, $M1 and
+# $M2 its mirrors; $DL is a private downloads folder; $SMALL_SHA256 is small.bin's checksum.
+
+feature Download a file
+add f1 start $L/small.bin
+wait f1/small.bin finished 30
+expect f1/small.bin file-size 4194304
+
+feature Links to the same file become one download with mirrors
+add f2 start $L/slow.bin $M1/slow.bin $M2/slow.bin
+expect f2/slow.bin sources 3
+wait f2/slow.bin finished 60
+expect f2/slow.bin file-size 16777216
+
+feature Treat as mirrors of one file
+add-as-mirrors f3 $L/small.bin $M1/small.bin $M2/small.bin
+expect f3/small.bin sources 3
+wait f3/small.bin finished 30
+expect f3/small.bin file-size 4194304
+
+feature Pause and resume
+add f4 start $L/slow.bin
+wait f4/slow.bin running 10
+sleep 1
+do pause f4/slow.bin
+wait f4/slow.bin paused 10
+do resume f4/slow.bin
+wait f4/slow.bin finished 90
+expect f4/slow.bin file-size 16777216
+
+feature Add a mirror while downloading
+add f5 start $L/slow.bin
+wait f5/slow.bin running 10
+do add-mirror f5/slow.bin $M1/slow.bin $M2/slow.bin
+expect f5/slow.bin sources 3
+wait f5/slow.bin finished 90
+expect f5/slow.bin file-size 16777216
+
+feature The queue starts waiting downloads
+setting downloads-at-once 1
+add q queue $L/small.bin
+add q queue $L/sum.bin
+wait q/small.bin waiting 5
+wait q/sum.bin waiting 5
+do start-queue
+wait q/small.bin finished 30
+wait q/sum.bin finished 30
+do stop-queue
+setting downloads-at-once 3
+
+feature A checksum file next to the link
+add f6 start $L/sum.bin
+wait f6/sum.bin finished 30
+expect f6/sum.bin verified-contains SHA-256 matches (sum.bin.sha256)
+
+feature A wrong checksum file fails the download
+add f7 start $L/bad.bin
+wait f7/bad.bin failed 30
+expect f7/bad.bin status-contains checksum doesn't match
+
+feature A checksum set by hand
+add f8 queue $L/small.bin
+do set-checksum f8/small.bin sha256 $SMALL_SHA256
+do resume f8/small.bin
+wait f8/small.bin finished 30
+expect f8/small.bin verified-contains SHA-256 matches
+
+feature A name in use: keep both
+setting when-file-exists keep-both
+add f9 start $L/small.bin
+wait f9/small.bin finished 30
+add f9 start $M1/small.bin
+wait "f9/small - kept.bin" finished 30
+expect-file f9/small.bin exists
+expect-file "f9/small - kept.bin" exists
+setting when-file-exists ask
+
+feature Delete moves the file to the trash
+add f10 start $L/small.bin
+wait f10/small.bin finished 30
+do delete-files f10/small.bin
+expect f10/small.bin gone
+expect-file f10/small.bin absent
+
+feature Speed limit for all downloads
+setting speed-limit 1048576
+add f11 start $L/small.bin
+sleep 2
+expect f11/small.bin status-contains Downloading
+wait f11/small.bin finished 30
+setting speed-limit 0

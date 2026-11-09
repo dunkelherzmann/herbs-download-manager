@@ -51,7 +51,7 @@ No open bugs in `bugs.md`.
 - [x] **Checksum verification** and checksum-file lookup. (§6, §9 S8) #45
 - [x] **Hover text, accessibility labels and menu commands on every control.** (§3, §4) #47: `scripts/test.sh` runs an audit of every window (`--a11y-report`).
 - [x] **App icon** in the Mac, Linux and Windows formats. (§1) — PR #18 (the Linux and Windows apps use it when they are built)
-- [ ] **Feature tests** driving the app's own commands against the mock server, results per feature. (all)
+- [x] **Feature tests** driving the app's own commands against the mock server, results per feature. (all) #49: `tests/features.scenario`, run by `macos/scripts/features.sh` (also in `scripts/test.sh`).
 - [ ] **Free space check** before a download starts, and the FAT32 4 GB warning. (enhancements.md)
 - [ ] **Checksums the server announces** (`Digest`, `Repr-Digest`, `Content-MD5`, `x-goog-hash`). (§6, enhancements.md)
 - [ ] **Remembered connection limits per server.** (§7.4, §8, enhancements.md)

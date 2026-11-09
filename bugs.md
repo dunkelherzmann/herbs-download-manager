@@ -12,3 +12,5 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux (checked from a picture: libadwaita's header, sidebar divider and footer bar already meet cleanly)
   - [x] Windows (#48: full-width top and footer bands with one-pixel lines, and a sidebar divider; the list lost its sunken 3D edge)
+- [x] **The Windows app could crash when the list was rebuilt with downloads selected** (*found in testing*, 2026-11-09). Restoring the selection made the list report the change at once, which refreshed the list again while its state was in use, and the app ended. Found by the feature tests (#49); the main window now skips such a re-entrant refresh, as its dialogs already did.
+  - [x] Windows

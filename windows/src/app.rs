@@ -146,8 +146,11 @@ thread_local! {
     static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
 }
 
+/// The main window's state. Win32 controls notify synchronously (setting a row's state while the list is rebuilt
+/// sends LVN_ITEMCHANGED at once), so a re-entrant call finds the state busy and is skipped instead of panicking:
+/// the code changing it refreshes when it's done.
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
-    STATE.with(|s| s.borrow_mut().as_mut().map(f))
+    STATE.with(|s| s.try_borrow_mut().ok()?.as_mut().map(f))
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -254,6 +257,11 @@ pub fn run() {
             dwICC: ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_BAR_CLASSES,
         });
         let manager = match Manager::open(&crate::data_folder()) {
+            // A test copy never fills the Recycle Bin.
+            Ok(m) if std::env::var_os("HD_DATA_DIR").is_some() => {
+                m.use_trash_folder(&crate::data_folder().join("Trash"));
+                m
+            }
             Ok(m) => m,
             Err(e) => {
                 let text = wide(&format!("Herb's Download Manager can't open its download list:\n{e}"));
@@ -490,6 +498,9 @@ pub fn run() {
             }
             A11Y_REPORT.with(|p| *p.borrow_mut() = Some(path));
             SetTimer(Some(hwnd), TIMER_A11Y, 1500, None);
+        }
+        if let Some(manager) = with(|s| s.manager.clone()) {
+            crate::features::run_if_asked(hwnd, &manager);
         }
         let accelerators = accelerator_table();
         let mut msg = MSG::default();
@@ -1023,6 +1034,41 @@ pub(crate) fn main_tooltips() -> Option<HWND> {
     with(|s| s.tooltips)
 }
 
+/// The add windows' context, for the feature tests.
+pub(crate) fn feature_ctx() -> Option<crate::add::Ctx> {
+    add_ctx()
+}
+
+/// Selects these downloads in the list (the feature tests' way to point a command at them).
+pub(crate) fn select_ids(ids: &[u64]) {
+    refresh();
+    with(|s| unsafe {
+        let none = LVITEMW { stateMask: LVIS_SELECTED, state: LIST_VIEW_ITEM_STATE_FLAGS(0), ..Default::default() };
+        SendMessageW(s.list, LVM_SETITEMSTATE, Some(WPARAM(usize::MAX)), Some(LPARAM(&none as *const _ as isize)));
+        for (i, id) in s.shown.iter().enumerate() {
+            if ids.contains(id) {
+                let on = LVITEMW { stateMask: LVIS_SELECTED, state: LVIS_SELECTED, ..Default::default() };
+                SendMessageW(s.list, LVM_SETITEMSTATE, Some(WPARAM(i)), Some(LPARAM(&on as *const _ as isize)));
+            }
+        }
+    });
+}
+
+/// A toolbar or menu command by name, as its button runs it.
+pub(crate) fn run_command(hwnd: HWND, name: &str) -> Result<(), String> {
+    let id = match name {
+        "resume" => C_RESUME,
+        "pause" => C_PAUSE,
+        "restart" => C_RESTART,
+        "start-queue" => C_START_QUEUE,
+        "stop-queue" => C_STOP_QUEUE,
+        "stop-all" => C_STOP_ALL,
+        other => return Err(format!("no command {other}")),
+    };
+    command(hwnd, id);
+    Ok(())
+}
+
 /// What the add windows need from the main window.
 fn add_ctx() -> Option<crate::add::Ctx> {
     with(|s| crate::add::Ctx { manager: s.manager.clone(), owner: s.window, font: s.font, done: added })
@@ -1311,6 +1357,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                     (ID_LIST, LVN_ITEMCHANGED) => refresh(),
                     _ => {}
                 }
+                LRESULT(0)
+            }
+            crate::features::WM_FEATURE => {
+                crate::features::on_main(hwnd, &mut *(lparam.0 as *mut crate::features::Request));
                 LRESULT(0)
             }
             WM_DROPFILES => {

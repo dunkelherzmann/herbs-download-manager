@@ -848,7 +848,8 @@ fn row(slot: &Slot) -> Row {
             })
             .collect();
         if !sources.is_empty() {
-            known = sources.len() as u32;
+            // Mirrors just added count at once, before the engine takes them in at its next tick.
+            known = (sources.len() as u32).max(known);
             in_use = sources.iter().filter(|s| s.active > 0).count() as u32;
         }
         if active > 0 || downloaded > e.downloaded {

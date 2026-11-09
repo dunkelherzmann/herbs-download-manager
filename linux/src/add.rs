@@ -27,6 +27,7 @@ pub struct Ctx {
 /// Adds the links, asking about names in use, then sums up in the footer.
 pub fn add_all(ctx: &Ctx, links: Vec<PendingLink>, folder: PathBuf, connections: u32, start: bool) {
     let ctx = ctx.clone();
+    crate::features::PENDING_ADDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     glib::spawn_future_local(async move {
         let mut session = AddSession::new(&ctx.manager, links, &folder, connections, start);
         loop {
@@ -61,6 +62,7 @@ pub fn add_all(ctx: &Ctx, links: Vec<PendingLink>, folder: PathBuf, connections:
             }
         }
         (ctx.refresh)();
+        crate::features::PENDING_ADDS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     });
 }
 

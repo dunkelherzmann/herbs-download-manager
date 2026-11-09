@@ -3,6 +3,7 @@
 
 mod add;
 mod detail;
+mod features;
 mod list;
 mod settings;
 mod window;
@@ -94,6 +95,10 @@ fn main() -> gtk::glib::ExitCode {
         }
         match hd_core::manager::Manager::open(&data_folder()) {
             Ok(manager) => {
+                // A test copy never fills the desktop's Trash.
+                if std::env::var_os("HD_DATA_DIR").is_some() {
+                    manager.use_trash_folder(&data_folder().join("Trash"));
+                }
                 // Test hook: `--add URL` (repeatable) adds and starts a download, as on the Mac.
                 let args: Vec<String> = std::env::args().collect();
                 for (i, a) in args.iter().enumerate() {
@@ -110,7 +115,8 @@ fn main() -> gtk::glib::ExitCode {
                         });
                     }
                 }
-                let window = window::build(app, manager);
+                let window = window::build(app, manager.clone());
+                features::run_if_asked(app, &manager);
                 window.present();
                 if let Some(path) = capture_path() {
                     window::capture_then_quit(app, &window, path);

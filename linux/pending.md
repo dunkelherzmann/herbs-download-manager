@@ -26,7 +26,7 @@ The Linux version is ported once the Mac version has each feature, item by item 
   - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, drop on the window (§5) #41. Still to do: reading .doc/.docx/.odt and .webloc files, and links dropped on a row becoming its mirrors.
   - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #43. The queue works through the toolbar and Tasks menu (§11).
 - [x] **Hover text and accessibility labels on every control.** (§3, §4) #47: `linux/scripts/a11y-audit.sh` reads every window through AT-SPI.
-- [ ] **Feature tests** run on Linux. (all)
+- [x] **Feature tests** run on Linux. (all) #49: `sh linux/scripts/features.sh` (after `build.sh --install`).
 
 ## Not checked automatically
 

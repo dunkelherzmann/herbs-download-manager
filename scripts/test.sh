@@ -43,5 +43,8 @@ if [ "$(uname)" = Darwin ]; then
         echo "Controls without hover text or a VoiceOver name:" >&2; grep -v '^#' "$WORK/a11y.txt" >&2; exit 1
     fi
     echo "every control has hover text and a VoiceOver name"
+    # Feature tests: tests/features.scenario through the app's own commands (macos/scripts/features.sh).
+    echo "Mac app features…"
+    "$ROOT/macos/scripts/features.sh" || { echo "Feature tests failed" >&2; exit 1; }
 fi
 printf 'All tests passed\n'

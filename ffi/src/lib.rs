@@ -639,3 +639,40 @@ impl From<hd_core::checksum::Algorithm> for ChecksumAlgorithm {
 pub fn checksum_algorithm_of(value: String) -> Option<ChecksumAlgorithm> {
     hd_core::checksum::Algorithm::of_value(&value).map(Into::into)
 }
+
+// --- Feature tests -----------------------------------------------------------------------------------------------
+
+/// The app side of a feature test (core/src/scenario.rs): runs a command through the app's own code on its main thread,
+/// with these downloads selected. Returns why it couldn't, or `None`.
+#[uniffi::export(with_foreign)]
+pub trait ScenarioHost: Send + Sync {
+    fn command(&self, name: String, ids: Vec<u64>, args: Vec<String>) -> Option<String>;
+}
+
+struct HostAdapter(std::sync::Arc<dyn ScenarioHost>);
+
+impl hd_core::scenario::Host for HostAdapter {
+    fn command(&self, name: &str, ids: &[u64], args: &[String]) -> Result<(), String> {
+        match self.0.command(name.to_string(), ids.to_vec(), args.to_vec()) {
+            None => Ok(()),
+            Some(e) => Err(e),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ScenarioVar {
+    pub name: String,
+    pub value: String,
+}
+
+#[uniffi::export]
+impl DownloadManager {
+    /// Runs a feature-test scenario and returns its report ("PASS  Download a file (0.1 s)" lines and a summary).
+    /// Blocks: call it off the main thread, which the host's commands need.
+    pub fn run_scenario(&self, host: std::sync::Arc<dyn ScenarioHost>, script: String, vars: Vec<ScenarioVar>) -> String {
+        let vars: Vec<(String, String)> = vars.into_iter().map(|v| (v.name, v.value)).collect();
+        let results = hd_core::scenario::run(&self.inner, &HostAdapter(host), &script, &vars);
+        hd_core::scenario::report(&results)
+    }
+}

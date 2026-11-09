@@ -352,6 +352,40 @@ async fn respond_simple(stream: &mut TcpStream, status: &str) -> std::io::Result
     stream.write_all(head.as_bytes()).await
 }
 
+/// The feature tests' files (tests/features.scenario), the same on three servers (a link and two mirrors):
+/// small.bin (4 MiB), slow.bin (16 MiB at 512 KiB/s per response), sum.bin with a right sum.bin.sha256 and bad.bin with
+/// a wrong bad.bin.sha256. On ports P, P+1 and P+2, or on free ones.
+pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServer>> {
+    use sha2::Digest;
+    let small = pattern(4 << 20, 1);
+    let slow = pattern(16 << 20, 2);
+    let sum = pattern(2 << 20, 3);
+    let hex = |d: &[u8]| sha2::Sha256::digest(d).iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let mut servers = Vec::new();
+    for i in 0..3u16 {
+        let server = match port {
+            Some(p) => MockServer::bind(&format!("127.0.0.1:{}", p + i)).await?,
+            None => MockServer::start().await?,
+        };
+        server.put("/small.bin", MockFile::new(small.clone()));
+        let mut s = MockFile::new(slow.clone());
+        s.rate = Some(512 * 1024);
+        server.put("/slow.bin", s);
+        server.put("/sum.bin", MockFile::new(sum.clone()));
+        server.put("/sum.bin.sha256", MockFile::new(format!("{}  sum.bin\n", hex(&sum)).into_bytes()));
+        server.put("/bad.bin", MockFile::new(sum.clone()));
+        server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
+        servers.push(server);
+    }
+    Ok(servers)
+}
+
+/// small.bin's SHA-256, for the scenario's checksum set by hand.
+pub fn feature_small_sha256() -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(pattern(4 << 20, 1)).iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

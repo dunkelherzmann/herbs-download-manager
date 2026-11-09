@@ -634,3 +634,24 @@ fn a_checksum_file_next_to_the_link_is_found_and_used() {
     let status = wait(&m, id, |s| matches!(s, Status::Failed(_)));
     assert!(matches!(&status, Status::Failed(r) if r.contains("(g.bin.sha256)")), "{status:?}");
 }
+
+#[test]
+fn the_feature_scenario_passes_against_the_core() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let servers = rt.block_on(hd_mock::feature_servers(None)).unwrap();
+    let dir = folder("scenario");
+    let m = Manager::open(&dir).unwrap();
+    m.use_trash_folder(&dir.join("Trash"));
+    let base = |i: usize| servers[i].url("").trim_end_matches('/').to_string();
+    let vars: Vec<(String, String)> = vec![
+        ("L".into(), base(0)),
+        ("M1".into(), base(1)),
+        ("M2".into(), base(2)),
+        ("DL".into(), dir.join("files").display().to_string()),
+        ("SMALL_SHA256".into(), hd_mock::feature_small_sha256()),
+    ];
+    let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/features.scenario")).unwrap();
+    let results = hd_core::scenario::run(&m, &hd_core::scenario::DirectHost(m.clone()), &script, &vars);
+    let report = hd_core::scenario::report(&results);
+    assert!(results.len() >= 11 && results.iter().all(|r| r.passed), "{report}");
+}

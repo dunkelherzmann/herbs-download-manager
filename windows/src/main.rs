@@ -10,6 +10,8 @@ mod add;
 mod app;
 #[cfg(windows)]
 mod detail;
+#[cfg(windows)]
+mod features;
 
 use std::path::PathBuf;
 

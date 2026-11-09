@@ -1,0 +1,321 @@
+//! Feature tests (macos, linux and windows pending.md): one scenario file, `tests/features.scenario`, run by each app.
+//! The app carries out every action through its own command code (the code its buttons and menus run) on its UI
+//! thread, through `Host`; this runner, on a background thread, waits on the download list and checks the results
+//! and the files, and reports pass or fail per feature.
+//!
+//! The language, one step per line (`#` starts a comment; `$VAR` is replaced from the variables given):
+//!
+//! ```text
+//! feature NAME                     starts a feature; its steps stop at the first failure
+//! add FOLDER [start|queue] URL…    the app's add flow, each link its own download (names in use follow S7)
+//! add-as-mirrors FOLDER URL…       Add Links' "Treat as mirrors of one file", started
+//! do COMMAND [ROW] [ARG…]          an app command with ROW selected: resume, pause, restart, delete,
+//!                                  delete-files, add-mirror (ARG: links), set-checksum (ARG: algorithm, value),
+//!                                  start-queue, stop-queue, stop-all
+//! setting KEY VALUE                downloads-at-once, speed-limit (bytes a second, 0 for none),
+//!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off)
+//! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
+//! expect ROW CHECK [VALUE]         file-size N, sources N, status-contains TEXT, verified-contains TEXT, gone
+//! expect-running N                 how many downloads run now
+//! expect-file PATH exists|absent   a path under $DL
+//! sleep SECONDS
+//! ```
+//!
+//! A ROW is `FOLDER/NAME`: the download named NAME saved in $DL/FOLDER. "Quotes" keep spaces in one word.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use crate::manager::{Manager, Row, Status};
+
+/// The app side: runs a command on the UI thread, with these downloads selected, through the app's own code.
+pub trait Host: Send + Sync {
+    /// `Err` with the reason when the app can't do it.
+    fn command(&self, name: &str, ids: &[u64], args: &[String]) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug)]
+pub struct FeatureResult {
+    pub name: String,
+    pub passed: bool,
+    /// Why it failed (the failing step and what was found).
+    pub note: String,
+    pub seconds: f64,
+}
+
+/// "PASS  Mirrors (3.2 s)" lines and a summary, for the scripts.
+pub fn report(results: &[FeatureResult]) -> String {
+    let mut out = String::new();
+    for r in results {
+        out.push_str(&format!("{}  {} ({:.1} s){}\n", if r.passed { "PASS" } else { "FAIL" }, r.name, r.seconds,
+                              if r.note.is_empty() { String::new() } else { format!(": {}", r.note) }));
+    }
+    let failed = results.iter().filter(|r| !r.passed).count();
+    out.push_str(&format!("{} features, {} failed\n", results.len(), failed));
+    out
+}
+
+struct Run<'a> {
+    manager: &'a Manager,
+    host: &'a dyn Host,
+    dl: PathBuf,
+}
+
+impl Run<'_> {
+    fn row(&self, spec: &str) -> Option<Row> {
+        let (folder, name) = spec.rsplit_once('/')?;
+        let dir = self.dl.join(folder);
+        self.manager.rows().into_iter().find(|r| r.name == name && r.folder == dir)
+    }
+
+    fn need_row(&self, spec: &str) -> Result<Row, String> {
+        self.row(spec).ok_or_else(|| format!("no download {spec}"))
+    }
+
+    fn step(&self, words: &[String]) -> Result<(), String> {
+        let arg = |i: usize| words.get(i).cloned().ok_or_else(|| format!("“{}” needs more", words.join(" ")));
+        match words[0].as_str() {
+            "add" | "add-as-mirrors" => {
+                let folder = self.dl.join(arg(1)?);
+                std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+                let (mode, links) = match words.get(2).map(String::as_str) {
+                    Some("start" | "queue") if words[0] == "add" => (words[2].clone(), &words[3..]),
+                    _ => ("start".into(), &words[2..]),
+                };
+                let mut args = vec![folder.display().to_string(), mode];
+                args.extend(links.iter().cloned());
+                self.host.command(&words[0], &[], &args)
+            }
+            "do" => {
+                let command = arg(1)?;
+                let (ids, rest) = match command.as_str() {
+                    "start-queue" | "stop-queue" | "stop-all" => (vec![], &words[2..]),
+                    _ => (vec![self.need_row(&arg(2)?)?.id], &words[3..]),
+                };
+                self.host.command(&command, &ids, rest)
+            }
+            "setting" => {
+                let (key, value) = (arg(1)?, arg(2)?);
+                let mut s = self.manager.settings();
+                match key.as_str() {
+                    "downloads-at-once" => s.downloads_at_once = value.parse().map_err(|_| "a number".to_string())?,
+                    "speed-limit" => s.speed_limit = value.parse::<u64>().ok().filter(|&v| v > 0),
+                    "when-file-exists" => {
+                        use crate::settings::WhenFileExists::*;
+                        s.when_file_exists = match value.as_str() {
+                            "keep-both" => KeepBoth,
+                            "skip" => Skip,
+                            "replace" => Replace,
+                            _ => Ask,
+                        }
+                    }
+                    "look-for-checksum-files" => s.look_for_checksum_files = value == "on",
+                    _ => return Err(format!("no setting {key}")),
+                }
+                self.manager.set_settings(s);
+                Ok(())
+            }
+            "wait" => {
+                let (spec, state, secs) = (arg(1)?, arg(2)?, arg(3)?.parse::<f64>().unwrap_or(30.0));
+                let until = Instant::now() + Duration::from_secs_f64(secs);
+                loop {
+                    let row = self.row(&spec);
+                    if let Some(r) = &row {
+                        let ok = match state.as_str() {
+                            "finished" => r.status == Status::Finished,
+                            "paused" => r.status == Status::Paused,
+                            "failed" => matches!(r.status, Status::Failed(_)),
+                            "running" => r.status.is_running(),
+                            "waiting" => r.status == Status::Waiting,
+                            _ => return Err(format!("no state {state}")),
+                        };
+                        if ok {
+                            return Ok(());
+                        }
+                        if state == "finished" && matches!(r.status, Status::Failed(_)) {
+                            return Err(format!("{spec} failed: {}", r.status_text));
+                        }
+                    }
+                    if Instant::now() > until {
+                        return Err(format!("{spec} is {} after {secs} s, not {state}",
+                                           row.map(|r| r.status_text).unwrap_or_else(|| "missing".into())));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+            "expect" => {
+                let spec = arg(1)?;
+                let check = arg(2)?;
+                if check == "gone" {
+                    return match self.row(&spec) {
+                        None => Ok(()),
+                        Some(_) => Err(format!("{spec} is still in the list")),
+                    };
+                }
+                let r = self.need_row(&spec)?;
+                let value = words[3..].join(" ");
+                match check.as_str() {
+                    "file-size" => {
+                        let size = r.path.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
+                        (size == value.parse().ok()).then_some(()).ok_or(format!("{spec}'s file is {size:?} bytes, not {value}"))
+                    }
+                    "sources" => (r.sources_known.to_string() == value).then_some(())
+                        .ok_or(format!("{spec} has {} sources, not {value}", r.sources_known)),
+                    "status-contains" => r.status_text.contains(&value).then_some(())
+                        .ok_or(format!("{spec}'s status is “{}”", r.status_text)),
+                    "verified-contains" => {
+                        let note = self.manager.detail(r.id).and_then(|d| d.verified).unwrap_or_default();
+                        note.contains(&value).then_some(()).ok_or(format!("{spec}'s checksum note is “{note}”"))
+                    }
+                    _ => Err(format!("no check {check}")),
+                }
+            }
+            "expect-running" => {
+                let n = self.manager.rows().iter().filter(|r| r.status.is_running()).count();
+                (n.to_string() == arg(1)?).then_some(()).ok_or(format!("{n} downloads run, not {}", words[1]))
+            }
+            "expect-file" => {
+                let path = self.dl.join(arg(1)?);
+                let want = arg(2)? == "exists";
+                (path.exists() == want).then_some(()).ok_or(format!("{} {}", path.display(), if want { "is missing" } else { "is still there" }))
+            }
+            "sleep" => {
+                std::thread::sleep(Duration::from_secs_f64(arg(1)?.parse().unwrap_or(1.0)));
+                Ok(())
+            }
+            other => Err(format!("no step “{other}”")),
+        }
+    }
+}
+
+/// Words separated by spaces; "double quotes" keep spaces in one word ("f9/small - kept.bin").
+fn split_words(line: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut quoted = false;
+    for c in line.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            c if c.is_whitespace() && !quoted => {
+                if !word.is_empty() {
+                    words.push(std::mem::take(&mut word));
+                }
+            }
+            c => word.push(c),
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    words
+}
+
+/// Runs the scenario; `vars` replace `$NAME`s (DL is the downloads folder the rows are found in).
+pub fn run(manager: &Manager, host: &dyn Host, script: &str, vars: &[(String, String)]) -> Vec<FeatureResult> {
+    let dl = vars.iter().find(|(k, _)| k == "DL").map(|(_, v)| PathBuf::from(v)).unwrap_or_default();
+    let run = Run { manager, host, dl };
+    let mut results: Vec<FeatureResult> = Vec::new();
+    let mut started = Instant::now();
+    let mut failed = false;
+    for line in script.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut text = line.to_string();
+        for (k, v) in vars {
+            text = text.replace(&format!("${k}"), v);
+        }
+        let words = split_words(&text);
+        if words[0] == "feature" {
+            if let Some(last) = results.last_mut() {
+                last.seconds = started.elapsed().as_secs_f64();
+            }
+            results.push(FeatureResult { name: words[1..].join(" "), passed: true, note: String::new(), seconds: 0.0 });
+            started = Instant::now();
+            failed = false;
+            continue;
+        }
+        if failed || results.is_empty() {
+            continue;
+        }
+        if let Err(e) = run.step(&words) {
+            let last = results.last_mut().unwrap();
+            last.passed = false;
+            last.note = format!("{line}: {e}");
+            failed = true;
+        }
+    }
+    if let Some(last) = results.last_mut() {
+        last.seconds = started.elapsed().as_secs_f64();
+    }
+    results
+}
+
+/// A plain host for the core's own test of the runner: every command goes straight to the manager.
+pub struct DirectHost(pub Manager);
+
+impl Host for DirectHost {
+    fn command(&self, name: &str, ids: &[u64], args: &[String]) -> Result<(), String> {
+        let m = &self.0;
+        match name {
+            "add" | "add-as-mirrors" => {
+                let folder = Path::new(&args[0]);
+                let start = args[1] == "start";
+                let links: Vec<crate::addflow::PendingLink> = if name == "add" {
+                    args[2..].iter().map(|u| crate::addflow::PendingLink { url: u.clone(), ..Default::default() }).collect()
+                } else {
+                    vec![crate::addflow::PendingLink { url: args[2].clone(), mirrors: args[3..].to_vec(), ..Default::default() }]
+                };
+                let mut session = crate::addflow::AddSession::new(m, links, folder, m.settings().connections, start);
+                while let crate::addflow::Step::Ask(_) = session.step(m) {
+                    session.answer(m, crate::addflow::Choice::KeepBoth, true);
+                }
+                Ok(())
+            }
+            "resume" => {
+                m.resume(ids);
+                Ok(())
+            }
+            "pause" => {
+                m.pause(ids);
+                Ok(())
+            }
+            "restart" => {
+                m.restart(ids);
+                Ok(())
+            }
+            "start-queue" => {
+                m.start_queue();
+                Ok(())
+            }
+            "stop-queue" => {
+                m.stop_queue();
+                Ok(())
+            }
+            "stop-all" => {
+                m.pause_all();
+                Ok(())
+            }
+            "delete" => {
+                let _ = m.remove(ids, false);
+                Ok(())
+            }
+            "delete-files" => {
+                let _ = m.remove(ids, true);
+                Ok(())
+            }
+            "add-mirror" => {
+                m.add_mirrors(ids[0], args);
+                Ok(())
+            }
+            "set-checksum" => {
+                let algorithm = crate::checksum::Algorithm::ALL.into_iter().find(|a| a.name().eq_ignore_ascii_case(&args[0]) || a.extension() == args[0])
+                    .ok_or("no such algorithm")?;
+                m.set_checksum(ids[0], Some(crate::checksum::Checksum::new(algorithm, &args[1])?));
+                Ok(())
+            }
+            other => Err(format!("no command {other}")),
+        }
+    }
+}

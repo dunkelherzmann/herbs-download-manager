@@ -464,6 +464,7 @@ dependencies = [
 name = "hd-mock"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "tokio",
 ]
 

@@ -353,6 +353,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         open_links: Rc::default(),
     };
     add_actions(&window, app, &ui, &refresh, &find_bar, &search, &sidebar_scroll, &ctx);
+    crate::features::install(&ctx, &ui.list);
     // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
     {
         let args: Vec<String> = std::env::args().collect();

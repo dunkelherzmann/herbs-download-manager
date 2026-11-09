@@ -26,7 +26,7 @@ The Windows version is ported once the Mac version has each feature, item by ite
   - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, files dropped on the window (§5) #42. Still to do: links and text dragged from a browser (an OLE drop target), .doc/.docx/.odt and .webloc files, and links dropped on a row becoming its mirrors.
   - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #44. The queue works through the toolbar and Tasks menu (§11).
 - [x] **Hover text and accessibility labels on every control.** (§3, §4) #47: `windows\scripts\a11y-audit.ps1` checks every window.
-- [ ] **Feature tests** run on Windows. (all)
+- [x] **Feature tests** run on Windows. (all) #49: `powershell -File windows\scripts\features.ps1` (after `build.ps1`).
 
 ## Not checked automatically
 

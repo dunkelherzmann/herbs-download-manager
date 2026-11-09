@@ -60,6 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 exit(0)
             }
         }
+        // Test hook: --features SCRIPT OUT NAME=VALUE… runs the feature tests (FeatureTests.swift).
+        FeatureHost.runIfAsked()
         // Test hook: --capture FILE saves the frontmost window (with its title bar) as PNG after 2.5 s, then quits.
         if let i = args.firstIndex(of: "--capture"), i + 1 < args.count {
             let path = args[i + 1]

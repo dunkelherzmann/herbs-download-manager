@@ -49,6 +49,12 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         table.selectedRowIndexes.compactMap { $0 < shown.count ? shown[$0] : nil }
     }
 
+    /// Selects these downloads (the feature tests' way to point a command at them).
+    func select(_ ids: [UInt64]) {
+        let rows = IndexSet(shown.indices.filter { ids.contains(shown[$0].id) })
+        table.selectRowIndexes(rows, byExtendingSelection: false)
+    }
+
     override func loadView() {
         for c in Self.columns {
             let column = NSTableColumn(identifier: .init(c.id))

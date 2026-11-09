@@ -42,6 +42,16 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Don't let sibling controls overlap (a tab control's body under its pages): WM_PRINT paints siblings in its own
   order, so the pictures showed empty pages. Make the tab control just the strip and put the pages below it.
 
+## Feature tests
+
+`tests/features.scenario` is run by each app through its own command code (`core/src/scenario.rs` has the language):
+`macos/scripts/features.sh` (part of `scripts/test.sh`), `sh linux/scripts/features.sh` after `linux/scripts/build.sh
+--install`, `powershell -File windows\scripts\features.ps1` after `windows\scripts\build.ps1`. A new feature gets
+its steps there; each feature downloads into its own folder, and waits for its downloads to finish, because a link to a
+file another unfinished download fetches becomes its mirror. A host step refreshes the list before selecting rows: the list is
+refreshed only twice a second, and a command acts on the rows as the list last saw them (Resume once skipped a row it
+still thought was running).
+
 ## Writing tests (learned the hard way)
 
 - `hd-mock` servers that fake a dying or changed file must also cut responses already under way; otherwise "source
