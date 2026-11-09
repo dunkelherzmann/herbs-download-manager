@@ -337,7 +337,9 @@ answer is used. S8 arrives with checksum verification and isn't shown until then
 - **Restart** discards the downloaded data (after confirming, Cancel the default) and starts again from all sources.
 - **Quit** while downloads run asks "Downloads are running. Pause them and quit?" (Cancel the default); quitting
   pauses them, and they resume at the next launch if they were running.
-- **Delete** asks whether to remove only the list entry (the default) or the file as well.
+- **Delete** asks whether to remove only the list entry (the default) or to move the file to the Trash as well (the
+  Recycle Bin on Windows), so it can be put back; nothing is ever erased. A file that can't go to the Trash (a drive
+  without one) stays where it is, and the footer says so.
 
 ## 11. Queue
 

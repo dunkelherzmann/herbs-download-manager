@@ -55,6 +55,10 @@ final class AppModel {
     private init() {
         do {
             manager = try DownloadManager.open(dataDir: Self.dataFolder.path)
+            // A test copy never fills the user's Trash.
+            if ProcessInfo.processInfo.environment["HD_DATA_DIR"] != nil {
+                manager.useTrashFolder(dir: Self.dataFolder.appendingPathComponent("Trash").path)
+            }
         } catch {
             let alert = NSAlert()
             alert.messageText = "Herb's Download Manager can't open its download list"
@@ -166,7 +170,17 @@ final class AppModel {
     func stopQueue() { manager.stopQueue(); refresh() }
     func restart(_ ids: [UInt64]) { manager.restart(ids: ids); refresh() }
     func setConnections(_ id: UInt64, _ n: UInt32) { manager.setConnections(id: id, connections: n); refresh() }
-    func remove(_ ids: [UInt64], deleteFiles: Bool) { manager.remove(ids: ids, deleteFiles: deleteFiles); refresh() }
+    /// Delete (§10): with `deleteFiles`, the files go to the Trash; any that can't (a drive without one) stay where
+    /// they are, and the footer says so.
+    func remove(_ ids: [UInt64], deleteFiles: Bool) {
+        let kept = manager.remove(ids: ids, deleteFiles: deleteFiles)
+        refresh()
+        if let first = kept.first {
+            let name = (first as NSString).lastPathComponent
+            tell(kept.count == 1 ? "“\(name)” couldn't go to the Trash, so it was left where it is"
+                                 : "\(kept.count) files couldn't go to the Trash, so they were left where they are")
+        }
+    }
 }
 
 extension DownloadStatus {

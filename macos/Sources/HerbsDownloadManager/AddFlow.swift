@@ -66,7 +66,7 @@ extension AppModel {
                 case .replace:
                     // The old file goes to the Trash, so replacing can be undone.
                     if let path { try? FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) }
-                    if let id { manager.remove(ids: [id], deleteFiles: !finished) }
+                    if let id { _ = manager.remove(ids: [id], deleteFiles: !finished) }
                     replaced += 1
                 }
             }

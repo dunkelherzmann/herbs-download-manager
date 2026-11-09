@@ -514,7 +514,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     @objc func deleteMissingFiles(_ sender: Any?) { confirmDelete(Self.missing(AppModel.shared.rows), filesGone: true) }
     @objc func deleteEntireList(_ sender: Any?) { confirmDelete(AppModel.shared.rows) }
 
-    /// Delete asks whether to remove only the list entries (the default) or the files as well (§10).
+    /// Delete asks whether to remove only the list entries (the default) or to move the files to the Trash as well
+    /// (§10); nothing is ever erased.
     private func confirmDelete(_ rows: [DownloadRow], filesGone: Bool = false) {
         guard !rows.isEmpty, let window else { return }
         let alert = NSAlert()
@@ -524,8 +525,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         if filesGone {
             alert.informativeText = "Their files are no longer on disk; only the list entries are removed."
         } else {
-            alert.informativeText = "Remove them from the list only, or delete their files as well?"
-            alert.addButton(withTitle: "Delete Files Too")
+            let one = rows.count == 1
+            alert.informativeText = "Remove \(one ? "it" : "them") from the list only, or also move \(one ? "its file" : "their files") "
+                + "to the Trash? Files in the Trash can be put back until it's emptied."
+            alert.addButton(withTitle: "Move to Trash Too")
             alert.buttons[2].hasDestructiveAction = true
         }
         alert.beginSheetModal(for: window) { response in

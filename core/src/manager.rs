@@ -196,6 +196,8 @@ struct Inner {
     tuning: Tuning,
     queue: Mutex<Queue>,
     settings: Mutex<Settings>,
+    /// Where Delete puts files in tests; `None` is the system's Trash.
+    trash_dir: Mutex<Option<PathBuf>>,
     /// S5, shared by every download.
     limiter: Arc<Limiter>,
 }
@@ -277,6 +279,7 @@ impl Manager {
                 queue: Mutex::new(queue),
                 limiter: Arc::new(Limiter::new(settings.speed_limit)),
                 settings: Mutex::new(settings),
+                trash_dir: Mutex::new(None),
             }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
@@ -602,27 +605,61 @@ impl Manager {
     }
 
     /// Removes these downloads from the list; with `delete_files`, their file or `.hdpart` file too.
-    pub fn remove(&self, ids: &[u64], delete_files: bool) {
+    /// Delete (§10): removes the entries, and with `delete_files` sends their files (the finished file, or the
+    /// `.hdpart` of an unfinished one) to the Trash, never erasing them. Returns the files that couldn't go to the
+    /// Trash (a volume without one): they are left where they are.
+    pub fn remove(&self, ids: &[u64], delete_files: bool) -> Vec<PathBuf> {
         let removed: Vec<Slot> = {
             let mut slots = self.inner.slots.lock().unwrap();
             let (gone, kept): (Vec<Slot>, Vec<Slot>) = slots.drain(..).partition(|s| ids.contains(&s.entry.id));
             *slots = kept;
             gone
         };
+        let mut kept = Vec::new();
         for slot in &removed {
             if let Some(r) = &slot.running {
                 r.control.pause();
             }
             let _ = std::fs::remove_file(self.state_file(slot.entry.id));
             if delete_files && let Some(dest) = &slot.entry.dest {
-                let _ = std::fs::remove_file(transfer::part_path(dest));
-                if slot.entry.status == Status::Finished {
-                    let _ = std::fs::remove_file(dest);
+                let part = transfer::part_path(dest);
+                for file in [Some(part), (slot.entry.status == Status::Finished).then(|| dest.clone())].into_iter().flatten() {
+                    if file.exists() && self.trash(&file).is_err() {
+                        kept.push(file);
+                    }
                 }
             }
         }
         self.save();
         self.pump();
+        kept
+    }
+
+    /// Moves a file to the system's Trash (the Recycle Bin on Windows), or into the test trash folder when one is set.
+    fn trash(&self, file: &Path) -> std::io::Result<()> {
+        // A running download may still have its file open for a moment after the pause.
+        let attempt = || match self.inner.trash_dir.lock().unwrap().clone() {
+            Some(dir) => {
+                std::fs::create_dir_all(&dir)?;
+                let name = file.file_name().ok_or_else(|| std::io::Error::other("no file name"))?;
+                std::fs::rename(file, dir.join(name))
+            }
+            None => trash::delete(file).map_err(std::io::Error::other),
+        };
+        let mut result = attempt();
+        for _ in 0..20 {
+            if result.is_ok() || !file.exists() {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            result = attempt();
+        }
+        result
+    }
+
+    /// Tests and test copies of the app: "the Trash" is this folder, so they never fill the user's real Trash.
+    pub fn use_trash_folder(&self, dir: &Path) {
+        *self.inner.trash_dir.lock().unwrap() = Some(dir.to_path_buf());
     }
 
     /// Start Queue (T4): starts waiting downloads, oldest first, while fewer than "Downloads at once" run.

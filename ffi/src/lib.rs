@@ -460,8 +460,14 @@ impl DownloadManager {
         self.inner.set_connections(id, connections);
     }
 
-    pub fn remove(&self, ids: Vec<u64>, delete_files: bool) {
-        self.inner.remove(&ids, delete_files);
+    /// Delete: with `delete_files`, the files go to the Trash. Returns the paths that couldn't (left in place).
+    pub fn remove(&self, ids: Vec<u64>, delete_files: bool) -> Vec<String> {
+        self.inner.remove(&ids, delete_files).into_iter().map(|p| p.to_string_lossy().into_owned()).collect()
+    }
+
+    /// Tests and test copies: Delete moves files into this folder instead of the system's Trash.
+    pub fn use_trash_folder(&self, dir: String) {
+        self.inner.use_trash_folder(std::path::Path::new(&dir));
     }
 
     /// The whole list, newest first.

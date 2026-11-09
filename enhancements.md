@@ -126,3 +126,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Delete sends files to the Trash instead of erasing them,** so they can be put back. *Requested 2026-11-09* (after a 6.6 GB file deleted with "Delete Files Too" couldn't be recovered). The button is now "Move to Trash Too"; the Recycle Bin on Windows, the desktop's trash on Linux; a file that can't go to the Trash stays where it is and the footer says so. Done in the shared core, and for the Mac's dialog, in #34.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows

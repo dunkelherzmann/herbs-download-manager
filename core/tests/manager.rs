@@ -120,11 +120,12 @@ fn downloads_running_at_quit_come_back_paused() {
 }
 
 #[test]
-fn delete_removes_the_entry_and_optionally_the_file() {
+fn delete_removes_the_entry_and_optionally_sends_the_file_to_the_trash() {
     let data = pattern(MIB, 4);
     let (_rt, s) = server(&data, None);
     let dir = folder("delete");
     let m = Manager::open(&dir).unwrap();
+    m.use_trash_folder(&dir.join("Trash"));
     let a = m.add(new(s.url("/f.bin"), &dir, true));
     wait(&m, a, |s| *s == Status::Finished);
     let b = m.add(new(s.url("/f.bin"), &dir, true));
@@ -133,10 +134,12 @@ fn delete_removes_the_entry_and_optionally_the_file() {
     assert_eq!(rows[0].id, b, "newest first");
     let (pa, pb) = (rows[1].path.clone().unwrap(), rows[0].path.clone().unwrap());
     assert_ne!(pa, pb);
-    m.remove(&[a], false);
+    assert!(m.remove(&[a], false).is_empty());
     assert!(pa.exists());
-    m.remove(&[b], true);
+    // Deleting the file sends it to the Trash: gone from the folder, whole in the Trash.
+    assert!(m.remove(&[b], true).is_empty());
     assert!(!pb.exists());
+    assert_eq!(std::fs::read(dir.join("Trash").join(pb.file_name().unwrap())).unwrap(), data);
     assert!(m.rows().is_empty());
 }
 
