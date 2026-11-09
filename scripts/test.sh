@@ -20,5 +20,19 @@ if [ "$(uname)" = Darwin ]; then
         "core "*" connections 32 per-server 32 choices 1-32") ;;
         *) echo "Self-check gave unexpected output" >&2; exit 1 ;;
     esac
+
+    printf 'Mac app menus…\n'
+    WORK="$(mktemp -d)"
+    trap 'rm -rf "$WORK"' EXIT
+    # A private data folder; the window is never shown. The run ends with ⌘Q sent through the in-window menu.
+    HD_DATA_DIR="$WORK/data" "$APP" --menu-report "$WORK/menus.txt" >/dev/null 2>&1 &
+    PID=$!
+    i=0; while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.5; i=$((i + 1)); done
+    if kill -0 "$PID" 2>/dev/null; then kill "$PID"; echo "Menus: ⌘Q through the in-window menu didn't quit the app" >&2; exit 1; fi
+    grep -qx "menu bar: Herb's DM" "$WORK/menus.txt" || { echo "Menus: the macOS menu bar holds more than the app menu" >&2; exit 1; }
+    grep -qx "title bar menus: Herb's DM, File, Edit, Tasks, View, Window, Help" "$WORK/menus.txt" \
+        || { echo "Menus: the title bar's menu bar is incomplete" >&2; cat "$WORK/menus.txt" >&2; exit 1; }
+    mkdir -p "$ROOT/.build/test" && cp "$WORK/menus.txt.png" "$ROOT/.build/test/macos-window.png"
+    echo "menus in the title bar; ⌘Q reached the in-window menu"
 fi
 printf 'All tests passed\n'

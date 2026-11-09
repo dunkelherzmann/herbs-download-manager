@@ -41,7 +41,7 @@ A box is ticked once the change has shipped. A request that covers several platf
 - [x] **Keep each platform's files in its own folder.** The root holds only what applies to the whole project (Rust core and bindings, docs, trackers, version and test scripts); `macos/` holds the Mac app's `Package.swift`, sources, build script and `pending.md`, and `linux/` and `windows/` their own. Also line endings fixed by `.gitattributes` and a build check on every pull request (GitHub Actions). *Requested 2026-11-09.* All platforms. Done in #12.
 
 - [ ] **All menus and submenus in the app's window, on macOS too.** Nothing in the macOS menu bar beyond the app menu macOS always shows, so on wide screens no command needs a trip to the top of the screen. Top priority: the next item in every `pending.md`. *Requested 2026-11-09.* All platforms.
-  - [ ] Mac
+  - [x] Mac (#19)
   - [ ] Linux
   - [ ] Windows
 - [ ] **An original "download" app icon in the macOS style.** *Requested 2026-11-09.* A drive with a download arrow coming in from above, in a blue rounded square with a dark blue rim, the drive frosted white and the arrow gray; first drawn as three lanes over a tray, then redesigned from two icons Herbert showed (the colors and contour of the macOS App Store icon, the layout of a drive-and-arrow icon), light on the right of the base, colors a little darker. One SVG (`icon/icon.svg`) drawn into `.icns`, Linux PNGs and `.ico` by `icon/make.sh`. Done for the Mac in #18.

@@ -14,5 +14,6 @@ if CommandLine.arguments.contains("--self-check") {
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.regular)
+// The menu report test never takes focus or shows in the Dock.
+app.setActivationPolicy(CommandLine.arguments.contains("--menu-report") ? .prohibited : .regular)
 app.run()

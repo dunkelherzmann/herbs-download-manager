@@ -8,10 +8,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pending: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.build()
+        InWindowMenu.install(full: MainMenu.build(), appMenu: MainMenu.appMenu(), appName: "Herb's DM")
         let window = MainWindowController()
-        window.showWindow(nil)
+        InWindowMenu.attach(to: window.window!)
         mainWindow = window
+        if let index = CommandLine.arguments.firstIndex(of: "--menu-report"), index + 1 < CommandLine.arguments.count {
+            writeMenuReport(window, to: CommandLine.arguments[index + 1])
+            return
+        }
+        window.showWindow(nil)
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
         if !pending.isEmpty { window.openLinks(pending); pending = [] }
@@ -75,6 +80,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate()
         mainWindow?.openLinks(links)
+    }
+
+    /// Test hook (`--menu-report PATH`, window never shown): where the menus are and a picture of the window with its
+    /// title bar, then ⌘Q through the in-window menu, which quits the app when shortcuts reach it.
+    private func writeMenuReport(_ window: MainWindowController, to path: String) {
+        guard let nsWindow = window.window else { return }
+        var lines = ["menu bar: " + (NSApp.mainMenu?.items.map(\.title).joined(separator: ", ") ?? ""),
+                     "title bar menus: " + InWindowMenu.barTitles(in: nsWindow).joined(separator: ", ")]
+        lines += InWindowMenu.outline()
+        if let frame = nsWindow.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".png"))
+        }
+        lines.append("routing ⌘Q")
+        try? (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        DispatchQueue.main.async {
+            let quit = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                        windowNumber: 0, context: nil, characters: "q", charactersIgnoringModifiers: "q",
+                                        isARepeat: false, keyCode: 12)
+            if let quit, !InWindowMenu.route(quit) { exit(3) }
+        }
     }
 
     @objc func openGitHub(_ sender: Any?) {

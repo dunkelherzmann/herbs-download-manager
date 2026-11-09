@@ -39,8 +39,9 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 
 The layout, top to bottom:
 
-1. **Title bar**: the menu bar sits at the left of the title bar on Linux and Windows (on macOS the menu bar is the
-   system menu bar), the title "Herb's Download Manager" is centered, and the **search field** is at the right.
+1. **Title bar**: the menu bar sits at the left of the title bar, after the window controls on macOS, on every
+   platform, so on a wide screen no command needs a trip to the top of the screen. The title "Herb's Download
+   Manager" is centered, and the **search field** is at the right.
 2. **Toolbar** (§3).
 3. **Sidebar** on the left, resizable by dragging its edge: the status filters (§2.1).
 4. **Download list** (§2.2) to the right of the sidebar.
@@ -114,8 +115,11 @@ Icons use each platform's own monochrome symbols, never another app's artwork:
 
 ## 4. Menus
 
-The menu bar follows AB Download Manager's File / Tasks / Tools / Help, fitted to each platform's conventions (on
-macOS, About, Settings and Quit live in the app menu, and Edit and Window are the standard menus).
+The menu bar in the title bar (§2) follows AB Download Manager's File / Tasks / Tools / Help, fitted to each
+platform's conventions (on macOS, About, Settings and Quit live in the app menu, and Edit and Window are the standard
+menus). Each menu title opens its menu below it; hover text "<name> menu", and screen readers get a menu bar with its
+items. On macOS the system menu bar keeps only the app menu (Herb's DM), which macOS always shows there; every
+shortcut works from any window, Cut, Copy and Paste in text fields included.
 
 | Menu | Items |
 |---|---|

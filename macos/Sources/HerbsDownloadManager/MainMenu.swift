@@ -1,23 +1,14 @@
 import AppKit
 
-/// The menu bar (SPECIFICATION.md §4): the app menu, File, Edit, Tasks, View, Window and Help. Commands that act
-/// on downloads go to the main window's controller through the responder chain, which also enables them.
+/// The menus (SPECIFICATION.md §4): the app menu, File, Edit, Tasks, View, Window and Help, shown in the main
+/// window's title bar (InWindowMenu). Commands that act on downloads go to the main window's controller through the
+/// responder chain, which also enables them.
 @MainActor
 enum MainMenu {
     static func build() -> NSMenu {
         let bar = NSMenu()
 
-        // App menu: the short name, as macOS shows it in the menu bar.
-        let app = submenu(bar, "Herb's DM")
-        app.addItem(withTitle: "About Herb's Download Manager", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
-        app.addItem(.separator())
-        app.addItem(withTitle: "Settings…", action: #selector(MainWindowController.showSettings(_:)), keyEquivalent: ",")
-        app.addItem(.separator())
-        app.addItem(withTitle: "Hide Herb's DM", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        item(app, "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
-        app.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
-        app.addItem(.separator())
-        app.addItem(withTitle: "Quit Herb's DM", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        bar.addItem(withTitle: "Herb's DM", action: nil, keyEquivalent: "").submenu = appMenu()
 
         let file = submenu(bar, "File")
         file.addItem(withTitle: "New Download…", action: #selector(MainWindowController.newDownload(_:)), keyEquivalent: "n")
@@ -75,13 +66,28 @@ enum MainMenu {
 
         let help = submenu(bar, "Help")
         help.addItem(withTitle: "Herb's Download Manager on GitHub", action: #selector(AppDelegate.openGitHub(_:)), keyEquivalent: "")
-        NSApp.helpMenu = help
 
         return bar
     }
 
+    /// The app menu, under the short name: in the macOS menu bar (the one menu macOS always shows there) and first in
+    /// the title bar's menu bar.
+    static func appMenu() -> NSMenu {
+        let app = NSMenu(title: "Herb's DM")
+        app.addItem(withTitle: "About Herb's Download Manager", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+        app.addItem(.separator())
+        app.addItem(withTitle: "Settings…", action: #selector(MainWindowController.showSettings(_:)), keyEquivalent: ",")
+        app.addItem(.separator())
+        app.addItem(withTitle: "Hide Herb's DM", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        item(app, "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
+        app.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        app.addItem(.separator())
+        app.addItem(withTitle: "Quit Herb's DM", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        return app
+    }
+
     private static func submenu(_ bar: NSMenu, _ title: String) -> NSMenu {
-        let holder = NSMenuItem()
+        let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         let menu = NSMenu(title: title)
         holder.submenu = menu
         bar.addItem(holder)
