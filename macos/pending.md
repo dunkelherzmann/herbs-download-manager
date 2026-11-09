@@ -41,7 +41,7 @@ No open bugs in `bugs.md`.
 - [x] **Download window**: segments bar, Info, Connections, Mirrors and Options tabs. (§6) #14
   The Options tab has the connections picker; the per-download speed limit and checksum come with **Settings**
   and **Checksum verification** below.
-- [ ] **Queue**: Start Queue, Stop Queue, downloads at once. (§11)
+- [x] **Queue**: Start Queue, Stop Queue, downloads at once. (§11) — PR #16
 - [ ] **Settings**. (§9)
 - [ ] **Checksum verification** and checksum-file lookup. (§6, §9 S8)
 - [ ] **Hover text, accessibility labels and menu commands on every control.** (§3, §4)

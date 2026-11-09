@@ -125,6 +125,22 @@ struct Inner {
     dir: PathBuf,
     slots: Mutex<Vec<Slot>>,
     tuning: Tuning,
+    queue: Mutex<Queue>,
+}
+
+/// The queue (§11): whether it starts waiting downloads, and how many may run at once.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+struct Queue {
+    running: bool,
+    #[serde(default = "default_at_once")]
+    at_once: u32,
+    /// Quitting: nothing new starts, but `running` is kept for the next launch.
+    #[serde(skip)]
+    quitting: bool,
+}
+
+fn default_at_once() -> u32 {
+    crate::settings::Settings::default().downloads_at_once
 }
 
 /// The download list. Cheap to clone; every clone is the same list.
@@ -174,9 +190,18 @@ impl Manager {
                 Slot { entry, running: None }
             })
             .collect();
+        let queue = std::fs::read(dir.join("queue.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Queue>(&b).ok())
+            .unwrap_or(Queue { running: false, at_once: default_at_once(), quitting: false });
         let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().worker_threads(4).build()?;
         let manager = Manager {
-            inner: Arc::new(Inner { dir: dir.to_path_buf(), slots: Mutex::new(slots), tuning }),
+            inner: Arc::new(Inner {
+                dir: dir.to_path_buf(),
+                slots: Mutex::new(slots),
+                tuning,
+                queue: Mutex::new(queue),
+            }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
             client: crate::http::client(),
@@ -191,19 +216,21 @@ impl Manager {
             .filter_map(|s| std::mem::take(&mut s.entry.resume_at_launch).then_some(s.entry.id))
             .collect();
         manager.resume(&again);
+        manager.pump();
         Ok(manager)
     }
 
     /// Quitting (§10): pauses every running download, marks it to start again at the next launch, and waits up
     /// to `timeout` for them to save. Returns false if some were still running.
     pub fn quit(&self, timeout: std::time::Duration) -> bool {
+        self.inner.queue.lock().unwrap().quitting = true;
         {
             let mut slots = self.inner.slots.lock().unwrap();
             for slot in slots.iter_mut().filter(|s| s.running.is_some()) {
                 slot.entry.resume_at_launch = true;
             }
         }
-        self.pause_all();
+        self.pause_running();
         let stopped = self.wait_idle(timeout);
         self.save();
         stopped
@@ -254,6 +281,8 @@ impl Manager {
         self.save();
         if new.start {
             self.resume(&[id]);
+        } else {
+            self.pump();
         }
         id
     }
@@ -354,6 +383,7 @@ impl Manager {
             }
         }
         self.save();
+        self.pump();
     }
 
     /// Restart (§10): discards what was downloaded (and a finished file) and starts again from every source.
@@ -423,8 +453,13 @@ impl Manager {
         }
     }
 
-    /// Stop All (T6): pauses every running download.
+    /// Stop All (T6): stops the queue and pauses every running download.
     pub fn pause_all(&self) {
+        self.stop_queue();
+        self.pause_running();
+    }
+
+    fn pause_running(&self) {
         let ids: Vec<u64> = self.inner.slots.lock().unwrap().iter().filter(|s| s.running.is_some()).map(|s| s.entry.id).collect();
         self.pause(&ids);
     }
@@ -455,6 +490,67 @@ impl Manager {
             }
         }
         self.save();
+        self.pump();
+    }
+
+    /// Start Queue (T4): starts waiting downloads, oldest first, while fewer than "Downloads at once" run.
+    pub fn start_queue(&self) {
+        self.set_queue(|q| q.running = true);
+    }
+
+    /// Stop Queue (T5): starts no more waiting downloads; running ones carry on.
+    pub fn stop_queue(&self) {
+        self.set_queue(|q| q.running = false);
+    }
+
+    pub fn queue_running(&self) -> bool {
+        self.inner.queue.lock().unwrap().running
+    }
+
+    /// Downloads at once (S4, 1–10).
+    pub fn set_downloads_at_once(&self, n: u32) {
+        let n = n.clamp(*crate::settings::DOWNLOADS_AT_ONCE.start(), *crate::settings::DOWNLOADS_AT_ONCE.end());
+        self.set_queue(|q| q.at_once = n);
+    }
+
+    fn set_queue(&self, change: impl FnOnce(&mut Queue)) {
+        let q = {
+            let mut q = self.inner.queue.lock().unwrap();
+            change(&mut q);
+            *q
+        };
+        if let Ok(text) = serde_json::to_vec_pretty(&q) {
+            let tmp = self.inner.dir.join("queue.json.tmp");
+            if std::fs::write(&tmp, text).is_ok() {
+                let _ = std::fs::rename(tmp, self.inner.dir.join("queue.json"));
+            }
+        }
+        self.pump();
+    }
+
+    /// Starts the oldest waiting downloads while the queue runs and has room. The queue lock is held throughout,
+    /// so two calls can't both fill the same free place.
+    fn pump(&self) {
+        let q = self.inner.queue.lock().unwrap();
+        if !q.running || q.quitting {
+            return;
+        }
+        let next: Vec<u64> = {
+            let slots = self.inner.slots.lock().unwrap();
+            let busy = slots.iter().filter(|s| s.running.is_some()).count();
+            let free = (q.at_once as usize).saturating_sub(busy);
+            let mut waiting: Vec<&Slot> =
+                slots.iter().filter(|s| s.running.is_none() && s.entry.status == Status::Waiting).collect();
+            waiting.sort_by_key(|s| s.entry.id);
+            waiting.into_iter().take(free).map(|s| s.entry.id).collect()
+        };
+        for id in &next {
+            self.start(*id);
+        }
+        drop(q);
+        if !next.is_empty() {
+            self.save();
+        }
     }
 
     /// Waits until no download is running (for tests and for quitting).

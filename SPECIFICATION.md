@@ -88,7 +88,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T3 | Pause | "Pause: stop the selected downloads, keeping what's downloaded" | ⌘. / Ctrl+. |
 | T4 | Start Queue | "Start Queue: download waiting items one after another" | ⇧⌘R / Ctrl+Shift+R |
 | T5 | Stop Queue | "Stop Queue: stop starting new items from the queue" | — |
-| T6 | Stop All | "Stop All: pause every running download" | ⌥⌘. / Ctrl+Alt+. |
+| T6 | Stop All | "Stop All: stop the queue and pause every running download" | ⌥⌘. / Ctrl+Alt+. |
 | T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
 
@@ -282,9 +282,13 @@ as long as one source stays on.
 
 ## 11. Queue
 
-One queue holds downloads that were added but not started. **Start Queue** starts waiting downloads in list order
-while fewer than "Downloads at once" are running; **Stop Queue** stops starting new ones and lets running ones
-finish. A download started with Download (§5.1) or Resume runs at once, whatever the queue's limit.
+One queue holds downloads that were added but not started. **Start Queue** starts waiting downloads in the order they
+were added while fewer than "Downloads at once" are running (every running download counts); **Stop Queue** stops
+starting new ones and lets running ones finish. A download started with Download (§5.1) or Resume runs at once,
+whatever the queue's limit. While the queue runs, a download added with Add starts as soon as there is room. **Stop
+All** stops the queue too, so pausing everything doesn't start the next waiting download. Whether the queue runs is
+remembered: a queue running at quit runs again at the next launch. The footer shows "Queue running" or "Queue
+stopped" with the number of waiting downloads.
 
 ## 12. Reference apps
 

@@ -565,17 +565,16 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
         }
     }
     // Starting over keeps the name the download already had.
-    let dest = match &saved {
-        Some(state) => state.dest.clone(),
+    let claimed = match &saved {
+        Some(state) => File::create(part_path(&state.dest)).map(|f| (state.dest.clone(), f)),
         None => {
             let name = req.name.clone().unwrap_or_else(|| http::file_name(first.headers(), first.url()));
-            unique_path(&req.folder, &name)
+            claim_path(&req.folder, &name)
         }
     };
-    let part = part_path(&dest);
-    let file = match File::create(&part) {
-        Ok(f) => f,
-        Err(e) => return Outcome::Failed(format!("Can't create {}: {e}", part.display())),
+    let (dest, file) = match claimed {
+        Ok(c) => c,
+        Err(e) => return Outcome::Failed(format!("Can't create the file in {}: {e}", req.folder.display())),
     };
     if let Some(size) = size
         && let Err(e) = file.set_len(size)
@@ -1525,6 +1524,20 @@ pub fn part_path(dest: &Path) -> PathBuf {
 }
 
 /// The destination, or "name (2).ext", "name (3).ext"… when that name is taken (by a file or a partial download).
+/// Picks a free name like `unique_path` and creates its `.hdpart` file in the same step, so two downloads of the
+/// same file starting together never pick the same name: one that loses the race takes the next number.
+fn claim_path(folder: &Path, name: &str) -> std::io::Result<(PathBuf, File)> {
+    for _ in 0..1000 {
+        let dest = unique_path(folder, name);
+        match std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(part_path(&dest)) {
+            Ok(file) => return Ok((dest, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::other("no free file name"))
+}
+
 pub fn unique_path(folder: &Path, name: &str) -> PathBuf {
     let taken = |p: &Path| p.exists() || part_path(p).exists();
     let first = folder.join(name);

@@ -261,8 +261,28 @@ impl DownloadManager {
         self.inner.pause(&ids);
     }
 
+    /// Stop All: stops the queue and pauses every running download.
     pub fn pause_all(&self) {
         self.inner.pause_all();
+    }
+
+    /// Start Queue: starts waiting downloads, oldest first, while fewer than "Downloads at once" run.
+    pub fn start_queue(&self) {
+        self.inner.start_queue();
+    }
+
+    /// Stop Queue: starts no more waiting downloads; running ones carry on.
+    pub fn stop_queue(&self) {
+        self.inner.stop_queue();
+    }
+
+    pub fn queue_running(&self) -> bool {
+        self.inner.queue_running()
+    }
+
+    /// Downloads at once (1–10).
+    pub fn set_downloads_at_once(&self, n: u32) {
+        self.inner.set_downloads_at_once(n);
     }
 
     pub fn any_running(&self) -> bool {

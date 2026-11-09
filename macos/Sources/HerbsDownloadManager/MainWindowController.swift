@@ -36,7 +36,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         Button(id: "stopQueue", label: "Stop Queue", symbol: "stop.circle",
                help: "Stop Queue: stop starting new items from the queue", action: #selector(stopQueue(_:))),
         Button(id: "stopAll", label: "Stop All", symbol: "stop.fill",
-               help: "Stop All: pause every running download (⌥⌘.)", action: #selector(stopAll(_:))),
+               help: "Stop All: stop the queue and pause every running download (⌥⌘.)", action: #selector(stopAll(_:))),
         Button(id: "delete", label: "Delete", symbol: "trash",
                help: "Delete: remove the selected downloads from the list (⌘⌫)", action: #selector(deleteSelected(_:))),
         Button(id: "settings", label: "Settings", symbol: "gearshape",
@@ -125,6 +125,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         let selected = list.selectedRows.count
         var parts = ["\(selected) selected", "\(active.count) active"]
         if speed > 0 { parts.append(speedText(bytesPerSecond: speed)) }
+        let waiting = rows.filter { $0.status == .waiting }.count
+        if AppModel.shared.queueRunning {
+            parts.append(waiting == 0 ? "Queue running" : "Queue running, \(waiting) waiting")
+        } else if waiting > 0 {
+            parts.append("Queue stopped, \(waiting) waiting")
+        }
         footer.stringValue = parts.joined(separator: "  ·  ")
         window?.toolbar?.validateVisibleItems()
     }
@@ -198,7 +204,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(resumeSelected(_:)): return selected.contains { $0.status.canResume }
         case #selector(pauseSelected(_:)): return selected.contains { $0.status.isRunning }
         case #selector(restartSelected(_:)): return !selected.isEmpty
-        case #selector(stopAll(_:)): return rows.contains { $0.status.isRunning }
+        case #selector(stopAll(_:)): return rows.contains { $0.status.isRunning } || AppModel.shared.queueRunning
+        case #selector(startQueue(_:)): return !AppModel.shared.queueRunning
+        case #selector(stopQueue(_:)): return AppModel.shared.queueRunning
         case #selector(deleteSelected(_:)): return !selected.isEmpty
         case #selector(deleteAllFinished(_:)): return rows.contains { $0.status.isFinished }
         case #selector(deleteAllUnfinished(_:)): return rows.contains { !$0.status.isFinished }
@@ -215,9 +223,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
         case #selector(addMirror(_:)): return selected.count == 1
-        // These arrive with their own windows: Settings (§9) and the queue (§11).
-        case #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)):
-            return false
+        // Settings (§9) arrive with their own window.
+        case #selector(showSettings(_:)): return false
         default: return true
         }
     }
@@ -290,8 +297,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             if count < self.panels.count { self.panels.remove(at: count) } else { self.panels.removeAll { $0.window?.isVisible == false } }
         }
     }
-    @objc func startQueue(_ sender: Any?) {}
-    @objc func stopQueue(_ sender: Any?) {}
+    /// Start Queue (T4, ⇧⌘R, §11): waiting downloads start, oldest first, a few at a time.
+    @objc func startQueue(_ sender: Any?) { AppModel.shared.startQueue() }
+    /// Stop Queue (T5): no more waiting downloads start; running ones carry on.
+    @objc func stopQueue(_ sender: Any?) { AppModel.shared.stopQueue() }
     @objc func showSettings(_ sender: Any?) {}
     /// Add Mirror… (⌥⌘M, §7.1) on the selected download.
     @objc func addMirror(_ sender: Any?) {

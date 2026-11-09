@@ -300,3 +300,77 @@ fn mirrors_are_added_and_removed_before_during_and_after() {
     let finished = m.detail(id).unwrap();
     assert_eq!(finished.segments.len(), 1);
 }
+
+fn running(m: &Manager) -> usize {
+    m.rows().iter().filter(|r| r.status.is_running()).count()
+}
+
+#[test]
+fn the_queue_runs_waiting_downloads_a_few_at_a_time_oldest_first() {
+    let data = pattern(2 * MIB, 7);
+    let (_rt, s) = server(&data, Some(4 * MIB as u64));
+    let dir = folder("queue");
+    let m = Manager::open(&dir).unwrap();
+    m.set_downloads_at_once(2);
+    let ids: Vec<u64> = (0..4).map(|_| m.add(new(s.url("/f.bin"), &dir, false))).collect();
+    assert_eq!(running(&m), 0, "nothing starts while the queue is stopped");
+    m.start_queue();
+    assert!(m.queue_running());
+    let rows = m.rows();
+    let started: Vec<u64> = rows.iter().filter(|r| r.status.is_running()).map(|r| r.id).collect();
+    assert_eq!(started.len(), 2);
+    assert!(started.contains(&ids[0]) && started.contains(&ids[1]), "oldest first: {started:?}");
+    let until = Instant::now() + Duration::from_secs(30);
+    while m.rows().iter().any(|r| r.status != Status::Finished) {
+        assert!(running(&m) <= 2, "never more than downloads at once");
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // A download added while the queue runs starts by itself.
+    let late = m.add(new(s.url("/f.bin"), &dir, false));
+    wait(&m, late, |s| *s == Status::Finished);
+}
+
+#[test]
+fn stopping_the_queue_lets_running_downloads_finish_and_starts_no_more() {
+    let data = pattern(2 * MIB, 8);
+    let (_rt, s) = server(&data, Some(2 * MIB as u64));
+    let dir = folder("queue-stop");
+    let m = Manager::open(&dir).unwrap();
+    m.set_downloads_at_once(1);
+    let a = m.add(new(s.url("/f.bin"), &dir, false));
+    let b = m.add(new(s.url("/f.bin"), &dir, false));
+    m.start_queue();
+    m.stop_queue();
+    wait(&m, a, |s| *s == Status::Finished);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(m.rows().into_iter().find(|r| r.id == b).unwrap().status, Status::Waiting);
+    // Download/Resume ignores the queue.
+    m.resume(&[b]);
+    wait(&m, b, |s| *s == Status::Finished);
+}
+
+#[test]
+fn stop_all_stops_the_queue_and_a_running_queue_is_remembered() {
+    let data = pattern(4 * MIB, 9);
+    let (_rt, s) = server(&data, Some(MIB as u64));
+    let dir = folder("queue-launch");
+    {
+        let m = Manager::open(&dir).unwrap();
+        m.set_downloads_at_once(1);
+        m.add(new(s.url("/f.bin"), &dir, false));
+        m.add(new(s.url("/f.bin"), &dir, false));
+        m.start_queue();
+        assert_eq!(running(&m), 1);
+        assert!(m.quit(Duration::from_secs(10)));
+        assert_eq!(running(&m), 0, "quitting starts nothing new");
+    }
+    let m = Manager::open(&dir).unwrap();
+    assert!(m.queue_running(), "the queue runs again after launch");
+    assert_eq!(running(&m), 1);
+    m.pause_all();
+    assert!(m.wait_idle(Duration::from_secs(10)));
+    assert!(!m.queue_running());
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(running(&m), 0, "Stop All starts nothing from the queue");
+}

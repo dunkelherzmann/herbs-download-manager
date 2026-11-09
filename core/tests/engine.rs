@@ -398,3 +398,25 @@ async fn connections_can_be_added_and_removed_while_running() {
     assert_eq!(std::fs::read(finished(&outcome)).unwrap(), data);
     assert_eq!(progress.peak.load(Ordering::SeqCst), 6);
 }
+
+/// Several downloads of one link starting together each get their own name. The queue hit this race (two chose
+/// "test (2).bin"); the gap is microseconds, so this test guards the fix rather than reproducing the race every time.
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_of_one_file_starting_together_get_different_names() {
+    let data = pattern(64 * 1024, 21);
+    let s = MockServer::start().await.unwrap();
+    s.put("/same.bin", MockFile::new(data.clone()));
+    let dir = folder("same-name");
+    let runs: Vec<_> = (0..24).map(|_| tokio::spawn(run(request(s.url("/same.bin"), &dir, 2), fast()))).collect();
+    let mut paths = Vec::new();
+    for r in runs {
+        let (outcome, _) = r.await.unwrap();
+        paths.push(finished(&outcome));
+    }
+    paths.sort();
+    paths.dedup();
+    assert_eq!(paths.len(), 24, "{paths:?}");
+    for p in &paths {
+        assert_eq!(std::fs::read(p).unwrap(), data);
+    }
+}
