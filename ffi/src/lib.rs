@@ -118,6 +118,16 @@ impl From<Filter> for CoreFilter {
     }
 }
 
+/// What adding a link would do (see `DownloadManager::plan_add`).
+#[derive(uniffi::Enum)]
+pub enum AddPlan {
+    New,
+    /// The same file as this unfinished download: the link becomes its mirror.
+    Mirror { id: u64 },
+    /// A different file has the name: ask Skip, Replace or Keep Both (as `kept_name`).
+    Clash { id: Option<u64>, path: Option<String>, size: Option<u64>, finished: bool, kept_name: String },
+}
+
 /// What adding a link did: a new download, or a mirror of the download with this id.
 #[derive(uniffi::Record)]
 pub struct AddResult {
@@ -274,6 +284,22 @@ impl DownloadManager {
             size,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
+    }
+
+    /// What adding a link would do: become a mirror of an unfinished download of the same file, clash with a
+    /// different file of that name in the list or the folder, or be a new download.
+    pub fn plan_add(&self, url: String, name: Option<String>, folder: String, size: Option<u64>) -> AddPlan {
+        match self.inner.plan_add(&url, name.as_deref(), std::path::Path::new(&folder), size) {
+            manager::Plan::New => AddPlan::New,
+            manager::Plan::Mirror(id) => AddPlan::Mirror { id },
+            manager::Plan::Clash(c) => AddPlan::Clash {
+                id: c.id,
+                path: c.path.map(|p| p.to_string_lossy().into_owned()),
+                size: c.size,
+                finished: c.finished,
+                kept_name: c.kept_name,
+            },
+        }
     }
 
     pub fn resume(&self, ids: Vec<u64>) {

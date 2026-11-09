@@ -211,9 +211,15 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         mirrorsBox.isEnabled = canBeMirrors
         if !canBeMirrors { mirrorsBox.state = .off }
         let n = checked.count
+        // Links to the same file (same name, and same size when known) become one download with mirrors.
+        let files = Set(checked.map { "\($0.name)\u{0}\($0.size.map(String.init) ?? "")" }).count
         summary.stringValue = mirrorsBox.state == .on
             ? "1 download from \(n) sources"
-            : (n == 1 ? "1 link checked" : "\(n) links checked")
+            : n == 1 ? "1 link checked"
+            : files < n ? "\(n) links checked: \(files) download\(files == 1 ? "" : "s") with mirrors"
+            : "\(n) links checked"
+        summary.toolTip = "Links to the same file (same name and size) are added as one download and its mirrors"
+
     }
 
     @objc func mirrorsChanged(_ sender: Any?) { update() }
@@ -243,21 +249,21 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
     @objc func addToQueue(_ sender: Any?) { submit(start: false) }
     @objc func download(_ sender: Any?) { submit(start: true) }
 
+    /// Adds the checked links one at a time: links to the same file become one download and its mirrors, and a
+    /// different file with a name in use asks Skip, Replace or Keep Both (§5.6).
     private func submit(start: Bool) {
         let chosen = checked
         guard !chosen.isEmpty else { NSSound.beep(); return }
         let connections = defaultSettings().connections
-        if mirrorsBox.state == .on {
-            AppModel.shared.add(url: chosen[0].url, mirrors: chosen.dropFirst().map(\.url), folder: folder,
-                                name: nil, size: chosen.compactMap(\.size).first, connections: connections,
-                                start: start)
-        } else {
-            for item in chosen {
-                AppModel.shared.add(url: item.url, mirrors: [], folder: folder, name: nil, size: item.size,
-                                    connections: connections, start: start)
-            }
-        }
+        let links: [PendingLink] = mirrorsBox.state == .on
+            ? [PendingLink(url: chosen[0].url, mirrors: chosen.dropFirst().map(\.url), name: chosen[0].name,
+                           size: chosen.compactMap(\.size).first)]
+            : chosen.map { PendingLink(url: $0.url, name: $0.name, size: $0.size) }
+        let folder = self.folder
         close()
+        let window = (NSApp.delegate as? AppDelegate)?.mainWindow?.window
+        Task { await AppModel.shared.addAsking(links, folder: folder, connections: connections, start: start,
+                                               window: window) }
     }
 
     override func close() {

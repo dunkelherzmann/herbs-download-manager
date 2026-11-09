@@ -222,7 +222,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(removeConnection(_:)):
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
         case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)): return true
-        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)): return true
+        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
+             #selector(importLinks(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
         case #selector(addMirror(_:)): return selected.count == 1
         // Settings (§9) arrive with their own window.
@@ -279,6 +280,40 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     }
 
     /// Add Links (§5.3) for links from the clipboard, a drop, the Dock icon or a batch.
+    /// File ▸ Import Links… (⇧⌘O, §5.7): links from text-based files (with no extension, .txt, .md, .rtf, .html, …)
+    /// open the Add Links window, where links to the same file are added as one download and its mirrors.
+    @objc func importLinks(_ sender: Any?) {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Choose files with links: plain text with or without an extension, Markdown, rich text, HTML…"
+        panel.prompt = "Import"
+        panel.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                guard response == .OK else { return }
+                self.importLinks(from: panel.urls)
+            }
+        }
+    }
+
+    func importLinks(from files: [URL]) {
+        var links: [String] = []
+        for file in files {
+            for link in LinkReader.links(fromFile: file) where !links.contains(link) { links.append(link) }
+        }
+        guard !links.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = files.count == 1 ? "“\(files[0].lastPathComponent)” has no links."
+                : "These files have no links."
+            alert.informativeText = "Import Links reads text files (with or without an extension), Markdown, rich text "
+                + "and HTML, and finds the web addresses (http, https or ftp) in them."
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+            return
+        }
+        openLinks(links)
+    }
+
     func openLinks(_ links: [String]) {
         guard !links.isEmpty else { return }
         showWindow(nil)
@@ -494,11 +529,7 @@ final class DropView: NSView {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
             for url in urls {
                 if url.isFileURL {
-                    let ext = url.pathExtension.lowercased()
-                    if ["txt", "html", "htm", "text", "md", "csv"].contains(ext),
-                       let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count < 20_000_000 {
-                        text += "\n" + String(decoding: data, as: UTF8.self)
-                    }
+                    text += "\n" + (LinkReader.text(ofFile: url) ?? "")
                 } else {
                     text += "\n" + url.absoluteString
                 }

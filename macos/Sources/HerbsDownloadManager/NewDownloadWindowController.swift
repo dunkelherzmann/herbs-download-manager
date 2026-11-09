@@ -194,7 +194,8 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     @objc func addToQueue(_ sender: Any?) { submit(start: false) }
     @objc func download(_ sender: Any?) { submit(start: true) }
 
-    /// Adds the download; if a file of that name exists, offers a numbered name (first), Replace, or Show.
+    /// Adds the download; a different file with that name in the list or the folder asks Skip, Replace or Keep Both
+    /// (§5.6), and a link to a file already downloading becomes its mirror.
     private func submit(start: Bool) {
         let url = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !findLinks(text: url).isEmpty, let window else {
@@ -206,36 +207,11 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         let mirrorLinks = findLinks(text: mirrors.string).filter { $0 != url }
         let chosen = name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = UInt32(connections.titleOfSelectedItem ?? "") ?? defaultSettings().connections
-        let finish = { (finalName: String?) in
-            AppModel.shared.add(url: url, mirrors: mirrorLinks, folder: self.folder, name: finalName,
-                                size: self.probedSize, connections: count, start: start)
-            self.close()
-        }
-        guard !chosen.isEmpty else { return finish(nil) }
-        let existing = folder.appendingPathComponent(chosen)
-        guard FileManager.default.fileExists(atPath: existing.path) else { return finish(chosen) }
-        let numbered = freeName(folder: folder.path, name: chosen)
-        let alert = NSAlert()
-        alert.messageText = "“\(chosen)” already exists in \(folder.lastPathComponent)."
-        alert.informativeText = "Save the download under another name, or replace the existing file?"
-        alert.addButton(withTitle: "Save as “\(numbered)”")
-        alert.addButton(withTitle: "Replace")
-        alert.addButton(withTitle: "Show Existing File")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[1].hasDestructiveAction = true
-        alert.beginSheetModal(for: window) { response in
-            MainActor.assumeIsolated {
-                switch response {
-                case .alertFirstButtonReturn: finish(numbered)
-                case .alertSecondButtonReturn:
-                    // The old file goes to the Trash, so replacing can be undone.
-                    try? FileManager.default.trashItem(at: existing, resultingItemURL: nil)
-                    finish(chosen)
-                case .alertThirdButtonReturn: NSWorkspace.shared.activateFileViewerSelecting([existing])
-                default: break
-                }
-            }
-        }
+        let link = PendingLink(url: url, mirrors: mirrorLinks, name: chosen.isEmpty ? nil : chosen, size: probedSize)
+        let folder = self.folder
+        close()
+        let main = (NSApp.delegate as? AppDelegate)?.mainWindow?.window
+        Task { await AppModel.shared.addAsking([link], folder: folder, connections: count, start: start, window: main) }
     }
 
     override func close() {

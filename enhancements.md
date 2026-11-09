@@ -60,7 +60,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Import links from a file.** *Requested 2026-11-09.* File ▸ Import Links… reads any text-based file: no extension, `.txt`, `.md`, `.rtf`, `.html`, `.csv` and the like. The links found are added with those for the same file grouped into one download and its mirrors. Everywhere a download is added, a file of the same name that isn't the same file asks whether to skip, replace, or keep both, the new one named "<name> - kept.<extension>".
-  - [ ] Mac
+- [ ] **Import links from a file.** *Requested 2026-11-09.* File ▸ Import Links… reads any text-based file: no extension, `.txt`, `.md`, `.rtf`, `.html`, `.csv` and the like. The links found are added with those for the same file grouped into one download and its mirrors. Everywhere a download is added, a file of the same name that isn't the same file asks whether to skip, replace, or keep both, the new one named "<name> - kept.<extension>". Done for the Mac in #22.
+  - [x] Mac
   - [ ] Linux
   - [ ] Windows

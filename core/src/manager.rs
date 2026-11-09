@@ -114,6 +114,47 @@ pub enum Added {
     MirrorOf(u64),
 }
 
+/// What adding a link would do; see `Manager::plan_add`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Plan {
+    New,
+    /// The same file as this unfinished download: the link becomes its mirror.
+    Mirror(u64),
+    /// A different file has the name: the user chooses Skip, Replace or Keep Both.
+    Clash(Clash),
+}
+
+/// A download or a file in the folder with the name a new download would take, but not the same file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Clash {
+    /// The download in the list, if the name belongs to one.
+    pub id: Option<u64>,
+    /// Its file (or the file already in the folder), if there is one.
+    pub path: Option<PathBuf>,
+    pub size: Option<u64>,
+    pub finished: bool,
+    /// The name Keep Both gives the new download: "name - kept.ext", then "name - kept 2.ext" and so on.
+    pub kept_name: String,
+}
+
+/// "report - kept.pdf", "report - kept 2.pdf", …: the first not used in the folder or by a download in the list.
+fn kept_name(folder: &Path, name: &str, slots: &[Slot]) -> String {
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
+        _ => (name.to_string(), String::new()),
+    };
+    let used = |n: &str| {
+        let p = folder.join(n);
+        p.exists()
+            || transfer::part_path(&p).exists()
+            || slots.iter().any(|s| s.entry.folder == folder && s.entry.name.as_deref() == Some(n))
+    };
+    (1..)
+        .map(|i| if i == 1 { format!("{stem} - kept{ext}") } else { format!("{stem} - kept {i}{ext}") })
+        .find(|n| !used(n))
+        .expect("some kept name is free")
+}
+
 impl Added {
     pub fn id(self) -> u64 {
         match self {
@@ -272,24 +313,47 @@ impl Manager {
         }
     }
 
-    /// Adds a link: as a mirror of an unfinished download of the same file (same file name, and the same size when
-    /// both are known), otherwise as a new download. Mirrors are checked before use, so a link that turns out to be
-    /// another file is dropped as "Different file" without harming the download.
+    /// What adding a link would do (§7.1 M5, §5.6): become a mirror of an unfinished download of the same file (the
+    /// same file name, and the same size when both are known, or the very same link), clash with a different file
+    /// of that name in the list or in the folder, or be a new download.
+    pub fn plan_add(&self, url: &str, name: Option<&str>, folder: &Path, size: Option<u64>) -> Plan {
+        let wanted = name.map(str::to_string).unwrap_or_else(|| name_from_url(url));
+        let slots = self.inner.slots.lock().unwrap();
+        let name_of = |e: &Entry| e.name.clone().unwrap_or_else(|| name_from_url(&e.url));
+        let unfinished = |s: &&Slot| s.entry.status != Status::Finished;
+        let uses = |e: &Entry| transfer::same_link(&e.url, url) || e.mirrors.iter().any(|m| transfer::same_link(m, url));
+        if let Some(s) = slots.iter().filter(unfinished).find(|s| uses(&s.entry)) {
+            return Plan::Mirror(s.entry.id);
+        }
+        let same_size = |e: &Entry| !matches!((e.size, size), (Some(a), Some(b)) if a != b);
+        if let Some(s) = slots.iter().filter(unfinished).find(|s| name_of(&s.entry) == wanted && same_size(&s.entry)) {
+            return Plan::Mirror(s.entry.id);
+        }
+        let kept = || kept_name(folder, &wanted, &slots);
+        if let Some(s) = slots.iter().rev().find(|s| s.entry.folder == folder && name_of(&s.entry) == wanted) {
+            let e = &s.entry;
+            return Plan::Clash(Clash {
+                id: Some(e.id),
+                path: e.dest.clone(),
+                size: e.size,
+                finished: e.status == Status::Finished,
+                kept_name: kept(),
+            });
+        }
+        let path = folder.join(&wanted);
+        if path.exists() {
+            let size = std::fs::metadata(&path).ok().map(|m| m.len());
+            return Plan::Clash(Clash { id: None, path: Some(path), size, finished: true, kept_name: kept() });
+        }
+        Plan::New
+    }
+
+    /// Adds a link: as a mirror of an unfinished download of the same file, otherwise as a new download (a clash
+    /// is added as new; the apps ask first with `plan_add`). Mirrors are checked before use, so a link that turns
+    /// out to be another file is dropped as "Different file" without harming the download.
     pub fn add_or_mirror(&self, new: NewDownload) -> Added {
-        let wanted = new.name.clone().unwrap_or_else(|| name_from_url(&new.url));
-        let same = {
-            let slots = self.inner.slots.lock().unwrap();
-            slots
-                .iter()
-                .filter(|s| s.entry.status != Status::Finished && !transfer::same_link(&s.entry.url, &new.url))
-                .find(|s| {
-                    let e = &s.entry;
-                    let name = e.name.clone().unwrap_or_else(|| name_from_url(&e.url));
-                    name == wanted && !matches!((e.size, new.size), (Some(a), Some(b)) if a != b)
-                })
-                .map(|s| s.entry.id)
-        };
-        let Some(id) = same else { return Added::New(self.add(new)) };
+        let plan = self.plan_add(&new.url, new.name.as_deref(), &new.folder, new.size);
+        let Plan::Mirror(id) = plan else { return Added::New(self.add(new)) };
         let mut urls = vec![new.url.clone()];
         urls.extend(new.mirrors.iter().cloned());
         self.add_mirrors(id, &urls);

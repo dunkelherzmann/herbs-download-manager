@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use hd_core::manager::{Added, Manager, NewDownload, Status};
+use hd_core::manager::{Added, Clash, Manager, NewDownload, Plan, Status};
 use hd_mock::{MockFile, MockServer, pattern};
 
 const MIB: usize = 1024 * 1024;
@@ -401,4 +401,41 @@ fn a_link_to_a_file_already_in_the_list_becomes_its_mirror() {
     assert!(matches!(m.add_or_mirror(other_size), Added::New(_)), "sizes differ");
     let unknown = NewDownload { size: None, ..new(a.url("/z/f.bin"), &dir, false) };
     assert_eq!(m.add_or_mirror(unknown), Added::MirrorOf(late), "an unknown size matches by name, oldest first");
+}
+
+#[test]
+fn a_different_file_with_the_same_name_is_a_clash_with_a_kept_name() {
+    let data = pattern(MIB, 12);
+    let (_rt, s) = server(&data, None);
+    let dir = folder("clash");
+    let files = dir.join("files");
+    let m = Manager::open(&dir).unwrap();
+    assert_eq!(m.plan_add(&s.url("/f.bin"), None, &files, None), Plan::New);
+
+    let id = m.add(new(s.url("/f.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Finished);
+    // The same link again, or the same name from elsewhere: a finished download is never added to, so it clashes.
+    let Plan::Clash(c) = m.plan_add("http://other.example/f.bin", None, &files, Some(5)) else { panic!() };
+    assert_eq!(
+        c,
+        Clash { id: Some(id), path: Some(files.join("f.bin")), size: Some(MIB as u64), finished: true, kept_name: "f - kept.bin".into() }
+    );
+
+    // A file already in the folder clashes too, and kept names count up past the ones in use.
+    std::fs::write(files.join("notes.txt"), b"hi").unwrap();
+    std::fs::write(files.join("notes - kept.txt"), b"hi").unwrap();
+    let Plan::Clash(c) = m.plan_add("http://a.example/notes.txt", None, &files, None) else { panic!() };
+    assert_eq!((c.id, c.size, c.kept_name.as_str()), (None, Some(2), "notes - kept 2.txt"));
+    // A name without an extension.
+    std::fs::write(files.join("README"), b"x").unwrap();
+    let Plan::Clash(c) = m.plan_add("http://a.example/README", None, &files, None) else { panic!() };
+    assert_eq!(c.kept_name, "README - kept");
+
+    // Keep Both: added under the kept name, which the next clash then skips.
+    let kept = m.add(NewDownload { name: Some("f - kept.bin".into()), ..new("http://127.0.0.1:9/f.bin".into(), &dir, false) });
+    // A link the kept download already uses (as its link or a mirror) is that download, whatever its name.
+    m.add_mirrors(kept, &["http://c.example/f.bin".to_string()]);
+    assert_eq!(m.plan_add("http://c.example/f.bin", None, &files, None), Plan::Mirror(kept));
+    let Plan::Clash(c) = m.plan_add("http://b.example/f.bin", None, &files, Some(7)) else { panic!() };
+    assert_eq!((c.id, c.kept_name.as_str()), (Some(id), "f - kept 2.bin"));
 }

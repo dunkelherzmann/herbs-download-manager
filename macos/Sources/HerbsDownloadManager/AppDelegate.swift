@@ -23,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--add URL` (repeatable) adds and starts a download: the hook the GUI tests use, with HD_DATA_DIR set
         // to a private folder.
         let args = CommandLine.arguments
+        // Test hooks: --import FILE runs Import Links on a file (§5.7).
+        for (i, arg) in args.enumerated() where arg == "--import" && i + 1 < args.count {
+            mainWindow?.importLinks(from: [URL(fileURLWithPath: args[i + 1])])
+        }
         // Test hooks: --add URL downloads at once, --queue URL adds it to the queue.
         for (i, arg) in args.enumerated() where ["--add", "--queue"].contains(arg) && i + 1 < args.count {
             AppModel.shared.add(url: args[i + 1], start: arg == "--add")

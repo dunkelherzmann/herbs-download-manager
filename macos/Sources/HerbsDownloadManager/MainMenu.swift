@@ -12,6 +12,7 @@ enum MainMenu {
 
         let file = submenu(bar, "File")
         file.addItem(withTitle: "New Download…", action: #selector(MainWindowController.newDownload(_:)), keyEquivalent: "n")
+        item(file, "Import Links…", #selector(MainWindowController.importLinks(_:)), "o", [.command, .shift])
         item(file, "Add from Clipboard", #selector(MainWindowController.addFromClipboard(_:)), "v", [.command, .shift])
         item(file, "Batch Download…", #selector(MainWindowController.batchDownload(_:)), "n", [.command, .shift])
         file.addItem(.separator())

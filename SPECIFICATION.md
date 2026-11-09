@@ -126,7 +126,7 @@ shortcut works from any window, Cut, Copy and Paste in text fields included.
 | Menu | Items |
 |---|---|
 | Herb's DM (macOS) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
-| File | New Download… ⌘N · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
+| File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (focuses the search field) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Columns ▸ · Show Download Window ⌘O |
@@ -154,8 +154,7 @@ disabled.
 | A6 | Size | shown once the first source answers ("4.0 GB, resumable" or "size unknown, can't resume") |
 
 Buttons: **Cancel**, **Add** (adds the download to the queue, paused if the queue is stopped) and **Download** (the
-default: starts it now). If a file of that name exists in the folder, the window offers: save as a numbered name
-("file (2).iso", listed first), replace the file, or show the existing file.
+default: starts it now). A file of that name in the list or the folder is handled as §5.6 says.
 
 ### 5.2 Add from Clipboard (⇧⌘V)
 
@@ -165,12 +164,36 @@ Every link in the clipboard's text opens the Add Links window (§5.3).
 
 A list of the links found, each with a checkbox, name, size and folder, and a filter field. **Treat as mirrors of
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
-Buttons: Cancel, Add, Download.
+Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same
+name, and the same size when known) become one download and its mirrors (§7.1 M5); the footer line says so ("5
+links checked: 2 downloads with mirrors"), and afterwards the main window's footer sums up what was added.
 
 ### 5.4 Drag and drop
 
-Links, text, and `.txt` or `.html` files dropped on the window or the Dock icon open the Add Links window with
+Links, text, and text-based files (§5.7) dropped on the window or the Dock icon open the Add Links window with
 every link they contain.
+
+### 5.6 A name in use
+
+Whenever a download is added (New Download, Add Links, Import, clipboard, drop, Batch), a **different** file with
+the same name — a download in the list (finished, or unfinished with another size) or a file in the folder — asks:
+
+> A different “report.pdf” is already in Downloads. Skip the new link, replace the existing file (it goes to the
+> Trash), or keep both, the new one as “report - kept.pdf”. The one there is 1.0 MB; the new one is 2.4 MB.
+
+Buttons: **Keep Both** (default), **Skip**, **Replace**. Keep Both names the new download "<name> - kept.<ext>"
+("report - kept.pdf", then "report - kept 2.pdf"; "README - kept" without an extension), so the original keeps its
+name. Replace moves the existing file to the Trash and removes its download from the list. When more links follow,
+**Do the same for the rest** answers once for all. Other links in the same batch for that file follow the choice:
+mirrors of the kept or replacing download, or skipped too. A link to the same file as an unfinished download is
+not a clash: it becomes its mirror (§7.1 M5).
+
+### 5.7 Import Links (⇧⌘O)
+
+File ▸ Import Links… chooses one or more files and opens the Add Links window with every link in them. It reads any
+text-based file: with no extension, `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, rich text and word-processor
+files (`.rtf`, `.rtfd`, `.doc`, `.docx`, `.odt`, web archives; their hyperlinks count too, not only the visible
+text) and `.webloc` bookmarks. A file that isn't text (a zip, an image) has no links, and the app says so.
 
 ### 5.5 Batch Download (⇧⌘N)
 
