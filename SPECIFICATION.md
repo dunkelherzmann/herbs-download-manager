@@ -51,8 +51,8 @@ window dims and shows "Drop links here".
 | F1 | All | every download | folder |
 | F2 | Downloading | running and connecting downloads | arrow down |
 | F3 | Paused | paused and waiting (queued) downloads | pause |
-| F4 | Finished | completed downloads | folder with checkmark |
-| F5 | Unfinished | everything not finished, failed included | folder with clock |
+| F4 | Finished | completed downloads | checkmark in a circle |
+| F5 | Unfinished | everything not finished, failed included | clock with an arrow |
 
 Each filter shows its count. Under each filter, file-type groups (Compressed, Documents, Music, Pictures, Video,
 Programs, Other) narrow the list by file extension. The groups are fixed; there are no tags and no user labels.

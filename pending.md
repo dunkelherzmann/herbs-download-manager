@@ -28,7 +28,8 @@ No open bugs in `bugs.md`.
   mirror added while paused. (§7.1, §10) #7
 - [ ] **Mirrors in the app**: the Mirrors field, Add Mirror… (⌥⌘M), the Mirrors tab with its sources list. (§5.1,
   §7.1, §7.3)
-- [ ] **Main window**: title bar, toolbar, sidebar filters, download list with columns, footer, search. (§2, §3)
+- [x] **Main window**: title bar, toolbar, sidebar filters, download list with columns, footer, search. (§2, §3) #8
+  New Download, the queue buttons and Settings stay disabled until their items below.
 - [ ] **Menus and context menu** with shortcuts. (§4)
 - [ ] **Pause and resume in the app**: running downloads come back Paused at launch, the can't-resume question, the
   quit question, Restart. (§10)

@@ -20,7 +20,11 @@ let package = Package(
             dependencies: ["hd_ffiFFI"],
             path: "macos/Sources/HDCore",
             swiftSettings: [.swiftLanguageMode(.v5)],
-            linkerSettings: [.unsafeFlags(["-L", rustLib]), .linkedLibrary("hd_ffi")]
+            linkerSettings: [
+                .unsafeFlags(["-L", rustLib]), .linkedLibrary("hd_ffi"),
+                // The HTTP client reads the system proxy settings.
+                .linkedFramework("SystemConfiguration"), .linkedFramework("CoreFoundation"), .linkedFramework("Security"),
+            ]
         ),
         .executableTarget(
             name: "HerbsDownloader",

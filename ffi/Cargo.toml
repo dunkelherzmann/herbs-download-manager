@@ -11,3 +11,4 @@ crate-type = ["staticlib", "lib"]
 [dependencies]
 hd-core = { version = "0.1.0", path = "../core" }
 uniffi = "0.32.2"
+thiserror = "2"
