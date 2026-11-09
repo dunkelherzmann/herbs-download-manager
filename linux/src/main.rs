@@ -1,6 +1,7 @@
 //! Herb's Download Manager for Linux (SPECIFICATION.md §1): GTK 4 + libadwaita over the shared core, the same
 //! window as the Mac's with the window controls on the right and the Main Menu (☰) in the title bar's left corner.
 
+mod list;
 mod window;
 
 use adw::prelude::*;
@@ -14,6 +15,15 @@ pub fn data_folder() -> PathBuf {
     match std::env::var_os("HD_DATA_DIR") {
         Some(dir) if !dir.is_empty() => PathBuf::from(dir),
         _ => gtk::glib::user_data_dir().join("herbs-download-manager"),
+    }
+}
+
+/// S1 when unset: the Downloads folder ($HD_DOWNLOADS_DIR in tests).
+pub fn downloads_folder() -> PathBuf {
+    match std::env::var_os("HD_DOWNLOADS_DIR") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => gtk::glib::user_special_dir(gtk::glib::UserDirectory::Downloads)
+            .unwrap_or_else(|| gtk::glib::home_dir().join("Downloads")),
     }
 }
 
@@ -38,6 +48,22 @@ fn main() -> gtk::glib::ExitCode {
         }
         match hd_core::manager::Manager::open(&data_folder()) {
             Ok(manager) => {
+                // Test hook: `--add URL` (repeatable) adds and starts a download, as on the Mac.
+                let args: Vec<String> = std::env::args().collect();
+                for (i, a) in args.iter().enumerate() {
+                    if a == "--add" && let Some(url) = args.get(i + 1) {
+                        let s = manager.settings();
+                        manager.add(hd_core::manager::NewDownload {
+                            url: url.clone(),
+                            folder: downloads_folder(),
+                            connections: s.connections,
+                            connections_per_server: s.connections_per_server,
+                            retries: s.retries,
+                            start: true,
+                            ..Default::default()
+                        });
+                    }
+                }
                 let window = window::build(app, manager);
                 window.present();
                 if let Some(path) = capture_path() {

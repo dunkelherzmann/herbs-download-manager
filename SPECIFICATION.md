@@ -102,7 +102,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
 | T10 | Search (🔍): opens the find bar (§2) | "Search: show only downloads whose name or link contains some text" | ⌘F / Ctrl+F |
-| T11 | Keep on Top (📌, between Settings and Search; filled and tinted while on) | "Keep on Top: keep Herb's DM above every other app's windows" | ⌃⌘T / Ctrl+Alt+T |
+| T11 | Keep on Top (📌, between Settings and Search; filled and tinted while on). On Linux it is shown disabled: GTK 4 and Wayland don't let an app keep itself above others, so its hover text points to the window manager's Always on Top (right-click the title bar) | "Keep on Top: keep Herb's DM above every other app's windows" | ⌃⌘T / Ctrl+Alt+T |
 | T9 | Main Menu (☰, after the search field on macOS; the left corner on Linux and Windows) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
 
 Separators group T2–T3, T4–T5, T6, T7 and T8, as in AB Download Manager.

@@ -1,34 +1,162 @@
-//! The main window (§2): title bar with the Main Menu (☰) in its left corner, sidebar filters, the download list and
-//! the footer. The list refreshes twice a second, as on the Mac.
+//! The main window (§2–§4): the Main Menu (☰) in the title bar's left corner, the toolbar, the sidebar filters with
+//! their file-type groups, the download list, the find bar and the footer. Every command is a window action with the
+//! Mac's shortcut (Ctrl for ⌘); the list refreshes twice a second, as on the Mac.
 
-use adw::prelude::*;
-use gtk::{gio, glib};
-use hd_core::format::{self, Filter};
-use hd_core::manager::{Manager, Row};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-/// The Main Menu (§4): one submenu per menu, then Settings, About and Quit, as on the Mac.
+use adw::prelude::*;
+use gtk::{gdk, gio, glib};
+use hd_core::format::{self, FileKind, Filter};
+use hd_core::manager::{Manager, Row, Status};
+
+use crate::list::{COLUMNS, DownloadList};
+
+const GITHUB: &str = "https://github.com/dunkelherzmann/herbs-download-manager";
+
+/// Commands that arrive with their own windows later in `linux/pending.md`; their items show, disabled.
+const LATER: [&str; 9] = [
+    "new-download", "import-links", "add-from-clipboard", "batch-download", "add-mirror", "properties", "settings",
+    "show-download-window", "keep-on-top",
+];
+
+fn item(menu: &gio::Menu, label: &str, action: &str) {
+    menu.append(Some(label), Some(&format!("win.{action}")));
+}
+
+/// The Main Menu (§4): File, Edit, Tasks, View, Window and Help, then Settings, About and Quit.
 fn main_menu() -> gio::Menu {
     let menu = gio::Menu::new();
-    for title in ["File", "Edit", "Tasks", "View", "Window", "Help"] {
-        menu.append_submenu(Some(title), &gio::Menu::new());
+    let file = gio::Menu::new();
+    item(&file, "New Download…", "new-download");
+    item(&file, "Import Links…", "import-links");
+    item(&file, "Add from Clipboard", "add-from-clipboard");
+    item(&file, "Batch Download…", "batch-download");
+    let close = gio::Menu::new();
+    item(&close, "Close Window", "close");
+    item(&close, "Exit", "quit");
+    file.append_section(None, &close);
+    menu.append_submenu(Some("File"), &file);
+
+    let edit = gio::Menu::new();
+    item(&edit, "Copy Link", "copy-link");
+    item(&edit, "Select All", "select-all");
+    let find = gio::Menu::new();
+    item(&find, "Find", "find");
+    edit.append_section(None, &find);
+    menu.append_submenu(Some("Edit"), &edit);
+
+    let tasks = gio::Menu::new();
+    let run = gio::Menu::new();
+    item(&run, "Resume", "resume");
+    item(&run, "Pause", "pause");
+    tasks.append_section(None, &run);
+    let queue = gio::Menu::new();
+    item(&queue, "Start Queue", "start-queue");
+    item(&queue, "Stop Queue", "stop-queue");
+    tasks.append_section(None, &queue);
+    let all = gio::Menu::new();
+    item(&all, "Stop All", "stop-all");
+    tasks.append_section(None, &all);
+    let one = gio::Menu::new();
+    item(&one, "Add Mirror…", "add-mirror");
+    item(&one, "Properties", "properties");
+    tasks.append_section(None, &one);
+    let delete = gio::Menu::new();
+    item(&delete, "Selected", "delete");
+    item(&delete, "All Finished", "delete-finished");
+    item(&delete, "All Unfinished", "delete-unfinished");
+    item(&delete, "All Missing Files", "delete-missing");
+    item(&delete, "Entire List", "delete-all");
+    let delete_section = gio::Menu::new();
+    delete_section.append_submenu(Some("Delete"), &delete);
+    tasks.append_section(None, &delete_section);
+    menu.append_submenu(Some("Tasks"), &tasks);
+
+    let view = gio::Menu::new();
+    item(&view, "Show Sidebar", "show-sidebar");
+    item(&view, "Keep on Top", "keep-on-top");
+    let columns = gio::Menu::new();
+    for (key, title, _) in COLUMNS.iter().skip(1) {
+        item(&columns, title, &format!("column-{key}"));
     }
+    view.append_submenu(Some("Columns"), &columns);
+    item(&view, "Show Download Window", "show-download-window");
+    menu.append_submenu(Some("View"), &view);
+
+    let window = gio::Menu::new();
+    item(&window, "Minimize", "minimize");
+    item(&window, "Zoom", "zoom");
+    menu.append_submenu(Some("Window"), &window);
+
+    let help = gio::Menu::new();
+    item(&help, "Herb's Download Manager on GitHub", "github");
+    menu.append_submenu(Some("Help"), &help);
+
     let end = gio::Menu::new();
-    end.append(Some("Settings…"), Some("app.settings"));
-    end.append(Some("About Herb's Download Manager"), Some("app.about"));
-    end.append(Some("Quit Herb's DM"), Some("app.quit"));
+    item(&end, "Settings…", "settings");
+    item(&end, "About Herb's Download Manager", "about");
     menu.append_section(None, &end);
+    let quit = gio::Menu::new();
+    item(&quit, "Quit Herb's DM", "quit");
+    menu.append_section(None, &quit);
     menu
 }
 
-pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow {
-    let quit = gio::SimpleAction::new("quit", None);
-    let app_for_quit = app.clone();
-    quit.connect_activate(move |_, _| app_for_quit.quit());
-    app.add_action(&quit);
-    app.set_accels_for_action("app.quit", &["<Control>q"]);
+/// §4.1: the menu for right-clicked downloads.
+fn context_menu() -> gio::Menu {
+    let menu = gio::Menu::new();
+    let open = gio::Menu::new();
+    item(&open, "Open", "open");
+    item(&open, "Show in Folder", "show-in-folder");
+    menu.append_section(None, &open);
+    let run = gio::Menu::new();
+    item(&run, "Resume", "resume");
+    item(&run, "Pause", "pause");
+    item(&run, "Restart", "restart");
+    menu.append_section(None, &run);
+    let more = gio::Menu::new();
+    item(&more, "Add Mirror…", "add-mirror");
+    let connections = gio::Menu::new();
+    item(&connections, "Add Connection", "add-connection");
+    item(&connections, "Remove Connection", "remove-connection");
+    more.append_submenu(Some("Connections"), &connections);
+    menu.append_section(None, &more);
+    let info = gio::Menu::new();
+    item(&info, "Copy Link", "copy-link");
+    item(&info, "Properties", "properties");
+    menu.append_section(None, &info);
+    let delete = gio::Menu::new();
+    item(&delete, "Delete", "delete");
+    menu.append_section(None, &delete);
+    menu
+}
 
+/// A flat toolbar button for a window action, with its hover text and screen-reader name (§3).
+fn tool(icon: &str, action: &str, label: &str, help: &str) -> gtk::Button {
+    let b = gtk::Button::builder().icon_name(icon).action_name(format!("win.{action}")).tooltip_text(help).build();
+    b.add_css_class("flat");
+    b.update_property(&[gtk::accessible::Property::Label(label)]);
+    b
+}
+
+fn separator() -> gtk::Separator {
+    let s = gtk::Separator::new(gtk::Orientation::Vertical);
+    s.set_margin_top(10);
+    s.set_margin_bottom(10);
+    s
+}
+
+struct Ui {
+    manager: Manager,
+    list: DownloadList,
+    filter: Cell<Filter>,
+    kind: Cell<Option<FileKind>>,
+    search: RefCell<String>,
+    notice: RefCell<Option<(String, std::time::Instant)>>,
+}
+
+pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow {
     let menu_button = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&main_menu())
@@ -38,36 +166,102 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     let header = adw::HeaderBar::new();
     header.pack_start(&menu_button);
     header.set_title_widget(Some(&adw::WindowTitle::new("Herb's Download Manager", "")));
+    // The toolbar (§3), right to left from the window controls: T10 Search, T11 Keep on Top, T8 Settings, T7 Delete,
+    // T6 Stop All, T5–T4 the queue, T3–T2 Pause and Resume, T1 New Download.
+    let tools: Vec<gtk::Widget> = vec![
+        tool("system-search-symbolic", "find", "Search", "Search: show only downloads whose name or link contains some text (Ctrl+F)").upcast(),
+        tool("view-pin-symbolic", "keep-on-top", "Keep on Top",
+             "Keep on Top: Linux desktops don't let an app keep itself above others; use the title bar's right-click menu ▸ Always on Top").upcast(),
+        tool("emblem-system-symbolic", "settings", "Settings", "Settings (Ctrl+,)").upcast(),
+        separator().upcast(),
+        tool("user-trash-symbolic", "delete", "Delete", "Delete: remove the selected downloads from the list (Delete)").upcast(),
+        separator().upcast(),
+        tool("process-stop-symbolic", "stop-all", "Stop All", "Stop All: stop the queue and pause every running download (Ctrl+Alt+.)").upcast(),
+        separator().upcast(),
+        tool("media-playback-stop-symbolic", "stop-queue", "Stop Queue", "Stop Queue: stop starting new items from the queue").upcast(),
+        tool("media-seek-forward-symbolic", "start-queue", "Start Queue", "Start Queue: download waiting items one after another (Ctrl+Shift+R)").upcast(),
+        separator().upcast(),
+        tool("media-playback-pause-symbolic", "pause", "Pause", "Pause: stop the selected downloads, keeping what's downloaded (Ctrl+.)").upcast(),
+        tool("media-playback-start-symbolic", "resume", "Resume", "Resume: continue the selected downloads (Ctrl+R)").upcast(),
+        separator().upcast(),
+        tool("list-add-symbolic", "new-download", "New Download", "New Download: add a link to download (Ctrl+N)").upcast(),
+    ];
+    for t in &tools {
+        header.pack_end(t);
+    }
 
-    // Sidebar: the status filters with their counts (§2.1).
+    // Sidebar (§2.1): each status filter with its count, and under it the file-type groups (shown by its arrow).
     let sidebar = gtk::ListBox::new();
     sidebar.add_css_class("navigation-sidebar");
-    let counts: Vec<gtk::Label> = Filter::ALL
-        .iter()
-        .map(|filter| {
-            let name = gtk::Label::builder().label(filter.title()).xalign(0.0).hexpand(true).build();
-            let count = gtk::Label::new(Some("0"));
-            count.add_css_class("dim-label");
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            row.append(&name);
-            row.append(&count);
+    let mut counts = Vec::new();
+    let mut groups: Vec<Vec<gtk::ListBoxRow>> = Vec::new();
+    for filter in Filter::ALL {
+        let icon = match filter {
+            Filter::All => "folder-symbolic",
+            Filter::Downloading => "go-down-symbolic",
+            Filter::Paused => "media-playback-pause-symbolic",
+            Filter::Finished => "object-select-symbolic",
+            Filter::Unfinished => "document-open-recent-symbolic",
+        };
+        let arrow = gtk::Button::builder().icon_name("pan-end-symbolic").tooltip_text("Show the file types").build();
+        arrow.add_css_class("flat");
+        arrow.add_css_class("circular");
+        let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        line.append(&arrow);
+        line.append(&gtk::Image::from_icon_name(icon));
+        line.append(&gtk::Label::builder().label(filter.title()).xalign(0.0).hexpand(true).build());
+        let count = gtk::Label::new(Some("0"));
+        count.add_css_class("dim-label");
+        line.append(&count);
+        sidebar.append(&line);
+        counts.push(count);
+        let mut kinds = Vec::new();
+        for kind in FileKind::ALL {
+            let row = gtk::ListBoxRow::builder()
+                .child(&gtk::Label::builder().label(kind.title()).xalign(0.0).margin_start(52).build())
+                .visible(false)
+                .build();
             sidebar.append(&row);
-            count
-        })
-        .collect();
+            kinds.push(row);
+        }
+        let shown = kinds.clone();
+        arrow.connect_clicked(move |b| {
+            let open = !shown[0].is_visible();
+            shown.iter().for_each(|r| r.set_visible(open));
+            b.set_icon_name(if open { "pan-down-symbolic" } else { "pan-end-symbolic" });
+        });
+        groups.push(kinds);
+    }
     sidebar.select_row(sidebar.row_at_index(0).as_ref());
+    let sidebar_scroll = gtk::ScrolledWindow::builder().child(&sidebar).width_request(190).build();
 
-    // The download list: one row per download, newest first.
-    let list = gtk::ListBox::new();
-    list.set_selection_mode(gtk::SelectionMode::Multiple);
-    list.add_css_class("rich-list");
-    let empty = adw::StatusPage::builder().title("No downloads yet").build();
-    list.set_placeholder(Some(&empty));
-    let scroller = gtk::ScrolledWindow::builder().child(&list).vexpand(true).hexpand(true).build();
+    let list = DownloadList::new();
+    let empty = adw::StatusPage::builder().title("No downloads yet").vexpand(true).build();
+    let list_scroll = gtk::ScrolledWindow::builder().child(&list.view).vexpand(true).hexpand(true).build();
+    let stack = gtk::Stack::new();
+    stack.add_named(&list_scroll, Some("list"));
+    stack.add_named(&empty, Some("empty"));
+
+    // The find bar (§2), at the top right of the list, as in Herb's Terminal.
+    let search = gtk::SearchEntry::builder().placeholder_text("Search downloads").width_chars(28).build();
+    search.update_property(&[gtk::accessible::Property::Label("Search downloads")]);
+    let done = gtk::Button::builder().label("Done").tooltip_text("Done: hide the search and show every download (Esc)").build();
+    let find_bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    find_bar.append(&search);
+    find_bar.append(&done);
+    find_bar.add_css_class("toolbar");
+    find_bar.add_css_class("osd");
+    find_bar.set_halign(gtk::Align::End);
+    find_bar.set_valign(gtk::Align::Start);
+    find_bar.set_margin_top(34);
+    find_bar.set_margin_end(12);
+    find_bar.set_visible(false);
+    let overlay = gtk::Overlay::builder().child(&stack).build();
+    overlay.add_overlay(&find_bar);
 
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
-    split.set_start_child(Some(&gtk::ScrolledWindow::builder().child(&sidebar).width_request(190).build()));
-    split.set_end_child(Some(&scroller));
+    split.set_start_child(Some(&sidebar_scroll));
+    split.set_end_child(Some(&overlay));
     split.set_position(190);
     split.set_shrink_start_child(false);
 
@@ -78,6 +272,8 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     view.add_top_bar(&header);
     view.set_content(Some(&split));
     view.add_bottom_bar(&footer);
+    view.set_bottom_bar_style(adw::ToolbarStyle::Raised);
+    view.set_top_bar_style(adw::ToolbarStyle::Raised);
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -87,35 +283,112 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         .content(&view)
         .build();
 
-    let filter = Rc::new(Cell::new(Filter::All));
-    let refresh = {
-        let (list, footer, filter, manager) = (list.clone(), footer.clone(), filter.clone(), manager.clone());
-        move || {
-            let rows = manager.rows();
+    let ui = Rc::new(Ui {
+        manager,
+        list: list.clone(),
+        filter: Cell::new(Filter::All),
+        kind: Cell::new(None),
+        search: RefCell::default(),
+        notice: RefCell::default(),
+    });
+
+    let refresh: Rc<dyn Fn()> = {
+        let (ui, stack, footer, window) = (ui.clone(), stack.clone(), footer.clone(), window.clone());
+        Rc::new(move || {
+            let rows = ui.manager.rows();
             for (label, f) in counts.iter().zip(Filter::ALL) {
                 label.set_label(&rows.iter().filter(|r| f.matches(&r.status)).count().to_string());
             }
-            show_rows(&list, rows.iter().filter(|r| filter.get().matches(&r.status)));
-            let active = rows.iter().filter(|r| r.status.is_running()).count();
-            let mut parts = vec![format!("{} selected", list.selected_rows().len()), format!("{active} active")];
-            let speed: u64 = rows.iter().map(|r| r.speed).sum();
+            let shown = ui.list.show(&rows, ui.filter.get(), ui.kind.get(), &ui.search.borrow());
+            stack.set_visible_child_name(if shown > 0 { "list" } else { "empty" });
+            if let Some(page) = stack.child_by_name("empty").and_downcast::<adw::StatusPage>() {
+                page.set_title(if rows.is_empty() { "No downloads yet" } else { "No downloads match" });
+            }
+            let selected = ui.list.selected();
+            let active: Vec<&Row> = rows.iter().filter(|r| r.status.is_running()).collect();
+            let mut parts = vec![format!("{} selected", selected.len()), format!("{} active", active.len())];
+            let speed: u64 = active.iter().map(|r| r.speed).sum();
             if speed > 0 {
                 parts.push(format::speed_text(speed));
             }
-            parts.push(if manager.queue_running() { "Queue running".into() } else { "Queue stopped".into() });
+            let waiting = rows.iter().filter(|r| r.status == Status::Waiting).count();
+            if ui.manager.queue_running() {
+                parts.push(if waiting == 0 { "Queue running".into() } else { format!("Queue running, {waiting} waiting") });
+            } else if waiting > 0 {
+                parts.push(format!("Queue stopped, {waiting} waiting"));
+            }
+            let mut notice = ui.notice.borrow_mut();
+            if notice.as_ref().is_some_and(|(_, at)| at.elapsed().as_secs() >= 6) {
+                *notice = None;
+            }
+            if let Some((text, _)) = notice.as_ref() {
+                parts.push(text.clone());
+            }
             footer.set_label(&parts.join("  ·  "));
-        }
+            enable(&window, &selected, &rows);
+        })
     };
-    refresh();
+
+    add_actions(&window, app, &ui, &refresh, &find_bar, &search, &sidebar_scroll);
+    {
+        let (ui, refresh, sidebar2) = (ui.clone(), refresh.clone(), sidebar.clone());
+        sidebar.connect_row_selected(move |_, row| {
+            let Some(row) = row else { return };
+            let i = row.index().max(0) as usize;
+            // Rows run: filter, its 7 file types, next filter…
+            let (f, k) = (i / 8, i % 8);
+            ui.filter.set(Filter::ALL[f.min(4)]);
+            ui.kind.set(if k == 0 { None } else { Some(FileKind::ALL[k - 1]) });
+            let _ = &sidebar2;
+            refresh();
+        });
+    }
+    {
+        let (ui, refresh) = (ui.clone(), refresh.clone());
+        search.connect_search_changed(move |entry| {
+            *ui.search.borrow_mut() = entry.text().to_string();
+            refresh();
+        });
+    }
+    {
+        let (find_bar2, search2) = (find_bar.clone(), search.clone());
+        let close = move || {
+            search2.set_text("");
+            find_bar2.set_visible(false);
+        };
+        let c = close.clone();
+        done.connect_clicked(move |_| c());
+        search.connect_stop_search(move |_| close());
+    }
     {
         let refresh = refresh.clone();
-        sidebar.connect_row_selected(move |_, row| {
-            if let Some(row) = row {
-                filter.set(Filter::ALL[row.index().max(0) as usize]);
-                refresh();
+        ui.list.selection.connect_selection_changed(move |_, _, _| refresh());
+    }
+    // Double-click (§2.2): a finished download opens its file; an unfinished one its Download window (later).
+    {
+        let ui = ui.clone();
+        ui.list.view.clone().connect_activate(move |_, position| {
+            if let Some(r) = ui.list.row_at(position)
+                && r.status == Status::Finished
+                && let Some(path) = &r.path
+            {
+                let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), None::<&gio::AppLaunchContext>);
             }
         });
     }
+    // Right-click (§4.1).
+    {
+        let popover = gtk::PopoverMenu::from_model(Some(&context_menu()));
+        popover.set_parent(&ui.list.view);
+        popover.set_has_arrow(false);
+        let click = gtk::GestureClick::builder().button(gdk::BUTTON_SECONDARY).build();
+        click.connect_pressed(move |_, _, x, y| {
+            popover.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.popup();
+        });
+        ui.list.view.add_controller(click);
+    }
+    refresh();
     glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
         refresh();
         glib::ControlFlow::Continue
@@ -123,29 +396,216 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     window
 }
 
-/// Rebuilds the list's rows: name, status, size and speed.
-fn show_rows<'a>(list: &gtk::ListBox, rows: impl Iterator<Item = &'a Row>) {
-    while let Some(child) = list.first_child() {
-        list.remove(&child);
-    }
-    for r in rows {
-        let line = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        line.set_margin_top(6);
-        line.set_margin_bottom(6);
-        let name = gtk::Label::builder().label(&r.name).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
-        name.set_tooltip_text(Some(&r.url));
-        let status = gtk::Label::builder().label(&r.status_text).xalign(0.0).width_chars(16).build();
-        let size = gtk::Label::builder().label(format::size_text(r.downloaded, r.size, r.status == hd_core::manager::Status::Finished)).xalign(0.0).width_chars(18).build();
-        let speed = gtk::Label::builder().label(format::speed_text(r.speed)).xalign(0.0).width_chars(10).build();
-        for w in [&name, &status, &size, &speed] {
-            line.append(w);
+/// Enables each command for the selection (§3: buttons that don't apply are disabled).
+fn enable(window: &adw::ApplicationWindow, selected: &[Row], rows: &[Row]) {
+    let set = |name: &str, on: bool| {
+        if let Some(a) = window.lookup_action(name).and_downcast::<gio::SimpleAction>() {
+            a.set_enabled(on);
         }
-        line.update_property(&[gtk::accessible::Property::Label(&format!("{}, {}", r.name, r.status_text))]);
-        list.append(&line);
+    };
+    let running = selected.iter().any(|r| r.status.is_running());
+    let resumable = selected.iter().any(|r| matches!(r.status, Status::Waiting | Status::Paused | Status::Failed(_)));
+    let unfinished = selected.iter().any(|r| r.status != Status::Finished);
+    set("resume", resumable);
+    set("pause", running);
+    set("restart", unfinished);
+    set("stop-all", rows.iter().any(|r| r.status.is_running()));
+    set("delete", !selected.is_empty());
+    set("copy-link", !selected.is_empty());
+    set("open", selected.len() == 1 && selected[0].status == Status::Finished);
+    set("show-in-folder", selected.len() == 1);
+    set("add-connection", selected.len() == 1 && unfinished && selected[0].allowed_connections < 32);
+    set("remove-connection", selected.len() == 1 && unfinished && selected[0].allowed_connections > 1);
+    set("delete-finished", rows.iter().any(|r| r.status == Status::Finished));
+    set("delete-unfinished", rows.iter().any(|r| r.status != Status::Finished));
+    set("delete-all", !rows.is_empty());
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_actions(
+    window: &adw::ApplicationWindow,
+    app: &adw::Application,
+    ui: &Rc<Ui>,
+    refresh: &Rc<dyn Fn()>,
+    find_bar: &gtk::Box,
+    search: &gtk::SearchEntry,
+    sidebar: &gtk::ScrolledWindow,
+) {
+    let add = |name: &str, accels: &[&str], run: Box<dyn Fn()>| {
+        let action = gio::SimpleAction::new(name, None);
+        action.connect_activate(move |_, _| run());
+        window.add_action(&action);
+        if !accels.is_empty() {
+            app.set_accels_for_action(&format!("win.{name}"), accels);
+        }
+    };
+    let ids = |ui: &Rc<Ui>| ui.list.selected().iter().map(|r| r.id).collect::<Vec<_>>();
+    macro_rules! on {
+        ($name:expr, $accels:expr, |$ui:ident| $body:expr) => {{
+            let ($ui, refresh) = (ui.clone(), refresh.clone());
+            add($name, $accels, Box::new(move || {
+                $body;
+                refresh();
+            }));
+        }};
+    }
+    on!("resume", &["<Control>r"], |ui| ui.manager.resume(&ids(&ui)));
+    on!("pause", &["<Control>period"], |ui| ui.manager.pause(&ids(&ui)));
+    on!("restart", &[], |ui| ui.manager.restart(&ids(&ui)));
+    on!("start-queue", &["<Control><Shift>r"], |ui| ui.manager.start_queue());
+    on!("stop-queue", &[], |ui| ui.manager.stop_queue());
+    on!("stop-all", &["<Control><Alt>period"], |ui| ui.manager.pause_all());
+    on!("add-connection", &[], |ui| for r in ui.list.selected() {
+        ui.manager.set_connections(r.id, (r.allowed_connections + 1).min(32));
+    });
+    on!("remove-connection", &[], |ui| for r in ui.list.selected() {
+        ui.manager.set_connections(r.id, r.allowed_connections.saturating_sub(1).max(1));
+    });
+    on!("select-all", &["<Control>a"], |ui| ui.list.selection.select_all());
+    {
+        let (ui, window2) = (ui.clone(), window.clone());
+        add("copy-link", &["<Control>c"], Box::new(move || {
+            let links: Vec<String> = ui.list.selected().into_iter().map(|r| r.url).collect();
+            window2.clipboard().set_text(&links.join("\n"));
+        }));
+    }
+    {
+        let ui = ui.clone();
+        add("open", &[], Box::new(move || {
+            if let Some(path) = ui.list.selected().first().and_then(|r| r.path.clone()) {
+                let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), None::<&gio::AppLaunchContext>);
+            }
+        }));
+    }
+    {
+        let (ui, window2) = (ui.clone(), window.clone());
+        add("show-in-folder", &[], Box::new(move || {
+            if let Some(r) = ui.list.selected().first() {
+                let target = r.path.clone().unwrap_or_else(|| r.folder.clone());
+                gtk::FileLauncher::new(Some(&gio::File::for_path(target))).open_containing_folder(
+                    Some(&window2), None::<&gio::Cancellable>, |_| {});
+            }
+        }));
+    }
+    // Delete (§10): the selection, or one of Tasks ▸ Delete's groups.
+    let delete = |name: &str, accels: &[&str], pick: fn(&Rc<Ui>) -> Vec<Row>, files_gone: bool| {
+        let (ui, refresh, window2) = (ui.clone(), refresh.clone(), window.clone());
+        add(name, accels, Box::new(move || confirm_delete(&window2, &ui, &refresh, pick(&ui), files_gone)));
+    };
+    delete("delete", &["Delete"], |ui| ui.list.selected(), false);
+    delete("delete-finished", &[], |ui| ui.manager.rows().into_iter().filter(|r| r.status == Status::Finished).collect(), false);
+    delete("delete-unfinished", &[], |ui| ui.manager.rows().into_iter().filter(|r| r.status != Status::Finished).collect(), false);
+    delete("delete-missing", &[], |ui| {
+        ui.manager.rows().into_iter().filter(|r| r.status == Status::Finished && !r.path.as_ref().is_some_and(|p| p.exists())).collect()
+    }, true);
+    delete("delete-all", &[], |ui| ui.manager.rows(), false);
+
+    {
+        let (find_bar, search) = (find_bar.clone(), search.clone());
+        add("find", &["<Control>f"], Box::new(move || {
+            find_bar.set_visible(true);
+            search.grab_focus();
+        }));
+    }
+    {
+        let sidebar = sidebar.clone();
+        add("show-sidebar", &["<Control><Super>s"], Box::new(move || sidebar.set_visible(!sidebar.is_visible())));
+    }
+    for (key, _, _) in COLUMNS.iter().skip(1) {
+        let action = gio::SimpleAction::new_stateful(&format!("column-{key}"), None, &crate::list::shown_at_first(key).to_variant());
+        let list = ui.list.clone();
+        action.connect_activate(move |a, _| {
+            let on = !a.state().and_then(|s| s.get::<bool>()).unwrap_or(true);
+            a.set_state(&on.to_variant());
+            list.set_column_visible(key, on);
+        });
+        window.add_action(&action);
+    }
+    {
+        let w = window.clone();
+        add("close", &["<Control>w"], Box::new(move || w.close()));
+        let w = window.clone();
+        add("minimize", &["<Control>m"], Box::new(move || w.minimize()));
+        let w = window.clone();
+        add("zoom", &[], Box::new(move || if w.is_maximized() { w.unmaximize() } else { w.maximize() }));
+        let a = app.clone();
+        add("quit", &["<Control>q"], Box::new(move || a.quit()));
+        add("github", &[], Box::new(|| {
+            let _ = gio::AppInfo::launch_default_for_uri(GITHUB, None::<&gio::AppLaunchContext>);
+        }));
+        let w = window.clone();
+        add("about", &[], Box::new(move || {
+            let about = adw::AboutDialog::builder()
+                .application_name("Herb's Download Manager")
+                .application_icon(crate::APP_ID)
+                .developer_name("dunkelherzmann")
+                .version(hd_core::version())
+                .website(GITHUB)
+                .license_type(gtk::License::MitX11)
+                .build();
+            about.present(Some(&w));
+        }));
+    }
+    for (name, accels) in [
+        ("new-download", &["<Control>n"][..]),
+        ("import-links", &["<Control><Shift>o"]),
+        ("add-from-clipboard", &["<Control><Shift>v"]),
+        ("batch-download", &["<Control><Shift>n"]),
+        ("add-mirror", &["<Control><Alt>m"]),
+        ("properties", &["<Control>i"]),
+        ("settings", &["<Control>comma"]),
+        ("show-download-window", &["<Control>o"]),
+        ("keep-on-top", &["<Control><Alt>t"]),
+    ] {
+        add(name, accels, Box::new(|| {}));
+    }
+    for name in LATER {
+        if let Some(a) = window.lookup_action(name).and_downcast::<gio::SimpleAction>() {
+            a.set_enabled(false);
+        }
     }
 }
 
-/// Saves the window as a PNG a second after it appears (the test hook behind `--capture`), then quits.
+/// Delete asks whether to remove only the list entries (the default) or to move the files to the Trash as well (§10).
+fn confirm_delete(window: &adw::ApplicationWindow, ui: &Rc<Ui>, refresh: &Rc<dyn Fn()>, rows: Vec<Row>, files_gone: bool) {
+    if rows.is_empty() {
+        return;
+    }
+    let one = rows.len() == 1;
+    let heading = if one { format!("Delete “{}”?", rows[0].name) } else { format!("Delete {} downloads?", rows.len()) };
+    let body = if files_gone {
+        "Their files are no longer on disk; only the list entries are removed.".to_string()
+    } else {
+        format!("Remove {} from the list only, or also move {} to the Trash? Files in the Trash can be put back until it's emptied.",
+                if one { "it" } else { "them" }, if one { "its file" } else { "their files" })
+    };
+    let dialog = adw::AlertDialog::new(Some(&heading), Some(&body));
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("list", "Remove from List");
+    if !files_gone {
+        dialog.add_response("trash", "Move to Trash Too");
+        dialog.set_response_appearance("trash", adw::ResponseAppearance::Destructive);
+    }
+    dialog.set_default_response(Some("list"));
+    dialog.set_close_response("cancel");
+    let (ui, refresh) = (ui.clone(), refresh.clone());
+    dialog.connect_response(None, move |_, response| {
+        let ids: Vec<u64> = rows.iter().map(|r| r.id).collect();
+        let kept = match response {
+            "list" => ui.manager.remove(&ids, false),
+            "trash" => ui.manager.remove(&ids, true),
+            _ => return,
+        };
+        if let Some(first) = kept.first() {
+            let name = first.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            *ui.notice.borrow_mut() = Some((format!("“{name}” couldn't go to the Trash, so it was left where it is"), std::time::Instant::now()));
+        }
+        refresh();
+    });
+    dialog.present(Some(window));
+}
+
+/// Saves the window as a PNG a moment after it appears (the test hook behind `--capture`), then quits.
 pub fn capture_then_quit(app: &adw::Application, window: &adw::ApplicationWindow, path: std::path::PathBuf) {
     let (app, window) = (app.clone(), window.clone());
     glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
