@@ -378,6 +378,8 @@ dependencies = [
  "hd-mock",
  "reqwest",
  "rustls",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

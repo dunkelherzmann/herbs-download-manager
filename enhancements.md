@@ -17,7 +17,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Stop and resume downloads.** *Requested 2026-11-08.* Mac, Linux and Windows. (§10)
+- [ ] **Stop and resume downloads.** *Requested 2026-11-08.* Mac, Linux and Windows. (§10) The shared engine does it (#6); each app still needs its controls.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
@@ -32,4 +32,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5.
+- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5, pause and resume in #6.

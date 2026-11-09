@@ -5,12 +5,13 @@
 //! short of. No range is split into halves smaller than `min_split`.
 
 /// `[start, end)` of the file; bytes `start..pos` are on disk.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Segment {
     pub start: u64,
     pub end: u64,
     pub pos: u64,
-    /// The connection working on it.
+    /// The connection working on it (never saved).
+    #[serde(skip)]
     pub owner: Option<usize>,
 }
 
@@ -35,6 +36,18 @@ impl Segments {
     pub fn from_saved(list: Vec<Segment>, min_split: u64) -> Self {
         let list = list.into_iter().map(|s| Segment { owner: None, ..s }).collect();
         Segments { list, min_split }
+    }
+
+    /// Whether saved segments cover `0..size` exactly, in order, with each position inside its range.
+    pub fn valid_for(list: &[Segment], size: u64) -> bool {
+        let mut next = 0;
+        for s in list {
+            if s.start != next || s.start > s.pos || s.pos > s.end {
+                return false;
+            }
+            next = s.end;
+        }
+        next == size && !list.is_empty()
     }
 
     pub fn get(&self, idx: usize) -> Segment {
@@ -140,6 +153,17 @@ mod tests {
         s.release(b);
         assert_eq!(s.take(2), Some(b));
         assert_eq!(s.owned_by(2), Some(b));
+    }
+
+    #[test]
+    fn checks_saved_segments() {
+        let a = Segment { start: 0, end: 10, pos: 4, owner: None };
+        let b = Segment { start: 10, end: 20, pos: 20, owner: None };
+        assert!(Segments::valid_for(&[a, b], 20));
+        assert!(!Segments::valid_for(&[a, b], 30));
+        assert!(!Segments::valid_for(&[b, a], 20));
+        assert!(!Segments::valid_for(&[Segment { pos: 11, ..a }, b], 20));
+        assert!(!Segments::valid_for(&[], 0));
     }
 
     #[test]

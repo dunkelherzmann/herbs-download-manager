@@ -16,7 +16,8 @@ use reqwest::header::{ACCEPT_ENCODING, IF_RANGE, RANGE};
 use tokio::sync::watch;
 
 use crate::http;
-use crate::segments::Segments;
+use crate::segments::{Segment, Segments};
+use serde::{Deserialize, Serialize};
 
 /// What to download and how.
 #[derive(Clone, Debug)]
@@ -31,6 +32,8 @@ pub struct Request {
     pub connections_per_server: u32,
     /// Consecutive failures before the source counts as failed.
     pub retries: u32,
+    /// Where the resume state is kept (`None`: not saved).
+    pub state_file: Option<PathBuf>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -46,6 +49,8 @@ pub struct Tuning {
     pub refusal_wait: Duration,
     /// Each connection writes to disk in pieces of this size.
     pub write_buffer: usize,
+    /// How often the resume state is saved while downloading.
+    pub save_interval: Duration,
 }
 
 impl Default for Tuning {
@@ -56,6 +61,7 @@ impl Default for Tuning {
             retry_delays: [5, 10, 20, 40, 60].map(Duration::from_secs).to_vec(),
             refusal_wait: Duration::from_secs(60),
             write_buffer: 256 * 1024,
+            save_interval: Duration::from_secs(5),
         }
     }
 }
@@ -133,6 +139,9 @@ struct Job {
     tuning: Tuning,
     retries: u32,
     validator: Option<String>,
+    /// What gets saved; its `segments` are filled in from `segs` at each save.
+    state: ResumeState,
+    state_file: Option<PathBuf>,
     file: File,
     segs: Mutex<Segments>,
     progress: Arc<Progress>,
@@ -143,7 +152,48 @@ struct Job {
     refusal_gate: tokio::sync::Mutex<()>,
 }
 
+/// Everything needed to continue a download after a pause, a quit, a crash or a power loss, saved as JSON.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumeState {
+    pub url: String,
+    /// The final file; the data is in `<dest>.hdpart` until it is complete.
+    pub dest: PathBuf,
+    pub size: Option<u64>,
+    pub validator: Option<String>,
+    /// False when the server has no ranges or no size: such a download starts over.
+    pub resumable: bool,
+    pub segments: Vec<Segment>,
+}
+
+impl ResumeState {
+    pub fn load(path: &Path) -> std::io::Result<Self> {
+        let text = std::fs::read(path)?;
+        serde_json::from_slice(&text).map_err(std::io::Error::other)
+    }
+
+    /// Writes to a temporary file and renames it, so a crash never leaves half a state file.
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        let tmp = PathBuf::from(tmp);
+        std::fs::write(&tmp, serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?)?;
+        std::fs::rename(&tmp, path)
+    }
+}
+
+/// Where a download starts from.
+enum Start {
+    /// A new download: the first response is already open.
+    Fresh(reqwest::Response),
+    /// Continuing saved ranges: no first response; every connection opens its own.
+    Resume,
+}
+
 /// Runs a download to the end, a pause or a failure.
+///
+/// With `req.state_file`, the resume state is saved there every `save_interval` while downloading, on pause and on
+/// failure, and removed when the download finishes; if the file already holds a state for this link, the download
+/// continues from it (or starts over when it can't resume, or when the `.hdpart` file no longer matches).
 pub async fn download(
     client: &reqwest::Client,
     req: Request,
@@ -155,6 +205,25 @@ pub async fn download(
         return Outcome::Failed("Not a valid link".into());
     };
     let max_conns = req.connections.clamp(1, 32).min(req.connections_per_server.clamp(1, 32)) as usize;
+    let saved = req.state_file.as_deref().and_then(|p| ResumeState::load(p).ok()).filter(|s| s.url == req.url);
+
+    // Continue saved ranges when the .hdpart file is still the one they describe.
+    if let Some(state) = &saved
+        && let Some(size) = state.size
+        && state.resumable
+        && Segments::valid_for(&state.segments, size)
+    {
+        let part = part_path(&state.dest);
+        let file = std::fs::OpenOptions::new().read(true).write(true).open(&part);
+        if let Ok(file) = file
+            && file.metadata().is_ok_and(|m| m.len() == size)
+        {
+            let segs = Segments::from_saved(state.segments.clone(), tuning.min_split);
+            progress.downloaded.store(segs.downloaded(), Ordering::SeqCst);
+            let job = Job::new(client, url, &req, tuning, state.clone(), file, segs, progress, &stop);
+            return run(job, Start::Resume, max_conns, false, stop).await;
+        }
+    }
 
     // The first connection: the whole file, which also tells the size, range support and validator.
     let mut attempt = 0;
@@ -182,67 +251,99 @@ pub async fn download(
 
     let ranges = first.status() == StatusCode::PARTIAL_CONTENT;
     let size = if ranges { http::content_range_total(first.headers()) } else { first.content_length() };
-    let validator = http::validator(first.headers());
-    let name = req.name.clone().unwrap_or_else(|| http::file_name(first.headers(), first.url()));
-    let dest = unique_path(&req.folder, &name);
+    let resumable = ranges && size.is_some();
+    // Starting over keeps the name the download already had.
+    let dest = match &saved {
+        Some(state) => state.dest.clone(),
+        None => {
+            let name = req.name.clone().unwrap_or_else(|| http::file_name(first.headers(), first.url()));
+            unique_path(&req.folder, &name)
+        }
+    };
     let part = part_path(&dest);
-    *progress.name.lock().unwrap() = dest.file_name().map(|n| n.to_string_lossy().into_owned());
-    progress.size.store(size.unwrap_or(u64::MAX), Ordering::SeqCst);
-    progress.resumable.store(ranges && size.is_some(), Ordering::SeqCst);
-
     let file = match File::create(&part) {
         Ok(f) => f,
         Err(e) => return Outcome::Failed(format!("Can't create {}: {e}", part.display())),
     };
     if let Some(size) = size
-        && let Err(e) = file.set_len(size) {
-            return Outcome::Failed(format!("Can't make room for the file: {e}"));
-        }
-
+        && let Err(e) = file.set_len(size)
+    {
+        return Outcome::Failed(format!("Can't make room for the file: {e}"));
+    }
     // Ranged downloads are split over connections; without ranges or a size, one connection reads to the end.
-    let segs = match (ranges, size) {
-        (true, Some(size)) => Segments::new(size, tuning.min_split),
-        _ => Segments::new(u64::MAX, u64::MAX),
+    let segs = if resumable {
+        Segments::new(size.unwrap_or(0), tuning.min_split)
+    } else {
+        Segments::new(u64::MAX, u64::MAX)
     };
-    let (stop_tx, _) = watch::channel(RUN);
-    let job = Arc::new(Job {
-        client: client.clone(),
-        url,
-        tuning,
-        retries: req.retries,
-        validator,
-        file,
-        segs: Mutex::new(segs),
-        progress,
-        failures: AtomicU32::new(0),
-        fatal: Mutex::new(None),
-        stop: merged_stop(stop.clone(), &stop_tx),
-        stop_tx,
-        refusal_gate: tokio::sync::Mutex::new(()),
-    });
+    progress.downloaded.store(0, Ordering::SeqCst);
+    let state = ResumeState {
+        url: req.url.clone(),
+        dest,
+        size,
+        validator: http::validator(first.headers()),
+        resumable,
+        segments: Vec::new(),
+    };
+    let job = Job::new(client, url, &req, tuning, state, file, segs, progress, &stop);
+    run(job, Start::Fresh(first), max_conns, !resumable, stop).await
+}
 
-    let sequential = !(ranges && size.is_some());
-    let first_idx = job.segs.lock().unwrap().take(0).expect("a new download has one free segment");
-    let mut tasks = vec![tokio::spawn(connection(job.clone(), 0, Some((first_idx, first)), sequential))];
+async fn run(job: Arc<Job>, start: Start, max_conns: usize, sequential: bool, stop: watch::Receiver<u8>) -> Outcome {
+    {
+        let p = &job.progress;
+        *p.name.lock().unwrap() = job.state.dest.file_name().map(|n| n.to_string_lossy().into_owned());
+        p.size.store(job.state.size.unwrap_or(u64::MAX), Ordering::SeqCst);
+        p.resumable.store(job.state.resumable, Ordering::SeqCst);
+    }
+    job.save();
+
+    let mut tasks = Vec::new();
+    let mut first_id = 0;
+    if let Start::Fresh(first) = start {
+        let idx = job.segs.lock().unwrap().take(0).expect("a new download has one free segment");
+        tasks.push(tokio::spawn(connection(job.clone(), 0, Some((idx, first)), sequential)));
+        first_id = 1;
+    }
     if !sequential {
-        for id in 1..max_conns {
+        for id in first_id..max_conns {
             tasks.push(tokio::spawn(connection(job.clone(), id, None, false)));
         }
     }
+
+    // Saves the resume state every few seconds until the connections are done.
+    let (done_tx, mut done_rx) = watch::channel(false);
+    let saver = tokio::spawn({
+        let job = job.clone();
+        async move {
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(job.tuning.save_interval) => job.save(),
+                    _ = done_rx.changed() => break,
+                }
+            }
+        }
+    });
     for t in tasks {
         let _ = t.await;
     }
+    let _ = done_tx.send(true);
+    let _ = saver.await;
 
     if let Some(msg) = job.fatal.lock().unwrap().clone() {
+        job.save();
         return Outcome::Failed(msg);
     }
     if *stop.borrow() == PAUSE {
+        job.save();
         return Outcome::Paused;
     }
-    let complete = if sequential { true } else { job.segs.lock().unwrap().is_complete() };
+    let complete = sequential || job.segs.lock().unwrap().is_complete();
     if !complete {
+        job.save();
         return Outcome::Failed("The download stopped before every byte was in".into());
     }
+    let size = job.state.size;
     if sequential {
         let got = job.progress.downloaded.load(Ordering::SeqCst);
         if size.is_some_and(|s| s != got) {
@@ -253,8 +354,14 @@ pub async fn download(
     if let Err(e) = job.file.sync_all() {
         return Outcome::Failed(format!("Can't write the file: {e}"));
     }
-    match std::fs::rename(&part, &dest) {
-        Ok(()) => Outcome::Finished(dest),
+    let dest = job.state.dest.clone();
+    match std::fs::rename(part_path(&dest), &dest) {
+        Ok(()) => {
+            if let Some(path) = &job.state_file {
+                let _ = std::fs::remove_file(path);
+            }
+            Outcome::Finished(dest)
+        }
         Err(e) => Outcome::Failed(format!("Can't rename the finished file: {e}")),
     }
 }
@@ -305,6 +412,48 @@ async fn connection(job: Arc<Job>, id: usize, mut first: Option<(usize, reqwest:
 }
 
 impl Job {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        client: &reqwest::Client,
+        url: reqwest::Url,
+        req: &Request,
+        tuning: Tuning,
+        state: ResumeState,
+        file: File,
+        segs: Segments,
+        progress: Arc<Progress>,
+        stop: &watch::Receiver<u8>,
+    ) -> Arc<Job> {
+        let (stop_tx, _) = watch::channel(RUN);
+        Arc::new(Job {
+            client: client.clone(),
+            url,
+            tuning,
+            retries: req.retries,
+            validator: state.validator.clone(),
+            state,
+            state_file: req.state_file.clone(),
+            file,
+            segs: Mutex::new(segs),
+            progress,
+            failures: AtomicU32::new(0),
+            fatal: Mutex::new(None),
+            stop: merged_stop(stop.clone(), &stop_tx),
+            stop_tx,
+            refusal_gate: tokio::sync::Mutex::new(()),
+        })
+    }
+
+    /// Saves the resume state, after making sure every byte it counts is on disk.
+    fn save(&self) {
+        let Some(path) = &self.state_file else { return };
+        let segments = self.segs.lock().unwrap().all().to_vec();
+        let _ = self.file.sync_data();
+        let mut state = self.state.clone();
+        state.segments = if state.resumable { segments } else { Vec::new() };
+        let _ = state.save(path);
+    }
+
     fn is_stopped(&self) -> bool {
         *self.stop.borrow() != RUN
     }

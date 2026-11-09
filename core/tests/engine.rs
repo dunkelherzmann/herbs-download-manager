@@ -17,7 +17,7 @@ fn folder(name: &str) -> PathBuf {
 }
 
 fn request(url: String, dir: &std::path::Path, connections: u32) -> Request {
-    Request { url, folder: dir.to_path_buf(), name: None, connections, connections_per_server: 32, retries: 5 }
+    Request { url, folder: dir.to_path_buf(), name: None, connections, connections_per_server: 32, retries: 5, state_file: None }
 }
 
 fn fast() -> Tuning {
@@ -221,4 +221,138 @@ fn taken_names_get_a_number() {
     std::fs::write(dir.join("a (1).zip.hdpart"), b"x").unwrap();
     assert_eq!(transfer::unique_path(&dir, "a.zip"), dir.join("a (2).zip"));
     assert_eq!(transfer::unique_path(&dir, "b.zip"), dir.join("b.zip"));
+}
+
+/// Starts a download in the background; returns its pause control, live progress and task.
+fn spawn(req: Request, tuning: Tuning) -> (transfer::Control, std::sync::Arc<Progress>, tokio::task::JoinHandle<Outcome>) {
+    let progress = Progress::new();
+    let (control, stop) = transfer::control();
+    let client = hd_core::http::client();
+    let task = tokio::spawn({
+        let progress = progress.clone();
+        async move { transfer::download(&client, req, tuning, progress, stop).await }
+    });
+    (control, progress, task)
+}
+
+async fn wait_for_bytes(progress: &Progress, n: u64) {
+    while progress.downloaded.load(Ordering::SeqCst) < n {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+fn saving(dir: &std::path::Path, url: String, connections: u32) -> Request {
+    Request { state_file: Some(dir.join("state.json")), ..request(url, dir, connections) }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_fetches_only_the_remaining_ranges() {
+    let server = MockServer::start().await.unwrap();
+    let data = pattern(12 * MIB, 11);
+    let mut file = MockFile::new(data.clone());
+    file.rate = Some(3 * MIB as u64);
+    server.put("/r.bin", file);
+    let dir = folder("resume");
+    let req = saving(&dir, server.url("/r.bin"), 8);
+
+    let (control, progress, task) = spawn(req.clone(), fast());
+    wait_for_bytes(&progress, 6 * MIB as u64).await;
+    control.pause();
+    assert_eq!(task.await.unwrap(), Outcome::Paused);
+    let state = transfer::ResumeState::load(&dir.join("state.json")).unwrap();
+    let saved: u64 = state.segments.iter().map(|s| s.pos - s.start).sum();
+    assert!(saved >= 6 * MIB as u64, "the state counts what is on disk ({saved})");
+    let sent_before = server.stats("/r.bin").bytes;
+
+    // A new run (as after quitting the app) continues from the state file.
+    server.update("/r.bin", |f| f.rate = None);
+    let (outcome, _) = run(req, fast()).await;
+    assert_eq!(std::fs::read(finished(&outcome)).unwrap(), data);
+    let sent_after = server.stats("/r.bin").bytes - sent_before;
+    // Splitting cuts some responses short, and what was already in flight counts as sent, so allow half the saved
+    // bytes for that: a refetch of the saved bytes would send all of them again.
+    assert!(sent_after <= data.len() as u64 - saved / 2, "only the rest was fetched ({sent_after}, saved {saved})");
+    assert!(!dir.join("state.json").exists(), "the state goes once the file is finished");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn state_is_saved_while_downloading() {
+    let server = MockServer::start().await.unwrap();
+    let mut file = MockFile::new(pattern(8 * MIB, 12));
+    file.rate = Some(2 * MIB as u64);
+    server.put("/s.bin", file);
+    let dir = folder("saving");
+    let tuning = Tuning { save_interval: Duration::from_millis(100), ..fast() };
+    let (control, progress, task) = spawn(saving(&dir, server.url("/s.bin"), 4), tuning);
+    wait_for_bytes(&progress, 2 * MIB as u64).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Read while it runs, as a crash would leave it.
+    let state = transfer::ResumeState::load(&dir.join("state.json")).unwrap();
+    let saved: u64 = state.segments.iter().map(|s| s.pos - s.start).sum();
+    assert!(saved >= MIB as u64, "{saved}");
+    assert!(state.resumable && state.validator.is_some());
+    assert_eq!(state.dest, dir.join("s.bin"));
+    control.pause();
+    task.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resuming_a_file_that_changed_fails() {
+    let server = MockServer::start().await.unwrap();
+    let mut file = MockFile::new(pattern(8 * MIB, 13));
+    file.rate = Some(2 * MIB as u64);
+    server.put("/c.bin", file);
+    let dir = folder("resume-changed");
+    let req = saving(&dir, server.url("/c.bin"), 4);
+    let (control, progress, task) = spawn(req.clone(), fast());
+    wait_for_bytes(&progress, MIB as u64).await;
+    control.pause();
+    task.await.unwrap();
+    server.change("/c.bin", pattern(8 * MIB, 14));
+    let (outcome, _) = run(req, fast()).await;
+    assert_eq!(outcome, Outcome::Failed("File changed on the server".into()));
+    assert!(dir.join("state.json").exists(), "the state stays, so a mirror can still finish it");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_missing_partial_file_starts_over_under_the_same_name() {
+    let server = MockServer::start().await.unwrap();
+    let data = pattern(4 * MIB, 15);
+    let mut file = MockFile::new(data.clone());
+    file.rate = Some(2 * MIB as u64);
+    server.put("/m.bin", file);
+    let dir = folder("missing-part");
+    let req = saving(&dir, server.url("/m.bin"), 4);
+    let (control, progress, task) = spawn(req.clone(), fast());
+    wait_for_bytes(&progress, MIB as u64).await;
+    control.pause();
+    task.await.unwrap();
+    std::fs::remove_file(dir.join("m.bin.hdpart")).unwrap();
+    server.update("/m.bin", |f| f.rate = None);
+    let (outcome, _) = run(req, fast()).await;
+    let path = finished(&outcome);
+    assert_eq!(path, dir.join("m.bin"));
+    assert_eq!(std::fs::read(path).unwrap(), data);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_download_that_cannot_resume_starts_over() {
+    let server = MockServer::start().await.unwrap();
+    let data = pattern(4 * MIB, 16);
+    let mut file = MockFile::new(data.clone());
+    file.ranges = false;
+    file.rate = Some(2 * MIB as u64);
+    server.put("/n.bin", file);
+    let dir = folder("no-resume");
+    let req = saving(&dir, server.url("/n.bin"), 4);
+    let (control, progress, task) = spawn(req.clone(), fast());
+    wait_for_bytes(&progress, MIB as u64).await;
+    assert!(!progress.resumable.load(Ordering::SeqCst), "the app asks before pausing such a download");
+    control.pause();
+    assert_eq!(task.await.unwrap(), Outcome::Paused);
+    server.update("/n.bin", |f| f.rate = None);
+    let (outcome, _) = run(req, fast()).await;
+    let path = finished(&outcome);
+    assert_eq!(path, dir.join("n.bin"), "same name, not a numbered copy");
+    assert_eq!(std::fs::read(path).unwrap(), data);
 }
