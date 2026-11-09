@@ -12,7 +12,7 @@ No open bugs in `bugs.md`.
 
 ## To build
 
-- [ ] **Project skeleton**: shared C++20 core, Swift 6 AppKit host, `scripts/build-macos.sh`, `scripts/test.sh`, a
+- [ ] **Project skeleton**: Rust core (Cargo workspace) with UniFFI Swift bindings, Swift 6 AppKit host, `scripts/build-macos.sh`, `scripts/test.sh`, a
   local mock HTTP server for tests (ranges on/off, several mirrors, changing files, stalls). (§1)
 - [ ] **Single-source download engine**: one connection, `.hdpart` file, rename at the end. (§8)
 - [ ] **Dynamic segmentation**: up to N connections, largest-range halving, 256 KiB minimum, takeover of silent

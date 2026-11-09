@@ -14,7 +14,7 @@ No open bugs in `bugs.md`.
 The Windows version is ported once the Mac version has each feature, item by item in the Mac's build order
 ([`pending.md`](../pending.md)). Everything is still to build.
 
-- [ ] **Project skeleton**: Win32 host over the shared core, one static portable `.exe`, `scripts\build-windows.ps1`, copied to the desktop on every build. (§1)
+- [ ] **Project skeleton**: Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe`, `scripts\build-windows.ps1`, copied to the desktop on every build. (§1)
 - [ ] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Windows). (§7, §8, §10)
 - [ ] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
   menu in the title bar's left corner. (§2–§4)
