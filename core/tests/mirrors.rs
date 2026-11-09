@@ -216,7 +216,9 @@ async fn a_mirror_whose_file_changes_is_dropped() {
 #[tokio::test(flavor = "multi_thread")]
 async fn slow_connections_hand_their_ranges_to_a_faster_source() {
     let data = pattern(16 * MIB, 10);
-    let fast_server = servers(1, &data, Some(8 * MIB as u64)).await;
+    // 1 MiB/s per connection, under the 2.5 MB/s at which connections write nothing in most ticks: slow sources
+    // must be found by the bytes received, not written.
+    let fast_server = servers(1, &data, Some(MIB as u64)).await;
     let slow_server = servers(1, &data, Some(32 * 1024)).await;
     let dir = folder("slow");
     let slow = slow_server[0].url("/f.bin");

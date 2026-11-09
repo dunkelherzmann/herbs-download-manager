@@ -395,7 +395,6 @@ struct ConnStat {
     /// The source it is using, or `usize::MAX`.
     source: AtomicUsize,
     bytes: AtomicU64,
-    last_bytes: AtomicU64,
     slow_ticks: AtomicU32,
     handoff: AtomicBool,
     /// Asked to reconnect, so its range moves to a source with fewer connections.
@@ -1316,10 +1315,11 @@ impl Job {
         // Slow connections: under a quarter of the average for `slow_after`, when another source could take over.
         let mut rates = Vec::new();
         for (id, c) in self.conns.iter().enumerate() {
-            let now = c.bytes.load(Ordering::SeqCst);
-            let delta = now - c.last_bytes.swap(now, Ordering::SeqCst);
+            // Bytes received this tick, not written: writes come in `write_buffer` pieces, so below about 2.5 MB/s
+            // a connection writes nothing in most ticks, the average drops to 0 and no slow source was ever found.
             let got = c.received.load(Ordering::SeqCst);
-            let rate = ((got - c.last_received.swap(got, Ordering::SeqCst)) as f64 / secs) as u64;
+            let delta = got - c.last_received.swap(got, Ordering::SeqCst);
+            let rate = (delta as f64 / secs) as u64;
             let old = c.speed.load(Ordering::SeqCst);
             let idle = c.source.load(Ordering::SeqCst) == usize::MAX;
             c.speed.store(if idle { 0 } else if old == 0 { rate } else { (old * 2 + rate) / 3 }, Ordering::SeqCst);
