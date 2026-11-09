@@ -1556,6 +1556,10 @@ pub fn part_path(dest: &Path) -> PathBuf {
 /// same file starting together never pick the same name: one that loses the race takes the next number. Once its
 /// `.hdpart` exists no other download can claim the name, so checking the finished name after creating it is enough.
 fn claim_path(folder: &Path, name: &str) -> std::io::Result<(PathBuf, File)> {
+    // On Windows a file that another download is deleting or renaming lingers "delete pending" for a moment, and
+    // creating that name meanwhile fails with access denied rather than "already exists". That passes within
+    // milliseconds; an access denied that lasts is a folder that can't be written, and is reported as such.
+    let mut denied = 0;
     for _ in 0..1000 {
         let dest = unique_path(folder, name);
         match std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(part_path(&dest)) {
@@ -1566,6 +1570,10 @@ fn claim_path(folder: &Path, name: &str) -> std::io::Result<(PathBuf, File)> {
             }
             Ok(file) => return Ok((dest, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && cfg!(windows) && denied < 50 => {
+                denied += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
             Err(e) => return Err(e),
         }
     }
