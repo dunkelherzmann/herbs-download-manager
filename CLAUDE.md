@@ -34,6 +34,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
   `IsWindowVisible` on a child is false until its top-level window first shows: keep layout state (such as whether
   the sidebar is shown) in the app's own flags.
+  Win32 controls notify synchronously (setting a ListView checkbox sends LVN_ITEMCHANGED before the call returns),
+  so per-window state in a `RefCell` must be borrowed with `try_borrow_mut` in notification handlers; a second
+  `borrow_mut` panics, and a `windows_subsystem` app then just vanishes with no message.
 
 ## Writing tests (learned the hard way)
 

@@ -68,7 +68,7 @@ const TIMER_REFRESH: usize = 1;
 const TIMER_CAPTURE: usize = 2;
 
 /// Commands that arrive with their own windows later in `windows\pending.md`; their items show, disabled.
-const LATER: [u16; 8] = [C_NEW, C_IMPORT, C_CLIPBOARD, C_BATCH, C_ADD_MIRROR, C_PROPERTIES, C_SETTINGS, C_DOWNLOAD_WINDOW];
+const LATER: [u16; 4] = [C_ADD_MIRROR, C_PROPERTIES, C_SETTINGS, C_DOWNLOAD_WINDOW];
 
 /// L1–L10: title, width; Date Finished and Location start hidden, as on the Mac.
 const COLUMNS: [(&str, i32, bool); 10] = [
@@ -130,6 +130,7 @@ struct State {
     keep_on_top: bool,
     capture: Option<std::path::PathBuf>,
     notice: Option<(String, std::time::Instant)>,
+    font: HFONT,
 }
 
 thread_local! {
@@ -437,9 +438,11 @@ pub fn run() {
                 keep_on_top: false,
                 capture: capture.clone(),
                 notice: None,
+                font: text_font,
             })
         });
         set_keep_on_top(keep_on_top);
+        DragAcceptFiles(hwnd, true);
         layout(hwnd);
         refresh();
         SetTimer(Some(hwnd), TIMER_REFRESH, 500, None);
@@ -448,9 +451,26 @@ pub fn run() {
         }
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 
+        // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
+        if let Some(i) = args.iter().position(|a| a == "--show")
+            && let Some(ctx) = add_ctx()
+        {
+            let links: Vec<String> = args[i + 2..].iter().take_while(|a| !a.starts_with("--")).cloned().collect();
+            match args.get(i + 1).map(String::as_str) {
+                Some("new-download") => crate::add::new_download(&ctx, links.into_iter().next()),
+                Some("add-links") => crate::add::add_links(&ctx, links),
+                Some("batch") => crate::add::batch(&ctx),
+                _ => {}
+            }
+        }
         let accelerators = accelerator_table();
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            // Tab, Enter and Esc in the add windows (they are dialogs in all but name).
+            let root = GetAncestor(msg.hwnd, GA_ROOT);
+            if root != hwnd && !root.is_invalid() && IsDialogMessageW(root, &msg).as_bool() {
+                continue;
+            }
             let in_find = with(|s| GetFocus() == s.find_edit).unwrap_or(false);
             if in_find && msg.message == WM_KEYDOWN && msg.wParam.0 == VK_ESCAPE.0 as usize {
                 close_find();
@@ -904,6 +924,19 @@ fn confirm_delete(hwnd: HWND, rows: Vec<Row>, files_gone: bool) {
     refresh();
 }
 
+/// What the add windows need from the main window.
+fn add_ctx() -> Option<crate::add::Ctx> {
+    with(|s| crate::add::Ctx { manager: s.manager.clone(), owner: s.window, font: s.font, done: added })
+}
+
+/// Links were added: the footer's note, and the list at once.
+fn added(note: Option<String>) {
+    if let Some(note) = note {
+        with(|s| s.notice = Some((note, std::time::Instant::now())));
+    }
+    refresh();
+}
+
 fn command(hwnd: HWND, id: u16) {
     let sel = selected();
     let rows = with(|s| s.rows.clone()).unwrap_or_default();
@@ -916,6 +949,30 @@ fn command(hwnd: HWND, id: u16) {
             C_MENU => {
                 if let Some(button) = with(|s| s.menu_button) {
                     show_main_menu(hwnd, button);
+                }
+            }
+            C_NEW => {
+                if let Some(ctx) = add_ctx() {
+                    let link = hd_core::links::find(&crate::add::clipboard_text(hwnd)).into_iter().next();
+                    crate::add::new_download(&ctx, link);
+                }
+            }
+            C_CLIPBOARD => {
+                if let Some(ctx) = add_ctx() {
+                    crate::add::add_links(&ctx, hd_core::links::find(&crate::add::clipboard_text(hwnd)));
+                }
+            }
+            C_BATCH => {
+                if let Some(ctx) = add_ctx() {
+                    crate::add::batch(&ctx);
+                }
+            }
+            C_IMPORT => {
+                if let (Some(ctx), Some(paths)) = (add_ctx(), crate::add::import_files(hwnd)) {
+                    match crate::add::links_in_files(&paths) {
+                        Some(links) => crate::add::add_links(&ctx, links),
+                        None => added(Some("That file isn't text, so it has no links".into())),
+                    }
                 }
             }
             C_RESUME => drop(with(|s| s.manager.resume(&ids))),
@@ -1046,8 +1103,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             WM_TIMER if wparam.0 == TIMER_CAPTURE => {
                 let _ = KillTimer(Some(hwnd), TIMER_CAPTURE);
+                // An add window the test opened, else the main window.
+                let target = FindWindowW(w!("HerbsDMForm"), PCWSTR::null()).ok().filter(|h| !h.is_invalid()).unwrap_or(hwnd);
                 if let Some(path) = with(|s| s.capture.clone()).flatten()
-                    && let Err(e) = capture(hwnd, &path)
+                    && let Err(e) = capture(target, &path)
                 {
                     eprintln!("capture failed: {e}");
                 }
@@ -1103,6 +1162,17 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                     }
                     (ID_LIST, LVN_ITEMCHANGED) => refresh(),
                     _ => {}
+                }
+                LRESULT(0)
+            }
+            WM_DROPFILES => {
+                // Links in text files dropped on the window open Add Links (§5.4).
+                let paths = crate::add::dropped_files(HDROP(wparam.0 as *mut _));
+                if let Some(ctx) = add_ctx() {
+                    match crate::add::links_in_files(&paths) {
+                        Some(links) => crate::add::add_links(&ctx, links),
+                        None => added(Some("No links found in what was dropped".into())),
+                    }
                 }
                 LRESULT(0)
             }
