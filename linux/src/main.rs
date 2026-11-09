@@ -2,7 +2,9 @@
 //! window as the Mac's with the window controls on the right and the Main Menu (☰) in the title bar's left corner.
 
 mod add;
+mod detail;
 mod list;
+mod settings;
 mod window;
 
 use adw::prelude::*;
@@ -26,6 +28,11 @@ pub fn downloads_folder() -> PathBuf {
         _ => gtk::glib::user_special_dir(gtk::glib::UserDirectory::Downloads)
             .unwrap_or_else(|| gtk::glib::home_dir().join("Downloads")),
     }
+}
+
+/// Where new downloads go: S1, or when it's unset or its folder is gone, the Downloads folder.
+pub fn save_folder(manager: &hd_core::manager::Manager) -> PathBuf {
+    manager.settings().save_to.map(PathBuf::from).filter(|p| p.is_dir()).unwrap_or_else(downloads_folder)
 }
 
 /// Test hook: `--capture FILE` saves a picture of the main window as PNG once it is drawn, then quits.
@@ -56,7 +63,7 @@ fn main() -> gtk::glib::ExitCode {
                         let s = manager.settings();
                         manager.add(hd_core::manager::NewDownload {
                             url: url.clone(),
-                            folder: downloads_folder(),
+                            folder: save_folder(&manager),
                             connections: s.connections,
                             connections_per_server: s.connections_per_server,
                             retries: s.retries,

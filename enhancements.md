@@ -130,3 +130,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **Natural wording in the spec's platform table:** "Built on Mac", "Built on Windows", "Built on Linux". *Requested 2026-11-09.* Done in the Download window PR for Linux.

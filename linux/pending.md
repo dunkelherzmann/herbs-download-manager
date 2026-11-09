@@ -24,6 +24,7 @@ The Linux version is ported once the Mac version has each feature, item by item 
   menu in the title bar's left corner. (§2–§4) #38. Edit has Copy Link, Select All and Find (text fields keep GTK's own Cut/Copy/Paste); Keep on Top stays disabled (GTK 4/Wayland); dropping links comes with Adding downloads.
 - [ ] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11)
   - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, drop on the window (§5) #41. Still to do: reading .doc/.docx/.odt and .webloc files, and links dropped on a row becoming its mirrors.
+  - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #43. The queue works through the toolbar and Tasks menu (§11). Still to do: checksums (§6, S8).
 - [ ] **Hover text and accessibility labels on every control.** (§3, §4)
 - [ ] **Feature tests** run on Linux. (all)
 

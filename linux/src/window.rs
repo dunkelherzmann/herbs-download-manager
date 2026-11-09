@@ -15,7 +15,8 @@ use crate::list::{COLUMNS, DownloadList};
 const GITHUB: &str = "https://github.com/dunkelherzmann/herbs-download-manager";
 
 /// Commands that arrive with their own windows later in `linux/pending.md`; their items show, disabled.
-const LATER: [&str; 5] = ["add-mirror", "properties", "settings", "show-download-window", "keep-on-top"];
+/// Keep on Top can't be done on Linux (GTK 4, Wayland); its item shows, disabled, with a note in its hover text.
+const LATER: [&str; 1] = ["keep-on-top"];
 
 fn item(menu: &gio::Menu, label: &str, action: &str) {
     menu.append(Some(label), Some(&format!("win.{action}")));
@@ -289,10 +290,24 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         notice: RefCell::default(),
     });
 
+    let finished_before: Rc<RefCell<Option<std::collections::HashSet<u64>>>> = Rc::default();
     let refresh: Rc<dyn Fn()> = {
         let (ui, stack, footer, window) = (ui.clone(), stack.clone(), footer.clone(), window.clone());
         Rc::new(move || {
             let rows = ui.manager.rows();
+            // S9: a notification for each download that finished since the last refresh.
+            let finished: std::collections::HashSet<u64> = rows.iter().filter(|r| r.status == Status::Finished).map(|r| r.id).collect();
+            if let Some(before) = finished_before.borrow().as_ref()
+                && ui.manager.settings().notify_when_finished
+                && let Some(app) = window.application()
+            {
+                for r in rows.iter().filter(|r| finished.contains(&r.id) && !before.contains(&r.id)) {
+                    let n = gio::Notification::new("Download finished");
+                    n.set_body(Some(&r.name));
+                    app.send_notification(Some(&format!("finished-{}", r.id)), &n);
+                }
+            }
+            *finished_before.borrow_mut() = Some(finished);
             for (label, f) in counts.iter().zip(Filter::ALL) {
                 label.set_label(&rows.iter().filter(|r| f.matches(&r.status)).count().to_string());
             }
@@ -343,10 +358,16 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         if let Some(i) = args.iter().position(|a| a == "--show") {
             let links: Vec<String> = args[i + 2..].iter().take_while(|a| !a.starts_with("--")).cloned().collect();
             let (ctx, what) = (ctx.clone(), args.get(i + 1).cloned().unwrap_or_default());
-            glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || match what.as_str() {
+            glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || match what.as_str() {
                 "new-download" => crate::add::new_download(&ctx, links.into_iter().next()),
                 "add-links" => crate::add::add_links(&ctx, links),
                 "batch" => crate::add::batch(&ctx),
+                "settings" => crate::settings::open(&ctx),
+                "download-window" => {
+                    if let Some(r) = ctx.manager.rows().first() {
+                        crate::detail::open(&ctx, r.id, links.first().map(String::as_str));
+                    }
+                }
                 _ => {}
             });
         }
@@ -390,15 +411,16 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         let refresh = refresh.clone();
         ui.list.selection.connect_selection_changed(move |_, _, _| refresh());
     }
-    // Double-click (§2.2): a finished download opens its file; an unfinished one its Download window (later).
+    // Double-click (§2.2): a finished download opens its file; an unfinished one its Download window.
     {
-        let ui = ui.clone();
+        let (ui, ctx) = (ui.clone(), ctx.clone());
         ui.list.view.clone().connect_activate(move |_, position| {
-            if let Some(r) = ui.list.row_at(position)
-                && r.status == Status::Finished
-                && let Some(path) = &r.path
-            {
-                let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), None::<&gio::AppLaunchContext>);
+            let Some(r) = ui.list.row_at(position) else { return };
+            match (&r.status, &r.path) {
+                (Status::Finished, Some(path)) => {
+                    let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), None::<&gio::AppLaunchContext>);
+                }
+                _ => crate::detail::open(&ctx, r.id, None),
             }
         });
     }
@@ -445,6 +467,9 @@ fn enable(window: &adw::ApplicationWindow, selected: &[Row], rows: &[Row]) {
     set("delete-finished", rows.iter().any(|r| r.status == Status::Finished));
     set("delete-unfinished", rows.iter().any(|r| r.status != Status::Finished));
     set("delete-all", !rows.is_empty());
+    set("add-mirror", selected.len() == 1);
+    set("properties", !selected.is_empty());
+    set("show-download-window", !selected.is_empty());
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -582,15 +607,35 @@ fn add_actions(
         let ctx = ctx.clone();
         add(name, accels, Box::new(move || run(&ctx)));
     }
-    for (name, accels) in [
-        ("add-mirror", &["<Control><Alt>m"][..]),
-        ("properties", &["<Control>i"]),
-        ("settings", &["<Control>comma"]),
-        ("show-download-window", &["<Control>o"]),
-        ("keep-on-top", &["<Control><Alt>t"]),
-    ] {
-        add(name, accels, Box::new(|| {}));
+    {
+        let (ui, ctx) = (ui.clone(), ctx.clone());
+        add("add-mirror", &["<Control><Alt>m"], Box::new(move || {
+            if let [r] = ui.list.selected().as_slice() {
+                crate::detail::ask_mirrors(&ctx, r.id);
+            }
+        }));
     }
+    {
+        let (ui, ctx) = (ui.clone(), ctx.clone());
+        add("properties", &["<Control>i"], Box::new(move || {
+            for r in ui.list.selected() {
+                crate::detail::open(&ctx, r.id, Some("info"));
+            }
+        }));
+    }
+    {
+        let (ui, ctx) = (ui.clone(), ctx.clone());
+        add("show-download-window", &["<Control>o"], Box::new(move || {
+            for r in ui.list.selected() {
+                crate::detail::open(&ctx, r.id, None);
+            }
+        }));
+    }
+    {
+        let ctx = ctx.clone();
+        add("settings", &["<Control>comma"], Box::new(move || crate::settings::open(&ctx)));
+    }
+    add("keep-on-top", &["<Control><Alt>t"], Box::new(|| {}));
     for name in LATER {
         if let Some(a) = window.lookup_action(name).and_downcast::<gio::SimpleAction>() {
             a.set_enabled(false);

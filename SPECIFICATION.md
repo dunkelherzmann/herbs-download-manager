@@ -19,9 +19,9 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 
 | Platform | App | Build |
 |---|---|---|
-| macOS 15+, Apple silicon | Swift 6 + AppKit host over the shared core | built on the Mac |
-| Windows 11 | Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe` (no installer, nothing added to the system) | built on the Windows PC |
-| Linux | Rust GTK 4 + libadwaita host (`gtk4-rs`) over the shared core, Flatpak `org.herbsdownloadmanager.app` | built on the Linux machine |
+| macOS 15+, Apple silicon | Swift 6 + AppKit host over the shared core | Built on Mac |
+| Windows 11 | Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe` (no installer, nothing added to the system) | Built on Windows |
+| Linux | Rust GTK 4 + libadwaita host (`gtk4-rs`) over the shared core, Flatpak `org.herbsdownloadmanager.app` | Built on Linux |
 
 - **Shared core** (`core/`, Rust, one Cargo workspace): the download engine (sources, segments, connections,
   mirrors, resume state, speed limits, queue) with no UI. Each host draws its native UI over it. The Mac host calls

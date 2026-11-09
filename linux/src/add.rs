@@ -133,7 +133,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     mirrors.set_tooltip_text(Some("Other servers with the same file, one link per line (optional)"));
     let mirrors_scroll = gtk::ScrolledWindow::builder().child(&mirrors).min_content_height(70).has_frame(true).build();
     let name = gtk::Entry::builder().hexpand(true).build();
-    let folder = Rc::new(RefCell::new(crate::downloads_folder()));
+    let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
     connections.set_value(ctx.manager.settings().connections as f64);
     connections.set_tooltip_text(Some("Connections for this download (1–32)"));
@@ -385,7 +385,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     let scroll = gtk::ScrolledWindow::builder().child(&list).vexpand(true).build();
     let mirrors = gtk::CheckButton::with_label("Treat as mirrors of one file");
     mirrors.set_tooltip_text(Some("Add the checked links as one download, each a source of the same file"));
-    let folder = Rc::new(RefCell::new(crate::downloads_folder()));
+    let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let save = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     save.append(&gtk::Label::new(Some("Save to:")));
     save.append(&folder_row(&window, folder.clone()));
