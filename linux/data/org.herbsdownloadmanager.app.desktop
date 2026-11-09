@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Herb's Download Manager
+GenericName=Download Manager
+Comment=Download files over many connections and mirrors
+Exec=herbs-download-manager
+Icon=org.herbsdownloadmanager.app
+Terminal=false
+Categories=Network;FileTransfer;GTK;
+StartupNotify=true

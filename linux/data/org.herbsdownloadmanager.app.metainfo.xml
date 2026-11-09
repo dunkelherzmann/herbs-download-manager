@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.herbsdownloadmanager.app</id>
+  <name>Herb's Download Manager</name>
+  <summary>Download files over many connections and mirrors</summary>
+  <description>
+    <p>Herb's Download Manager downloads one file over up to 32 connections at once, and from several mirrors of
+    the same file, so a slow or failing server doesn't hold the download back. Downloads pause and resume, even
+    after a restart, wait in a queue, and can be limited in speed.</p>
+  </description>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.dunkelherzmann"><name>dunkelherzmann</name></developer>
+  <launchable type="desktop-id">org.herbsdownloadmanager.app.desktop</launchable>
+  <url type="homepage">https://github.com/dunkelherzmann/herbs-download-manager</url>
+  <releases>
+    <release version="0.1.0" date="2026-11-09"/>
+  </releases>
+</component>

@@ -5,3 +5,7 @@ dist/
 target/
 macos/Sources/hd_ffiFFI/
 macos/Sources/HDCore/
+linux/build/
+linux/.flatpak-builder/
+linux/target/
+windows/target/

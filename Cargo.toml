@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["core", "ffi", "tools/hd-mock", "tools/uniffi-bindgen"]
+# Each platform host is its own workspace, built only on its own machine.
+exclude = ["linux", "windows"]
 
 [workspace.package]
 version = "0.1.0"

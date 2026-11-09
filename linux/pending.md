@@ -7,7 +7,7 @@ request each, and tick an item with its PR number once it is built and its test 
 
 ## Next (top priority)
 
-- [ ] **Menus in the window, matching the Mac.** When the main window is built, every menu and submenu sits in the title bar's menu bar with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. (§2, §4, enhancements.md) *Asked 2026-11-09.*
+- [ ] **Menus in the window, matching the Mac.** The Main Menu (☰, in the title bar's left corner since the Mac moved to one, #26) holds every menu and submenu with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. The skeleton has the menus' titles; their items come with the main window. (§2, §4, enhancements.md) *Asked 2026-11-09.*
 
 ## Bugs to fix
 
@@ -18,7 +18,7 @@ No open bugs in `bugs.md`.
 The Linux version is ported once the Mac version has each feature, item by item in the Mac's build order
 ([`macos/pending.md`](../macos/pending.md)). Everything is still to build.
 
-- [ ] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloadmanager.app`, `scripts/build-linux.sh --install`. (§1)
+- [x] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloadmanager.app`, `linux/scripts/build.sh --install`. (§1) #35
 - [ ] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Linux). (§7, §8, §10)
 - [ ] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
   menu in the title bar's left corner. (§2–§4)
@@ -28,4 +28,4 @@ The Linux version is ported once the Mac version has each feature, item by item 
 
 ## Not checked automatically
 
-Nothing is built yet.
+The main window: checked from its `--capture` picture taken in a virtual KWin session.

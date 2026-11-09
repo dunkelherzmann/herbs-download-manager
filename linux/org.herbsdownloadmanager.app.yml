@@ -1,0 +1,45 @@
+# Herb's Download Manager for Linux as a Flatpak. Build it on Linux with linux/scripts/build.sh [--install].
+id: org.herbsdownloadmanager.app
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: herbs-download-manager
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Downloads go to the Downloads folder by default, or any folder chosen in Settings.
+  - --filesystem=home
+  # Delete moves files to the desktop's Trash.
+  - --filesystem=xdg-data/Trash
+  - --talk-name=org.freedesktop.Notifications
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  # Local builds fetch the crates with cargo (a Flathub build would vendor them).
+  build-args:
+    - --share=network
+  env:
+    CARGO_HOME: /run/build/herbs-download-manager/cargo
+cleanup:
+  - /include
+  - /lib/pkgconfig
+modules:
+  - name: herbs-download-manager
+    buildsystem: simple
+    build-commands:
+      - sh linux/install.sh /app
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - target
+          - linux/target
+          - linux/.flatpak-builder
+          - linux/build
+          - dist
+          - .build
+          - .git
