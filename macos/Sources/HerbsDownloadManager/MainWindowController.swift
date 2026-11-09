@@ -4,7 +4,7 @@ import HDCore
 /// The main window (SPECIFICATION.md §2, §3): title with the search field at the right, toolbar, resizable sidebar
 /// of filters, the download list, and a footer with the selection, active downloads and total speed.
 @MainActor
-final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolbarItemValidation, NSSearchFieldDelegate {
+final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation, NSSearchFieldDelegate {
     private let split = NSSplitViewController()
     private let sidebar = SidebarViewController()
     let list = DownloadListViewController()
@@ -174,18 +174,52 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         validate(item.action)
     }
 
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleSidebar(_:)) {
+            let collapsed = split.splitViewItems.first?.isCollapsed ?? false
+            item.title = collapsed ? "Show Sidebar" : "Hide Sidebar"
+        }
+        return validate(item.action)
+    }
+
+    /// The downloads a command acts on: the right-clicked one (with the selection when it is part of it), else
+    /// the selection.
+    var targets: [DownloadRow] { list.selectedRows }
+
     private func validate(_ action: Selector?) -> Bool {
-        let selected = list.selectedRows
+        let selected = targets
+        let rows = AppModel.shared.rows
         switch action {
         case #selector(resumeSelected(_:)): return selected.contains { $0.status.canResume }
         case #selector(pauseSelected(_:)): return selected.contains { $0.status.isRunning }
-        case #selector(stopAll(_:)): return AppModel.shared.rows.contains { $0.status.isRunning }
+        case #selector(restartSelected(_:)): return !selected.isEmpty
+        case #selector(stopAll(_:)): return rows.contains { $0.status.isRunning }
         case #selector(deleteSelected(_:)): return !selected.isEmpty
-        // New Download (§5), the queue (§11) and Settings (§9) arrive with their own windows.
-        case #selector(newDownload(_:)), #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)):
+        case #selector(deleteAllFinished(_:)): return rows.contains { $0.status.isFinished }
+        case #selector(deleteAllUnfinished(_:)): return rows.contains { !$0.status.isFinished }
+        case #selector(deleteMissingFiles(_:)): return !Self.missing(rows).isEmpty
+        case #selector(deleteEntireList(_:)): return !rows.isEmpty
+        case #selector(openSelected(_:)), #selector(showInFinder(_:)):
+            return selected.count == 1 && selected[0].path.map { FileManager.default.fileExists(atPath: $0) } == true
+        case #selector(copyLink(_:)): return !selected.isEmpty
+        case #selector(addConnection(_:)):
+            return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections < 32
+        case #selector(removeConnection(_:)):
+            return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
+        case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)): return true
+        // These arrive with their own windows: New Download, Add from Clipboard, Batch Download (§5), Settings (§9),
+        // the queue (§11), Add Mirror (§7.1), Properties and the Download window (§6).
+        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
+             #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)),
+             #selector(addMirror(_:)), #selector(showProperties(_:)), #selector(showDownloadWindow(_:)):
             return false
         default: return true
         }
+    }
+
+    /// Finished downloads whose file is no longer on disk.
+    private static func missing(_ rows: [DownloadRow]) -> [DownloadRow] {
+        rows.filter { $0.status.isFinished && !($0.path.map { FileManager.default.fileExists(atPath: $0) } ?? false) }
     }
 
     // MARK: search
@@ -203,33 +237,101 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     // MARK: actions
 
     @objc func newDownload(_ sender: Any?) {}
+    @objc func addFromClipboard(_ sender: Any?) {}
+    @objc func batchDownload(_ sender: Any?) {}
     @objc func startQueue(_ sender: Any?) {}
     @objc func stopQueue(_ sender: Any?) {}
     @objc func showSettings(_ sender: Any?) {}
+    @objc func addMirror(_ sender: Any?) {}
+    @objc func showProperties(_ sender: Any?) {}
+    @objc func showDownloadWindow(_ sender: Any?) {}
 
     @objc func resumeSelected(_ sender: Any?) {
-        AppModel.shared.resume(list.selectedRows.filter { $0.status.canResume }.map(\.id))
+        AppModel.shared.resume(targets.filter { $0.status.canResume }.map(\.id))
     }
 
     @objc func pauseSelected(_ sender: Any?) {
-        AppModel.shared.pause(list.selectedRows.filter { $0.status.isRunning }.map(\.id))
+        AppModel.shared.pause(targets.filter { $0.status.isRunning }.map(\.id))
     }
 
     @objc func stopAll(_ sender: Any?) {
         AppModel.shared.pauseAll()
     }
 
-    /// Delete asks whether to remove only the list entry (the default) or the file as well (§10).
-    @objc func deleteSelected(_ sender: Any?) {
-        let rows = list.selectedRows
+    @objc func toggleSidebar(_ sender: Any?) {
+        split.toggleSidebar(sender)
+    }
+
+    /// Restart discards the downloaded data after confirming, Cancel the default (§10).
+    @objc func restartSelected(_ sender: Any?) {
+        let rows = targets
+        guard !rows.isEmpty, let window else { return }
+        let alert = NSAlert()
+        alert.messageText = rows.count == 1 ? "Restart “\(rows[0].name)”?" : "Restart \(rows.count) downloads?"
+        alert.informativeText = "What was downloaded is discarded and the download starts again from the beginning."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Restart")
+        alert.buttons[1].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                if response == .alertSecondButtonReturn { AppModel.shared.restart(rows.map(\.id)) }
+            }
+        }
+    }
+
+    @objc func openSelected(_ sender: Any?) {
+        guard let path = targets.first?.path else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    /// Open With ▸ an app: the menu item carries the app's URL.
+    @objc func openWith(_ sender: NSMenuItem) {
+        guard let path = targets.first?.path, let app = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open([URL(fileURLWithPath: path)], withApplicationAt: app,
+                                configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    @objc func showInFinder(_ sender: Any?) {
+        guard let path = targets.first?.path else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    @objc func copyLink(_ sender: Any?) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(targets.map(\.url).joined(separator: "\n"), forType: .string)
+    }
+
+    @objc func addConnection(_ sender: Any?) {
+        guard let row = targets.first else { return }
+        AppModel.shared.setConnections(row.id, row.allowedConnections + 1)
+    }
+
+    @objc func removeConnection(_ sender: Any?) {
+        guard let row = targets.first else { return }
+        AppModel.shared.setConnections(row.id, row.allowedConnections - 1)
+    }
+
+    @objc func deleteSelected(_ sender: Any?) { confirmDelete(targets) }
+    @objc func deleteAllFinished(_ sender: Any?) { confirmDelete(AppModel.shared.rows.filter { $0.status.isFinished }) }
+    @objc func deleteAllUnfinished(_ sender: Any?) { confirmDelete(AppModel.shared.rows.filter { !$0.status.isFinished }) }
+    @objc func deleteMissingFiles(_ sender: Any?) { confirmDelete(Self.missing(AppModel.shared.rows), filesGone: true) }
+    @objc func deleteEntireList(_ sender: Any?) { confirmDelete(AppModel.shared.rows) }
+
+    /// Delete asks whether to remove only the list entries (the default) or the files as well (§10).
+    private func confirmDelete(_ rows: [DownloadRow], filesGone: Bool = false) {
         guard !rows.isEmpty, let window else { return }
         let alert = NSAlert()
         alert.messageText = rows.count == 1 ? "Delete “\(rows[0].name)”?" : "Delete \(rows.count) downloads?"
-        alert.informativeText = "Remove them from the list only, or delete their files as well?"
         alert.addButton(withTitle: "Remove from List")
         alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Delete Files Too")
-        alert.buttons[2].hasDestructiveAction = true
+        if filesGone {
+            alert.informativeText = "Their files are no longer on disk; only the list entries are removed."
+        } else {
+            alert.informativeText = "Remove them from the list only, or delete their files as well?"
+            alert.addButton(withTitle: "Delete Files Too")
+            alert.buttons[2].hasDestructiveAction = true
+        }
         alert.beginSheetModal(for: window) { response in
             MainActor.assumeIsolated {
                 switch response {

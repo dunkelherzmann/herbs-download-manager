@@ -136,3 +136,62 @@ fn delete_removes_the_entry_and_optionally_the_file() {
     assert!(!pb.exists());
     assert!(m.rows().is_empty());
 }
+
+#[test]
+fn restart_discards_the_data_and_downloads_again() {
+    let data = pattern(4 * MIB, 5);
+    let (_rt, s) = server(&data, None);
+    let dir = folder("restart");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/f.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Finished);
+    let first = m.rows()[0].path.clone().unwrap();
+    let before = s.stats("/f.bin").bytes;
+    m.restart(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    let row = m.rows().remove(0);
+    assert_eq!(row.path.as_ref(), Some(&first), "the same file name, not a numbered copy");
+    assert_eq!(std::fs::read(&first).unwrap(), data);
+    assert!(s.stats("/f.bin").bytes - before >= data.len() as u64, "downloaded again");
+    // While running: it stops, discards and starts over.
+    s.update("/f.bin", |f| f.rate = Some(MIB as u64));
+    m.restart(&[id]);
+    wait(&m, id, |s| *s == Status::Downloading);
+    std::thread::sleep(Duration::from_millis(500));
+    m.restart(&[id]);
+    std::thread::sleep(Duration::from_millis(300));
+    s.update("/f.bin", |f| f.rate = None);
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    assert_eq!(std::fs::read_dir(dir.join("files")).unwrap().count(), 1, "no leftovers");
+}
+
+#[test]
+fn connections_change_while_running_and_are_remembered() {
+    let data = pattern(16 * MIB, 6);
+    let (_rt, s) = server(&data, Some(MIB as u64));
+    let dir = folder("connections");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/f.bin"), &dir, true));
+    let until = Instant::now() + Duration::from_secs(20);
+    while m.rows()[0].active_connections < 4 {
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    m.set_connections(id, 7);
+    while m.rows()[0].active_connections < 7 {
+        assert!(Instant::now() < until, "{}", m.rows()[0].active_connections);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(m.rows()[0].allowed_connections, 7);
+    // The sources list is refreshed on the engine's 1-second tick.
+    while !m.rows()[0].live.first().is_some_and(|l| l.ends_with("— 7 connections")) {
+        assert!(Instant::now() < until, "{:?}", m.rows()[0].live);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    m.pause(&[id]);
+    wait(&m, id, |s| *s == Status::Paused);
+    drop(m);
+    let again = Manager::open(&dir).unwrap();
+    assert_eq!(again.rows()[0].allowed_connections, 7);
+}

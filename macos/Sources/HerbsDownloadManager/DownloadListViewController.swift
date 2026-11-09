@@ -33,6 +33,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     var onSelectionChange: (() -> Void)?
     private(set) var shown: [DownloadRow] = []
     private let empty = NSTextField(labelWithString: "No downloads yet")
+    private let contextMenu = NSMenu(title: "Download")
 
     private static let dateFormat: DateFormatter = {
         let f = DateFormatter()
@@ -75,6 +76,8 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         let headerMenu = NSMenu()
         headerMenu.delegate = self
         table.headerView?.menu = headerMenu
+        contextMenu.delegate = self
+        table.menu = contextMenu
 
         let scroll = NSScrollView()
         scroll.documentView = table
@@ -228,9 +231,18 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         }
     }
 
-    // MARK: header menu: show and hide columns
+    // MARK: menus
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === contextMenu {
+            fillContextMenu(menu)
+        } else {
+            fillColumnsMenu(menu)
+        }
+    }
+
+    /// The header's context menu and View ▸ Columns: every column but Name, ticked when shown.
+    func fillColumnsMenu(_ menu: NSMenu) {
         menu.removeAllItems()
         for column in table.tableColumns where column.identifier.rawValue != "name" {
             let item = menu.addItem(withTitle: column.title, action: #selector(toggleColumn(_:)), keyEquivalent: "")
@@ -243,6 +255,76 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     @objc func toggleColumn(_ sender: NSMenuItem) {
         guard let column = sender.representedObject as? NSTableColumn else { return }
         column.isHidden.toggle()
+    }
+
+    /// The download context menu (§4.1). Items that don't apply are hidden (Connections for finished downloads)
+    /// or disabled by the window's validation.
+    private func fillContextMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let clicked = table.clickedRow
+        guard clicked >= 0, clicked < shown.count else { return }
+        if !table.selectedRowIndexes.contains(clicked) {
+            table.selectRowIndexes([clicked], byExtendingSelection: false)
+        }
+        let rows = selectedRows
+        typealias W = MainWindowController
+        menu.addItem(withTitle: "Open", action: #selector(W.openSelected(_:)), keyEquivalent: "")
+        let openWith = menu.addItem(withTitle: "Open With", action: nil, keyEquivalent: "")
+        openWith.submenu = openWithMenu(rows)
+        menu.addItem(withTitle: "Show in Finder", action: #selector(W.showInFinder(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Resume", action: #selector(W.resumeSelected(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Pause", action: #selector(W.pauseSelected(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Restart…", action: #selector(W.restartSelected(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Add Mirror…", action: #selector(W.addMirror(_:)), keyEquivalent: "")
+        if !rows.contains(where: { $0.status.isFinished }) {
+            let connections = menu.addItem(withTitle: "Connections", action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: "Connections")
+            sub.addItem(withTitle: "Add Connection", action: #selector(W.addConnection(_:)), keyEquivalent: "")
+            sub.addItem(withTitle: "Remove Connection", action: #selector(W.removeConnection(_:)), keyEquivalent: "")
+            if let row = rows.first, rows.count == 1 {
+                sub.addItem(.separator())
+                let allowed = sub.addItem(withTitle: "\(row.activeConnections) of \(row.allowedConnections) connections in use",
+                                          action: nil, keyEquivalent: "")
+                allowed.isEnabled = false
+                for line in row.live {
+                    sub.addItem(withTitle: line, action: nil, keyEquivalent: "").isEnabled = false
+                }
+            }
+            connections.submenu = sub
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Copy Link", action: #selector(W.copyLink(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Properties", action: #selector(W.showProperties(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Delete…", action: #selector(W.deleteSelected(_:)), keyEquivalent: "")
+    }
+
+    /// The apps that can open the file, the default one first.
+    private func openWithMenu(_ rows: [DownloadRow]) -> NSMenu {
+        let menu = NSMenu(title: "Open With")
+        guard rows.count == 1, let path = rows[0].path, FileManager.default.fileExists(atPath: path) else {
+            menu.addItem(withTitle: "No File Yet", action: nil, keyEquivalent: "").isEnabled = false
+            return menu
+        }
+        let url = URL(fileURLWithPath: path)
+        let preferred = NSWorkspace.shared.urlForApplication(toOpen: url)
+        var apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
+        if let preferred { apps = [preferred] + apps.filter { $0 != preferred } }
+        for app in apps.prefix(20) {
+            let name = FileManager.default.displayName(atPath: app.path)
+            let item = menu.addItem(withTitle: app == preferred ? "\(name) (default)" : name,
+                                    action: #selector(MainWindowController.openWith(_:)), keyEquivalent: "")
+            item.representedObject = app
+            let icon = NSWorkspace.shared.icon(forFile: app.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+        }
+        if apps.isEmpty {
+            menu.addItem(withTitle: "No Apps", action: nil, keyEquivalent: "").isEnabled = false
+        }
+        return menu
     }
 }
 

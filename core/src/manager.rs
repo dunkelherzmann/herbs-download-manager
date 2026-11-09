@@ -78,6 +78,8 @@ pub struct Row {
     pub folder: PathBuf,
     pub url: String,
     pub path: Option<PathBuf>,
+    /// While running: each source with connections now, as "host — N connections" for the Connections menu.
+    pub live: Vec<String>,
 }
 
 /// What `add` needs.
@@ -95,6 +97,8 @@ pub struct NewDownload {
 }
 
 struct Running {
+    /// Restart (§10) was asked while it ran: once stopped, its data is discarded and it starts again.
+    restart: std::sync::atomic::AtomicBool,
     control: Control,
     progress: Arc<Progress>,
     meter: Mutex<Meter>,
@@ -239,6 +243,7 @@ impl Manager {
             let progress = Progress::new();
             progress.downloaded.store(e.downloaded, Ordering::SeqCst);
             let running = Arc::new(Running {
+                restart: std::sync::atomic::AtomicBool::new(false),
                 control: transfer::control(),
                 progress,
                 meter: Mutex::new(Meter { at: Instant::now(), bytes: e.downloaded, speed: 0.0 }),
@@ -259,6 +264,20 @@ impl Manager {
 
     /// The engine is done with a download: record how it ended.
     fn finished(&self, id: u64, running: &Arc<Running>, outcome: Outcome) {
+        if running.restart.load(Ordering::SeqCst) {
+            {
+                let mut slots = self.inner.slots.lock().unwrap();
+                if let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) {
+                    slot.running = None;
+                    if let Some(dest) = ResumeState::load(&self.state_file(id)).ok().map(|s| s.dest) {
+                        slot.entry.dest = Some(dest);
+                    }
+                }
+            }
+            self.discard(id);
+            self.resume(&[id]);
+            return;
+        }
         let state = ResumeState::load(&self.state_file(id)).ok();
         {
             let mut slots = self.inner.slots.lock().unwrap();
@@ -286,6 +305,63 @@ impl Manager {
                 }
                 Outcome::Paused => e.status = Status::Paused,
                 Outcome::Failed(reason) => e.status = Status::Failed(reason),
+            }
+        }
+        self.save();
+    }
+
+    /// Restart (§10): discards what was downloaded (and a finished file) and starts again from every source.
+    pub fn restart(&self, ids: &[u64]) {
+        let mut now_ids = Vec::new();
+        {
+            let slots = self.inner.slots.lock().unwrap();
+            for slot in slots.iter().filter(|s| ids.contains(&s.entry.id)) {
+                match &slot.running {
+                    Some(r) => {
+                        r.restart.store(true, Ordering::SeqCst);
+                        r.control.pause();
+                    }
+                    None => now_ids.push(slot.entry.id),
+                }
+            }
+        }
+        for id in now_ids {
+            self.discard(id);
+        }
+        self.resume(ids);
+    }
+
+    /// Forgets a stopped download's data: its resume state, its `.hdpart` file and its finished file.
+    fn discard(&self, id: u64) {
+        let state = self.state_file(id);
+        let dest = ResumeState::load(&state).ok().map(|s| s.dest);
+        let _ = std::fs::remove_file(&state);
+        let mut slots = self.inner.slots.lock().unwrap();
+        let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+        let e = &mut slot.entry;
+        if let Some(dest) = dest.or(e.dest.take()) {
+            let _ = std::fs::remove_file(transfer::part_path(&dest));
+            if e.status == Status::Finished {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+        e.dest = None;
+        e.size = None;
+        e.downloaded = 0;
+        e.finished = None;
+        e.status = Status::Waiting;
+    }
+
+    /// Connections ▸ Add / Remove Connection: how many connections a download may use (1–32), applied at once
+    /// when it runs.
+    pub fn set_connections(&self, id: u64, n: u32) {
+        let n = n.clamp(1, 32);
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            slot.entry.connections = n;
+            if let Some(r) = &slot.running {
+                r.control.set_connections(n);
             }
         }
         self.save();
@@ -362,6 +438,7 @@ fn row(slot: &Slot) -> Row {
     let (mut downloaded, mut size, mut speed, mut active) = (e.downloaded, e.size, 0u64, 0u32);
     let mut name = e.name.clone();
     let (mut in_use, mut known) = (0u32, 1 + e.mirrors.len() as u32);
+    let mut live = Vec::new();
     if let Some(r) = &slot.running {
         let p = &r.progress;
         downloaded = p.downloaded.load(Ordering::SeqCst);
@@ -371,6 +448,18 @@ fn row(slot: &Slot) -> Row {
             name = p.name.lock().unwrap().clone();
         }
         let sources = p.sources();
+        live = sources
+            .iter()
+            .filter(|s| s.active > 0)
+            .map(|s| {
+                let host = reqwest::Url::parse(&s.url).ok().and_then(|u| u.host_str().map(|h| match u.port() {
+                    Some(port) => format!("{h}:{port}"),
+                    None => h.to_string(),
+                }));
+                let n = s.active;
+                format!("{} — {n} connection{}", host.unwrap_or_else(|| s.url.clone()), if n == 1 { "" } else { "s" })
+            })
+            .collect();
         if !sources.is_empty() {
             known = sources.len() as u32;
             in_use = sources.iter().filter(|s| s.active > 0).count() as u32;
@@ -406,6 +495,7 @@ fn row(slot: &Slot) -> Row {
         folder: e.folder.clone(),
         url: e.url.clone(),
         path: e.dest.clone(),
+        live,
     }
 }
 

@@ -168,6 +168,8 @@ pub struct DownloadRow {
     pub folder: String,
     pub url: String,
     pub path: Option<String>,
+    /// While running: "host — N connections" per source in use.
+    pub live: Vec<String>,
 }
 
 impl From<manager::Row> for DownloadRow {
@@ -196,6 +198,7 @@ impl From<manager::Row> for DownloadRow {
             folder: r.folder.to_string_lossy().into_owned(),
             url: r.url,
             path: r.path.map(|p| p.to_string_lossy().into_owned()),
+            live: r.live,
         }
     }
 }
@@ -255,6 +258,16 @@ impl DownloadManager {
     /// Waits up to `seconds` for every download to stop; false if some still run.
     pub fn wait_idle(&self, seconds: f64) -> bool {
         self.inner.wait_idle(std::time::Duration::from_secs_f64(seconds))
+    }
+
+    /// Discards the downloaded data and starts again (§10).
+    pub fn restart(&self, ids: Vec<u64>) {
+        self.inner.restart(&ids);
+    }
+
+    /// How many connections a download may use (1–32), applied at once when running.
+    pub fn set_connections(&self, id: u64, connections: u32) {
+        self.inner.set_connections(id, connections);
     }
 
     pub fn remove(&self, ids: Vec<u64>, delete_files: bool) {

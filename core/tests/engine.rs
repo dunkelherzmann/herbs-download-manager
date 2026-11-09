@@ -359,3 +359,42 @@ async fn a_download_that_cannot_resume_starts_over() {
     assert_eq!(path, dir.join("n.bin"), "same name, not a numbered copy");
     assert_eq!(std::fs::read(path).unwrap(), data);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn connections_can_be_added_and_removed_while_running() {
+    let data = pattern(24 * MIB, 40);
+    let server = MockServer::start().await.unwrap();
+    let mut f = MockFile::new(data.clone());
+    f.rate = Some(MIB as u64);
+    server.put("/f.bin", f);
+    let dir = folder("live-connections");
+    let progress = Progress::new();
+    let control = transfer::control();
+    let task = tokio::spawn({
+        let (p, c) = (progress.clone(), control.clone());
+        let req = request(server.url("/f.bin"), &dir, 2);
+        async move { transfer::download(&hd_core::http::client(), req, fast(), p, c).await }
+    });
+    let until = Instant::now() + Duration::from_secs(20);
+    let wait = |what: &'static str, ok: &dyn Fn() -> bool| {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        ok()
+    };
+    while !wait("2 connections", &|| progress.active.load(Ordering::SeqCst) == 2) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(progress.allowed.load(Ordering::SeqCst), 2);
+    control.set_connections(6);
+    while !wait("6 connections", &|| progress.active.load(Ordering::SeqCst) == 6) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(progress.allowed.load(Ordering::SeqCst), 6);
+    control.set_connections(1);
+    while !wait("1 connection", &|| progress.active.load(Ordering::SeqCst) == 1) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    server.update("/f.bin", |f| f.rate = None);
+    let outcome = tokio::time::timeout(Duration::from_secs(60), task).await.unwrap().unwrap();
+    assert_eq!(std::fs::read(finished(&outcome)).unwrap(), data);
+    assert_eq!(progress.peak.load(Ordering::SeqCst), 6);
+}

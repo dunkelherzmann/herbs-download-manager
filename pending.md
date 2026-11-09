@@ -30,7 +30,9 @@ No open bugs in `bugs.md`.
   §7.1, §7.3)
 - [x] **Main window**: title bar, toolbar, sidebar filters, download list with columns, footer, search. (§2, §3) #8
   New Download, the queue buttons and Settings stay disabled until their items below.
-- [ ] **Menus and context menu** with shortcuts. (§4)
+- [x] **Menus and context menu** with shortcuts. (§4) #10
+  Connections ▸ Add/Remove Connection change a running download at once; Restart discards and starts again.
+  Items for windows not built yet (New Download, Add Mirror, Properties, Settings, queue) stay disabled.
 - [ ] **Pause and resume in the app**: running downloads come back Paused at launch, the can't-resume question, the
   quit question, Restart. (§10)
 - [ ] **New Download, Add Links, clipboard, drag and drop, Batch Download.** (§5)

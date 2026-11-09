@@ -152,6 +152,8 @@ pub struct Progress {
     /// The most connections that received data at once.
     pub peak: AtomicUsize,
     pub resumable: AtomicBool,
+    /// Connections allowed now.
+    pub allowed: AtomicUsize,
     pub name: Mutex<Option<String>>,
     pub sources: Mutex<Vec<SourceInfo>>,
 }
@@ -175,6 +177,7 @@ impl Progress {
 enum Command {
     AddMirrors(Vec<String>),
     Enable(String, bool),
+    SetConnections(usize),
 }
 
 /// Steers a running download from another task or thread: pause it, add mirrors (M2), turn sources on or off.
@@ -183,6 +186,9 @@ pub struct Control {
     stop: Arc<watch::Sender<u8>>,
     inbox: Arc<Mutex<Vec<Command>>>,
 }
+
+/// Connection slots per download; `allowed` says how many are in use.
+const MAX_CONNECTIONS: usize = 32;
 
 const RUN: u8 = 0;
 const PAUSE: u8 = 1;
@@ -199,6 +205,12 @@ impl Control {
     }
 
     /// Turns a source on or off; its connections move to the others. The last source on stays on.
+    /// Changes how many connections the running download may use (1–32); extra ones finish their write, hand
+    /// their range back and close.
+    pub fn set_connections(&self, n: u32) {
+        self.inbox.lock().unwrap().push(Command::SetConnections(n.clamp(1, 32) as usize));
+    }
+
     pub fn set_source_enabled(&self, url: &str, enabled: bool) {
         self.inbox.lock().unwrap().push(Command::Enable(url.to_string(), enabled));
     }
@@ -353,6 +365,8 @@ struct ConnStat {
     handoff: AtomicBool,
     /// Asked to reconnect, so its range moves to a source with fewer connections.
     moving: AtomicBool,
+    /// A task is working in this slot.
+    running: AtomicBool,
 }
 
 enum Pick {
@@ -362,6 +376,10 @@ enum Pick {
 }
 
 struct Job {
+    /// Connections this download may use now (Control::set_connections changes it).
+    allowed: AtomicUsize,
+    /// Tasks of connections added while running.
+    extra: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     client: reqwest::Client,
     tuning: Tuning,
     retries: u32,
@@ -553,11 +571,13 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
     if let Some((src, response)) = first {
         job.sources.read().unwrap()[src].active.fetch_add(1, Ordering::SeqCst);
         job.segs.lock().unwrap().take(0).expect("a new download has one free segment");
+        job.conns[0].running.store(true, Ordering::SeqCst);
         tasks.push(tokio::spawn(connection(job.clone(), 0, Some((src, response)))));
         next_id = 1;
     }
     let conns = if job.sequential { 1 } else { max_conns };
     for id in next_id..conns {
+        job.conns[id].running.store(true, Ordering::SeqCst);
         tasks.push(tokio::spawn(connection(job.clone(), id, None)));
     }
 
@@ -589,6 +609,16 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
     });
     for t in tasks {
         let _ = t.await;
+    }
+    // Connections added while running (Control::set_connections).
+    loop {
+        let next = job.extra.lock().unwrap().pop();
+        match next {
+            Some(t) => {
+                let _ = t.await;
+            }
+            None => break,
+        }
     }
     let _ = done_tx.send(true);
     let _ = saver.await;
@@ -632,10 +662,18 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
 }
 
 /// One connection: picks a source, works on a range until it is done, then takes another, until nothing is left.
-async fn connection(job: Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Response)>) {
+async fn connection(job: Arc<Job>, id: usize, first: Option<(usize, reqwest::Response)>) {
+    work(&job, id, first).await;
+    job.release(id);
+    job.conns[id].running.store(false, Ordering::SeqCst);
+    job.changed.notify_waiters();
+}
+
+async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Response)>) {
+    let job = job.clone();
     let mut avoid: Option<usize> = None;
     loop {
-        if job.is_stopped() {
+        if job.is_stopped() || id >= job.allowed() {
             break;
         }
         let (src, response) = match first.take() {
@@ -719,7 +757,11 @@ impl Job {
     ) -> Arc<Job> {
         let (stop_tx, _) = watch::channel(RUN);
         let stop = merged_stop(control.stop.subscribe(), &stop_tx);
+        let allowed = if sequential { 1 } else { max_conns.clamp(1, MAX_CONNECTIONS) };
+        progress.allowed.store(allowed, Ordering::SeqCst);
         Arc::new(Job {
+            allowed: AtomicUsize::new(allowed),
+            extra: Mutex::new(Vec::new()),
             client: client.clone(),
             tuning,
             retries: req.retries,
@@ -733,7 +775,7 @@ impl Job {
             hosts: Mutex::new(HashMap::new()),
             pick_lock: Mutex::new(()),
             refusal_gate: tokio::sync::Mutex::new(()),
-            conns: (0..max_conns.max(1)).map(|_| ConnStat { source: AtomicUsize::new(usize::MAX), ..Default::default() }).collect(),
+            conns: (0..MAX_CONNECTIONS).map(|_| ConnStat { source: AtomicUsize::new(usize::MAX), ..Default::default() }).collect(),
             progress,
             changed: Notify::new(),
             inbox: control.inbox.clone(),
@@ -757,6 +799,10 @@ impl Job {
         state.segments = if state.resumable { segments } else { Vec::new() };
         state.sources = self.sources.read().unwrap().iter().map(|s| s.saved()).collect();
         let _ = state.save(path);
+    }
+
+    fn allowed(&self) -> usize {
+        self.allowed.load(Ordering::SeqCst)
     }
 
     fn is_stopped(&self) -> bool {
@@ -807,7 +853,7 @@ impl Job {
         // left over go to the mirrors once they are confirmed instead of all piling onto the first link.
         let live = sources.iter().filter(|s| s.enabled.load(Ordering::SeqCst) && !s.status().is_dead()).count();
         let checking = sources.iter().any(|s| s.enabled.load(Ordering::SeqCst) && s.status() == SourceStatus::Checking);
-        let share = if checking && !self.sequential { self.conns.len().div_ceil(live.max(1)) } else { usize::MAX };
+        let share = if checking && !self.sequential { self.allowed().div_ceil(live.max(1)) } else { usize::MAX };
         let mut hosts = self.hosts.lock().unwrap();
         let mut alive = false;
         type Key = (bool, usize, std::cmp::Reverse<u64>);
@@ -1011,7 +1057,7 @@ impl Job {
                             self.flush(id, &source, &mut buf)?;
                             return Err(Problem::Slow);
                         }
-                        if !source.enabled.load(Ordering::SeqCst) || stat.moving.load(Ordering::SeqCst) {
+                        if !source.enabled.load(Ordering::SeqCst) || stat.moving.load(Ordering::SeqCst) || id >= self.allowed() {
                             self.flush(id, &source, &mut buf)?;
                             return Err(Problem::Moved);
                         }
@@ -1133,6 +1179,20 @@ impl Job {
                         };
                         self.spawn_check_if_needed(idx);
                     }
+                }
+                Command::SetConnections(n) => {
+                    if self.sequential {
+                        continue;
+                    }
+                    self.allowed.store(n, Ordering::SeqCst);
+                    self.progress.allowed.store(n, Ordering::SeqCst);
+                    for id in 0..n {
+                        if !self.conns[id].running.swap(true, Ordering::SeqCst) {
+                            let task = tokio::spawn(connection(self.clone(), id, None));
+                            self.extra.lock().unwrap().push(task);
+                        }
+                    }
+                    self.changed.notify_waiters();
                 }
                 Command::Enable(url, on) => {
                     let sources = self.sources.read().unwrap();

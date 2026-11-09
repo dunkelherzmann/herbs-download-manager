@@ -3,7 +3,7 @@ import HDCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var mainWindow: MainWindowController?
+    private(set) var mainWindow: MainWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
@@ -31,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { mainWindow?.showWindow(nil) }
         return true
+    }
+
+    @objc func openGitHub(_ sender: Any?) {
+        NSWorkspace.shared.open(URL(string: "https://github.com/dunkelherzmann/herbs-download-manager")!)
     }
 
     @objc func showAbout(_ sender: Any?) {

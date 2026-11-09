@@ -70,6 +70,8 @@ final class AppModel {
     func resume(_ ids: [UInt64]) { manager.resume(ids: ids); refresh() }
     func pause(_ ids: [UInt64]) { manager.pause(ids: ids); refresh() }
     func pauseAll() { manager.pauseAll(); refresh() }
+    func restart(_ ids: [UInt64]) { manager.restart(ids: ids); refresh() }
+    func setConnections(_ id: UInt64, _ n: UInt32) { manager.setConnections(id: id, connections: n); refresh() }
     func remove(_ ids: [UInt64], deleteFiles: Bool) { manager.remove(ids: ids, deleteFiles: deleteFiles); refresh() }
 }
 
