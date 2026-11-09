@@ -1,4 +1,4 @@
-//! A small HTTP/1.1 server for Herb's Downloader tests.
+//! A small HTTP/1.1 server for Herb's Download Manager tests.
 //!
 //! Each file it serves can turn range support on or off, change its contents (and so its ETag), stall after a
 //! number of bytes, limit its speed, or refuse connections over a limit with 503. Several servers on different

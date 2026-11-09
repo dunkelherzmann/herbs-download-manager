@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showAbout(_ sender: Any?) {
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "Herb's Downloader",
+            .applicationName: "Herb's Download Manager",
             .applicationVersion: appVersion,
             .version: "core \(coreVersion())",
         ])

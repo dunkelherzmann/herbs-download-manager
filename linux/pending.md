@@ -14,7 +14,7 @@ No open bugs in `bugs.md`.
 The Linux version is ported once the Mac version has each feature, item by item in the Mac's build order
 ([`pending.md`](../pending.md)). Everything is still to build.
 
-- [ ] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloader.app`, `scripts/build-linux.sh --install`. (§1)
+- [ ] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloadmanager.app`, `scripts/build-linux.sh --install`. (§1)
 - [ ] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Linux). (§7, §8, §10)
 - [ ] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
   menu in the title bar's left corner. (§2–§4)

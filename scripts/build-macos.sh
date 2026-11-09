@@ -1,14 +1,15 @@
 #!/bin/sh
-# Builds "Herb's Downloader.app" (Apple silicon) in dist/: the Rust core as a static library, its Swift bindings,
+# Builds "Herb's Download Manager.app" (Apple silicon) in dist/: the Rust core as a static library, its Swift bindings,
 # then the AppKit app. Needs the Xcode Command Line Tools and rustup's stable toolchain.
 # Usage: scripts/build-macos.sh [--install] [--zip]
 #   --install  copies the app to /Applications (quitting a running copy first)
-#   --zip      also writes dist/Herbs-Downloader-<version>-macOS.zip
+#   --zip      also writes dist/Herbs-Download-Manager-<version>-macOS.zip
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="$(sh "$ROOT/scripts/version.sh")"
-NAME="Herb's Downloader"
+NAME="Herb's Download Manager"
+SHORT="Herb's DM"   # the menu bar and anywhere macOS needs a short name
 APP="$ROOT/dist/$NAME.app"
 BUILD="$ROOT/.build"
 TARGET=aarch64-apple-darwin
@@ -45,18 +46,18 @@ grep -E 'error|warning: ' "$BUILD/build-swift.log" | grep -v 'search path .* not
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 BIN="$(swift build -c release --arch arm64 --scratch-path "$BUILD/swift" --show-bin-path)"
-cp "$BIN/HerbsDownloader" "$APP/Contents/MacOS/HerbsDownloader"
-strip -x "$APP/Contents/MacOS/HerbsDownloader"
+cp "$BIN/HerbsDownloadManager" "$APP/Contents/MacOS/HerbsDownloadManager"
+strip -x "$APP/Contents/MacOS/HerbsDownloadManager"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>$NAME</string>
+    <key>CFBundleName</key><string>$SHORT</string>
     <key>CFBundleDisplayName</key><string>$NAME</string>
-    <key>CFBundleIdentifier</key><string>com.herbertcisneros.HerbsDownloader</string>
-    <key>CFBundleExecutable</key><string>HerbsDownloader</string>
+    <key>CFBundleIdentifier</key><string>com.herbertcisneros.HerbsDownloadManager</string>
+    <key>CFBundleExecutable</key><string>HerbsDownloadManager</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
@@ -74,12 +75,12 @@ codesign --verify --strict "$APP"
 printf 'Built %s (%s)\n' "$APP" "$VERSION"
 
 if [ "$ZIP" = 1 ]; then
-    (cd "$ROOT/dist" && ditto -c -k --keepParent "$NAME.app" "Herbs-Downloader-$VERSION-macOS.zip")
-    printf 'Zipped dist/Herbs-Downloader-%s-macOS.zip\n' "$VERSION"
+    (cd "$ROOT/dist" && ditto -c -k --keepParent "$NAME.app" "Herbs-Download-Manager-$VERSION-macOS.zip")
+    printf 'Zipped dist/Herbs-Download-Manager-%s-macOS.zip\n' "$VERSION"
 fi
 
 if [ "$INSTALL" = 1 ]; then
-    osascript -e "tell application id \"com.herbertcisneros.HerbsDownloader\" to quit" >/dev/null 2>&1 || true
+    osascript -e "tell application id \"com.herbertcisneros.HerbsDownloadManager\" to quit" >/dev/null 2>&1 || true
     rm -rf "/Applications/$NAME.app"
     ditto "$APP" "/Applications/$NAME.app"
     printf 'Installed /Applications/%s.app\n' "$NAME"

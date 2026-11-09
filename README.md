@@ -1,4 +1,4 @@
-# Herb's Downloader
+# Herb's Download Manager
 
 A download manager for macOS, Linux and Windows. It downloads one file over many connections at once, from one
 server or from several mirrors of the same file, and pauses and resumes without losing what it has.
@@ -22,14 +22,14 @@ Windows. What each version still lacks is in [pending.md](pending.md), [linux/pe
 On a Mac with Apple silicon, the Xcode Command Line Tools and Rust (rustup):
 
 ```sh
-scripts/build-macos.sh --install   # builds dist/Herb's Downloader.app and copies it to /Applications
+scripts/build-macos.sh --install   # builds dist/Herb's Download Manager.app and copies it to /Applications
 scripts/test.sh                    # Rust tests, then the app's self-check
 cargo run -p hd-mock               # local test server: a 64 MiB file and two mirrors
 ```
 
 ## Support
 
-Herb's Downloader is a testing app, shared publicly so others can benefit from it. It is provided as is: no
+Herb's Download Manager is a testing app, shared publicly so others can benefit from it. It is provided as is: no
 support is promised or given.
 
 What has been reported and what's done is tracked in the open: [bugs.md](bugs.md) and [enhancements.md](enhancements.md).

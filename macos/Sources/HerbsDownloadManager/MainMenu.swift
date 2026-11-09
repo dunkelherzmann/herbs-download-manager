@@ -7,15 +7,15 @@ enum MainMenu {
         let bar = NSMenu()
 
         let appItem = NSMenuItem()
-        let appMenu = NSMenu(title: "Herb's Downloader")
-        appMenu.addItem(withTitle: "About Herb's Downloader", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+        let appMenu = NSMenu(title: "Herb's DM")
+        appMenu.addItem(withTitle: "About Herb's Download Manager", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Herb's Downloader", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Herb's DM", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let others = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         others.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Herb's Downloader", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Herb's DM", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         bar.addItem(appItem)
 

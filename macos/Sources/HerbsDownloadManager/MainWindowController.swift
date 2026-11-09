@@ -52,7 +52,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             backing: .buffered,
             defer: false
         )
-        window.title = "Herb's Downloader"
+        window.title = "Herb's Download Manager"
         window.minSize = NSSize(width: 760, height: 420)
         window.toolbarStyle = .unified
         window.setAccessibilityIdentifier("main-window")

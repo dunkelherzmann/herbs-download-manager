@@ -6,10 +6,10 @@ import PackageDescription
 let rustLib = Context.packageDirectory + "/.build/rust"
 
 let package = Package(
-    name: "HerbsDownloader",
+    name: "HerbsDownloadManager",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "HerbsDownloader", targets: ["HerbsDownloader"]),
+        .executable(name: "HerbsDownloadManager", targets: ["HerbsDownloadManager"]),
     ],
     targets: [
         // Generated: the C header and module map of the Rust library.
@@ -27,9 +27,9 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "HerbsDownloader",
+            name: "HerbsDownloadManager",
             dependencies: ["HDCore"],
-            path: "macos/Sources/HerbsDownloader",
+            path: "macos/Sources/HerbsDownloadManager",
             linkerSettings: [.linkedFramework("AppKit")]
         ),
     ]

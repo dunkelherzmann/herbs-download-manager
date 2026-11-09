@@ -12,7 +12,7 @@ cargo test --quiet --workspace >/dev/null 2>&1 || { echo "Rust tests failed (run
 
 if [ "$(uname)" = Darwin ]; then
     printf 'Mac app self-check…\n'
-    APP="$ROOT/dist/Herb's Downloader.app/Contents/MacOS/HerbsDownloader"
+    APP="$ROOT/dist/Herb's Download Manager.app/Contents/MacOS/HerbsDownloadManager"
     [ -x "$APP" ] || { echo "Build the app first: scripts/build-macos.sh" >&2; exit 1; }
     OUT="$("$APP" --self-check)"
     echo "$OUT"

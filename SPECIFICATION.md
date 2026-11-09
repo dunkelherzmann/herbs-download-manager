@@ -1,6 +1,6 @@
-# Herb's Downloader — Specification
+# Herb's Download Manager — Specification
 
-Herb's Downloader is a download manager for macOS, Linux and Windows. It downloads one file over many connections
+Herb's Download Manager (Herb's DM for short, where space is tight, such as the macOS menu bar) is a download manager for macOS, Linux and Windows. It downloads one file over many connections
 at once, from one server or from several mirrors of the same file, and stops and resumes without losing what it has.
 Its main inspiration is Progressive Downloader (threads and mirrors per task). Its window, menu bar, toolbar and
 icons follow AB Download Manager's layout. There are no tags.
@@ -16,7 +16,7 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 |---|---|---|
 | macOS 15+, Apple silicon | Swift 6 + AppKit host over the shared core | built on the Mac |
 | Windows 11 | Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe` (no installer, nothing added to the system) | built on the Windows PC |
-| Linux | Rust GTK 4 + libadwaita host (`gtk4-rs`) over the shared core, Flatpak `org.herbsdownloader.app` | built on the Linux machine |
+| Linux | Rust GTK 4 + libadwaita host (`gtk4-rs`) over the shared core, Flatpak `org.herbsdownloadmanager.app` | built on the Linux machine |
 
 - **Shared core** (`core/`, Rust, one Cargo workspace): the download engine (sources, segments, connections,
   mirrors, resume state, speed limits, queue) with no UI. Each host draws its native UI over it. The Mac host calls
@@ -35,7 +35,7 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 The layout, top to bottom:
 
 1. **Title bar**: the menu bar sits at the left of the title bar on Linux and Windows (on macOS the menu bar is the
-   system menu bar), the title "Herb's Downloader" is centered, and the **search field** is at the right.
+   system menu bar), the title "Herb's Download Manager" is centered, and the **search field** is at the right.
 2. **Toolbar** (§3).
 3. **Sidebar** on the left, resizable by dragging its edge: the status filters (§2.1).
 4. **Download list** (§2.2) to the right of the sidebar.
@@ -114,13 +114,13 @@ macOS, About, Settings and Quit live in the app menu, and Edit and Window are th
 
 | Menu | Items |
 |---|---|
-| Herb's Downloader (macOS) | About Herb's Downloader · Settings… ⌘, · Hide / Hide Others / Show All · Quit ⌘Q |
+| Herb's DM (macOS) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
 | File | New Download… ⌘N · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (focuses the search field) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Columns ▸ · Show Download Window ⌘O |
 | Window | standard (macOS) |
-| Help | Herb's Downloader on GitHub · About (Linux, Windows) |
+| Help | Herb's Download Manager on GitHub · About (Linux, Windows) |
 
 ### 4.1 Download context menu
 
@@ -351,7 +351,7 @@ Sources: source code (github.com/subhra74/xdm, GPL-3.0; behaviour studied, nothi
   HTTP/SOCKS proxies, antivirus scan.
 - Resume validation sends the first answer's `Last-Modified` as `If-Range`, deliberately not the ETag, because each
   mirror has its own ETag. A range request answered with the whole file marks the server as having no range support.
-  Herb's Downloader keeps a validator per source instead (§7.2).
+  Herb's Download Manager keeps a validator per source instead (§7.2).
 - Segment stealing: a finished segment's connection takes the second half of the largest remaining range (minimum
   256 KiB); a silent segment is taken over after the read timeout; the last small piece of a range is raced on a
   second connection; on FAT32/exFAT the part file grows in steps so Pause stays responsive.

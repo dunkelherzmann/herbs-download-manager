@@ -1,6 +1,6 @@
 # Enhancements
 
-Every enhancement requested for Herb's Downloader, oldest first. New requests are added at the end and nothing is removed.
+Every enhancement requested for Herb's Download Manager, oldest first. New requests are added at the end and nothing is removed.
 A box is ticked once the change has shipped. A request that covers several platforms has a box for each, and its main box is ticked when they're all done.
 
 - [x] **Set up the project, locally and on GitHub,** with `SPECIFICATION.md`, `bugs.md`, `enhancements.md` and `pending.md`. *Requested 2026-11-08.* Done in #1.
@@ -33,3 +33,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 - [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5, pause and resume in #6, mirrors in #7, the main window and the download list in #8.
+- [ ] **A name of its own: Herb's Download Manager, Herb's DM for short.** *Requested 2026-11-09.* Chosen after checking names against existing download managers. Renamed everywhere in #9 (window, menus, About, bundle id `com.herbertcisneros.HerbsDownloadManager`, Flatpak `org.herbsdownloadmanager.app`); the Mac list moves from the old data folder on first launch. Built per platform as each app ships.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows

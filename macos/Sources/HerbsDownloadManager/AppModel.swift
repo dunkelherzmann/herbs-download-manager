@@ -11,14 +11,21 @@ final class AppModel {
     private var observers: [() -> Void] = []
     private var timer: Timer?
 
-    /// The list lives in ~/Library/Application Support/Herb's Downloader, or in $HD_DATA_DIR (tests use a private
+    /// The list lives in ~/Library/Application Support/Herb's Download Manager, or in $HD_DATA_DIR (tests use a private
     /// folder so they never touch the user's list).
     static var dataFolder: URL {
         if let dir = ProcessInfo.processInfo.environment["HD_DATA_DIR"], !dir.isEmpty {
             return URL(fileURLWithPath: dir, isDirectory: true)
         }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Herb's Downloader", isDirectory: true)
+        let folder = support.appendingPathComponent("Herb's Download Manager", isDirectory: true)
+        // The app was called Herb's Downloader before 2026-11-09: carry its list over once.
+        let old = support.appendingPathComponent("Herb's Downloader", isDirectory: true)
+        let files = FileManager.default
+        if !files.fileExists(atPath: folder.path), files.fileExists(atPath: old.path) {
+            try? files.moveItem(at: old, to: folder)
+        }
+        return folder
     }
 
     /// S1 when unset: the user's Downloads folder ($HD_DOWNLOADS_DIR in tests).
@@ -34,7 +41,7 @@ final class AppModel {
             manager = try DownloadManager.open(dataDir: Self.dataFolder.path)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Herb's Downloader can't open its download list"
+            alert.messageText = "Herb's Download Manager can't open its download list"
             alert.informativeText = "\(error)"
             alert.runModal()
             exit(1)

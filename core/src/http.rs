@@ -10,7 +10,7 @@ pub fn client() -> reqwest::Client {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .http1_only()
-        .user_agent(concat!("HerbsDownloader/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("HerbsDownloadManager/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(30))
         .build()
         .expect("the HTTP client's settings are fixed and valid")
