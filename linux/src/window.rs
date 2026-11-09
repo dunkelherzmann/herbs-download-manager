@@ -15,10 +15,7 @@ use crate::list::{COLUMNS, DownloadList};
 const GITHUB: &str = "https://github.com/dunkelherzmann/herbs-download-manager";
 
 /// Commands that arrive with their own windows later in `linux/pending.md`; their items show, disabled.
-const LATER: [&str; 9] = [
-    "new-download", "import-links", "add-from-clipboard", "batch-download", "add-mirror", "properties", "settings",
-    "show-download-window", "keep-on-top",
-];
+const LATER: [&str; 5] = ["add-mirror", "properties", "settings", "show-download-window", "keep-on-top"];
 
 fn item(menu: &gio::Menu, label: &str, action: &str) {
     menu.append(Some(label), Some(&format!("win.{action}")));
@@ -329,7 +326,36 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         })
     };
 
-    add_actions(&window, app, &ui, &refresh, &find_bar, &search, &sidebar_scroll);
+    let ctx = crate::add::Ctx {
+        manager: ui.manager.clone(),
+        window: window.clone(),
+        tell: {
+            let ui = ui.clone();
+            Rc::new(move |text: String| *ui.notice.borrow_mut() = Some((text, std::time::Instant::now())))
+        },
+        refresh: refresh.clone(),
+        open_links: Rc::default(),
+    };
+    add_actions(&window, app, &ui, &refresh, &find_bar, &search, &sidebar_scroll, &ctx);
+    // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(i) = args.iter().position(|a| a == "--show") {
+            let links: Vec<String> = args[i + 2..].iter().take_while(|a| !a.starts_with("--")).cloned().collect();
+            let (ctx, what) = (ctx.clone(), args.get(i + 1).cloned().unwrap_or_default());
+            glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || match what.as_str() {
+                "new-download" => crate::add::new_download(&ctx, links.into_iter().next()),
+                "add-links" => crate::add::add_links(&ctx, links),
+                "batch" => crate::add::batch(&ctx),
+                _ => {}
+            });
+        }
+    }
+    // Links, text and link files dropped on the window open Add Links (§5.4).
+    {
+        let ctx2 = ctx.clone();
+        view.add_controller(crate::add::drop_target(&ctx, move |links| crate::add::add_links(&ctx2, links)));
+    }
     {
         let (ui, refresh, sidebar2) = (ui.clone(), refresh.clone(), sidebar.clone());
         sidebar.connect_row_selected(move |_, row| {
@@ -430,6 +456,7 @@ fn add_actions(
     find_bar: &gtk::Box,
     search: &gtk::SearchEntry,
     sidebar: &gtk::ScrolledWindow,
+    ctx: &crate::add::Ctx,
 ) {
     let add = |name: &str, accels: &[&str], run: Box<dyn Fn()>| {
         let action = gio::SimpleAction::new(name, None);
@@ -546,12 +573,17 @@ fn add_actions(
             about.present(Some(&w));
         }));
     }
+    for (name, accels, run) in [
+        ("new-download", &["<Control>n"][..], crate::add::new_download_from_clipboard as fn(&crate::add::Ctx)),
+        ("import-links", &["<Control><Shift>o"], crate::add::import),
+        ("add-from-clipboard", &["<Control><Shift>v"], crate::add::from_clipboard),
+        ("batch-download", &["<Control><Shift>n"], crate::add::batch),
+    ] {
+        let ctx = ctx.clone();
+        add(name, accels, Box::new(move || run(&ctx)));
+    }
     for (name, accels) in [
-        ("new-download", &["<Control>n"][..]),
-        ("import-links", &["<Control><Shift>o"]),
-        ("add-from-clipboard", &["<Control><Shift>v"]),
-        ("batch-download", &["<Control><Shift>n"]),
-        ("add-mirror", &["<Control><Alt>m"]),
+        ("add-mirror", &["<Control><Alt>m"][..]),
         ("properties", &["<Control>i"]),
         ("settings", &["<Control>comma"]),
         ("show-download-window", &["<Control>o"]),
@@ -608,7 +640,14 @@ fn confirm_delete(window: &adw::ApplicationWindow, ui: &Rc<Ui>, refresh: &Rc<dyn
 /// Saves the window as a PNG a moment after it appears (the test hook behind `--capture`), then quits.
 pub fn capture_then_quit(app: &adw::Application, window: &adw::ApplicationWindow, path: std::path::PathBuf) {
     let (app, window) = (app.clone(), window.clone());
-    glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
+    glib::timeout_add_local_once(std::time::Duration::from_millis(2500), move || {
+        // The frontmost window: a dialog the test opened, else the main window.
+        let window: gtk::Window = gtk::Window::list_toplevels()
+            .into_iter()
+            .filter_map(|w| w.downcast::<gtk::Window>().ok())
+            .filter(|w| w.is_visible() && w.upcast_ref::<gtk::Widget>() != window.upcast_ref::<gtk::Widget>())
+            .next_back()
+            .unwrap_or_else(|| window.clone().upcast());
         let paintable = gtk::WidgetPaintable::new(Some(&window));
         let (w, h) = (window.width() as f64, window.height() as f64);
         let snapshot = gtk::Snapshot::new();

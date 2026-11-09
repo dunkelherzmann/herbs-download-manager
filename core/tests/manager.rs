@@ -528,3 +528,52 @@ fn one_download_s_own_limit_holds_and_can_be_lifted() {
         "took {took:?} without a limit"
     );
 }
+
+#[test]
+fn an_add_session_gathers_mirrors_and_asks_about_a_name_in_use() {
+    use hd_core::addflow::{AddSession, Choice, PendingLink, Step};
+    let first = pattern(MIB, 31);
+    let other = pattern(2 * MIB, 32);
+    let (_rt1, s1) = server(&first, None);
+    let (_rt2, s2) = server(&other, None);
+    let (_rt3, s3) = server(&other, None);
+    let dir = folder("addflow");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s1.url("/f.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Finished);
+    let link = |url: String, size: u64| PendingLink { url, name: Some("f.bin".into()), size: Some(size), ..Default::default() };
+    // A different f.bin (other size) from two servers: one question, then its second link follows the answer.
+    let links = vec![link(s2.url("/f.bin"), other.len() as u64), link(s3.url("/f.bin"), other.len() as u64)];
+    let mut session = AddSession::new(&m, links, &dir.join("files"), 4, false);
+    let Step::Ask(question) = session.step(&m) else { panic!("expected a question") };
+    assert_eq!(question.clash.kept_name, "f - kept.bin");
+    assert!(question.more);
+    assert!(question.title().contains("A different “f.bin” is already in the list"), "{}", question.title());
+    session.answer(&m, Choice::KeepBoth, false);
+    let Step::Done(summary) = session.step(&m) else { panic!("expected the end") };
+    assert_eq!((summary.new, summary.kept, summary.mirrored), (1, 1, 1));
+    assert_eq!(summary.text().as_deref(), Some("1 download added, 1 link added as a mirror, 1 kept under a new name"));
+    let rows = m.rows();
+    let kept = rows.iter().find(|r| r.name == "f - kept.bin").expect("kept under a new name");
+    assert_eq!(kept.sources_known, 2, "the second link became its mirror");
+
+    // Skip, for the rest: nothing more is added.
+    let links = vec![link(s2.url("/f.bin?again"), 5), link(s3.url("/f.bin?again"), 6)];
+    let mut session = AddSession::new(&m, links, &dir.join("files"), 4, false);
+    let Step::Ask(_) = session.step(&m) else { panic!("expected a question") };
+    session.answer(&m, Choice::Skip, true);
+    let Step::Done(summary) = session.step(&m) else { panic!("expected the end") };
+    assert_eq!((summary.new, summary.skipped), (0, 2));
+    assert_eq!(m.rows().len(), 2);
+}
+
+#[test]
+fn link_files_are_read_as_text_and_binary_files_are_refused() {
+    let dir = folder("linkfiles");
+    let utf16: Vec<u8> = [0xFF, 0xFE].into_iter().chain("see https://example.com/a.zip".encode_utf16().flat_map(|u| u.to_le_bytes())).collect();
+    std::fs::write(dir.join("links.txt"), &utf16).unwrap();
+    std::fs::write(dir.join("photo.png"), [0x89, b'P', b'N', b'G', 0, 0, 0]).unwrap();
+    let text = hd_core::links::text_of_file(&dir.join("links.txt")).unwrap();
+    assert_eq!(hd_core::links::find(&text), vec!["https://example.com/a.zip".to_string()]);
+    assert_eq!(hd_core::links::text_of_file(&dir.join("photo.png")), None);
+}

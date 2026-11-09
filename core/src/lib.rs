@@ -1,5 +1,6 @@
 //! Herb's Download Manager engine. It has no UI: each platform's app draws its own window over it (SPECIFICATION.md §1).
 
+pub mod addflow;
 pub mod format;
 pub mod http;
 pub mod limit;

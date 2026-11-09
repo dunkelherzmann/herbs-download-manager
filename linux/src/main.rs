@@ -1,6 +1,7 @@
 //! Herb's Download Manager for Linux (SPECIFICATION.md §1): GTK 4 + libadwaita over the shared core, the same
 //! window as the Mac's with the window controls on the right and the Main Menu (☰) in the title bar's left corner.
 
+mod add;
 mod list;
 mod window;
 
