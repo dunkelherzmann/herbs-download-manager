@@ -5,6 +5,10 @@ What the Windows version lacks or gets wrong compared with the macOS reference i
 request each, and tick an item with its PR number once it is built and its test passes on Windows.
 [`bugs.md`](../bugs.md) and [`enhancements.md`](../enhancements.md) stay the record of requests and releases.
 
+## Next (top priority)
+
+- [ ] **Menus in the window, matching the Mac.** When the main window is built, every menu and submenu sits in the title bar's menu bar with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. (§2, §4, enhancements.md) *Asked 2026-11-09.*
+
 ## Bugs to fix
 
 No open bugs in `bugs.md`.

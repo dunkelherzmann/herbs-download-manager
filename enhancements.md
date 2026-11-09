@@ -39,3 +39,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Windows
 
 - [x] **Keep each platform's files in its own folder.** The root holds only what applies to the whole project (Rust core and bindings, docs, trackers, version and test scripts); `macos/` holds the Mac app's `Package.swift`, sources, build script and `pending.md`, and `linux/` and `windows/` their own. Also line endings fixed by `.gitattributes` and a build check on every pull request (GitHub Actions). *Requested 2026-11-09.* All platforms. Done in #12.
+
+- [ ] **All menus and submenus in the app's window, on macOS too.** Nothing in the macOS menu bar beyond the app menu macOS always shows, so on wide screens no command needs a trip to the top of the screen. Top priority: the next item in every `pending.md`. *Requested 2026-11-09.* All platforms.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

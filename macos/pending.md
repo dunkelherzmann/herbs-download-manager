@@ -6,6 +6,10 @@ its spec section. Fix broken items first, one pull request each, and tick an ite
 and its test passes on the Mac. [`bugs.md`](../bugs.md) and [`enhancements.md`](../enhancements.md) stay the record of requests and
 releases.
 
+## Next (top priority)
+
+- [ ] **Every menu in the window, none in the macOS menu bar.** The menu bar (File, Tasks, Tools, Help and their submenus) moves into the left of the window's title bar, as on Linux and Windows, so nothing needs a trip to the top of a wide screen. The macOS menu bar keeps only the app menu macOS always shows. Every shortcut keeps working, Undo, Cut, Copy, Paste and Select All in text fields included, and every item keeps its hover text and VoiceOver label. Describe the new menu in `SPECIFICATION.md` in the same PR. (§2, §4, enhancements.md) *Asked 2026-11-09.*
+
 ## Bugs to fix
 
 No open bugs in `bugs.md`.
