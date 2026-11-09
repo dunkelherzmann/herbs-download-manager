@@ -101,10 +101,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Start downloading while the New Download window is still open,** so no time is lost while choosing the folder; Cancel discards what was fetched. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Start downloading while the New Download window is still open,** so no time is lost while choosing the folder; Cancel discards what was fetched. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #54: once the link proves resumable it downloads into the folder shown; Download or Add moves it to the chosen folder and name and carries on (SPECIFICATION.md §5.1).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **A note of your own on each download,** shown in a column and found by the search. *Requested 2026-11-09, from studying Mister Download Manager.*
   - [ ] Mac
   - [ ] Linux

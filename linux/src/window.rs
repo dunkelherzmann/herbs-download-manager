@@ -363,6 +363,30 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         open_links: Rc::default(),
     };
     add_actions(&window, app, &ui, &refresh, &find_bar, &search, &sidebar_scroll, &ctx);
+    // Quit (or closing the window) while downloads run asks first, with Cancel the default (§10); they start again
+    // at the next launch (the application's shutdown calls the manager's quit).
+    {
+        let (manager, app2) = (ui.manager.clone(), app.clone());
+        let confirmed = std::rc::Rc::new(std::cell::Cell::new(false));
+        window.connect_close_request(move |w| {
+            if confirmed.get() || !manager.any_running() || !crate::signins::ASKS.get() {
+                return glib::Propagation::Proceed;
+            }
+            let d = adw::AlertDialog::new(Some("Downloads are running. Pause them and quit?"),
+                                          Some("They continue the next time you open Herb's Download Manager."));
+            d.add_response("cancel", "Cancel");
+            d.add_response("quit", "Pause and Quit");
+            d.set_default_response(Some("cancel"));
+            d.set_close_response("cancel");
+            let (confirmed2, app3) = (confirmed.clone(), app2.clone());
+            d.connect_response(Some("quit"), move |_, _| {
+                confirmed2.set(true);
+                app3.quit();
+            });
+            d.present(Some(w));
+            glib::Propagation::Stop
+        });
+    }
     crate::features::install(&ctx, &ui.list);
     // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
     {
@@ -645,8 +669,9 @@ fn add_actions(
         add("minimize", &["<Control>m"], Box::new(move || w.minimize()));
         let w = window.clone();
         add("zoom", &[], Box::new(move || if w.is_maximized() { w.unmaximize() } else { w.maximize() }));
-        let a = app.clone();
-        add("quit", &["<Control>q"], Box::new(move || a.quit()));
+        // Quitting goes through the window's close, which asks first while downloads run.
+        let w = window.clone();
+        add("quit", &["<Control>q"], Box::new(move || w.close()));
         add("github", &[], Box::new(|| {
             let _ = gio::AppInfo::launch_default_for_uri(GITHUB, None::<&gio::AppLaunchContext>);
         }));

@@ -134,6 +134,14 @@ fn main() -> gtk::glib::ExitCode {
                     });
                     app.add_action(&action);
                 }
+                // Quitting (§10): running downloads pause and start again at the next launch; New Download's early
+                // download is discarded.
+                {
+                    let manager = manager.clone();
+                    app.connect_shutdown(move |_| {
+                        manager.quit(std::time::Duration::from_secs(5));
+                    });
+                }
                 let window = window::build(app, manager.clone());
                 features::run_if_asked(app, &manager);
                 window.present();

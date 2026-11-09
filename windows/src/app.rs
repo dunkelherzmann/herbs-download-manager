@@ -1238,7 +1238,9 @@ fn command(hwnd: HWND, id: u16) {
                 let text = wide(&format!("Herb's Download Manager {}\n\nby dunkelherzmann\n{GITHUB}", hd_core::version()));
                 MessageBoxW(Some(hwnd), PCWSTR(text.as_ptr()), w!("About Herb's Download Manager"), MB_OK | MB_ICONINFORMATION);
             }
-            C_QUIT => drop(DestroyWindow(hwnd)),
+            C_QUIT => {
+                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
             _ if (C_COLUMN + 1..C_COLUMN + COLUMNS.len() as u16).contains(&id) => {
                 let i = (id - C_COLUMN) as usize;
                 let on = with(|s| s.columns[i]).unwrap_or(true);
@@ -1440,6 +1442,36 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                     let on_header = y >= rect.top && y < rect.bottom;
                     show_context_menu(hwnd, x, y, on_header);
                 }
+                LRESULT(0)
+            }
+            // Quit while downloads run asks first, with Cancel the default (§10); they start again at the next launch.
+            WM_CLOSE => {
+                let running = with(|s| s.manager.any_running()).unwrap_or(false);
+                if running && crate::signins::ASKS.get() {
+                    let heading = wide("Downloads are running. Pause them and quit?");
+                    let body = wide("They continue the next time you open Herb's Download Manager.");
+                    let label = wide("Pause and Quit");
+                    let buttons = [TASKDIALOG_BUTTON { nButtonID: 1001, pszButtonText: PCWSTR(label.as_ptr()) }];
+                    let config = TASKDIALOGCONFIG {
+                        cbSize: std::mem::size_of::<TASKDIALOGCONFIG>() as u32,
+                        hwndParent: hwnd,
+                        dwFlags: TDF_ALLOW_DIALOG_CANCELLATION,
+                        dwCommonButtons: TDCBF_CANCEL_BUTTON,
+                        pszWindowTitle: w!("Herb's Download Manager"),
+                        pszMainInstruction: PCWSTR(heading.as_ptr()),
+                        pszContent: PCWSTR(body.as_ptr()),
+                        cButtons: 1,
+                        pButtons: buttons.as_ptr(),
+                        nDefaultButton: IDCANCEL.0,
+                        ..Default::default()
+                    };
+                    let mut pressed = 0i32;
+                    let _ = TaskDialogIndirect(&config, Some(&mut pressed), None, None);
+                    if pressed != 1001 {
+                        return LRESULT(0);
+                    }
+                }
+                let _ = DestroyWindow(hwnd);
                 LRESULT(0)
             }
             WM_DESTROY => {

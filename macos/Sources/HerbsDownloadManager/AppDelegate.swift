@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Test hook: --settings opens the Settings window (§9).
         if args.contains("--settings") { SettingsWindowController.shared.show() }
+        // Test hook: --new-download URL opens New Download with that link (never touching the clipboard).
+        if let i = args.firstIndex(of: "--new-download"), i + 1 < args.count { mainWindow?.newDownload(link: args[i + 1]) }
         // Test hook: --download-window [TAB] opens the first download's window, on Info, Connections, Mirrors or Options.
         if let i = args.firstIndex(of: "--download-window"), let row = AppModel.shared.rows.first {
             let tab = args.indices.contains(i + 1) && !args[i + 1].hasPrefix("--") ? args[i + 1] : nil

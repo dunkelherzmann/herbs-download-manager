@@ -171,6 +171,13 @@ checks the copy's size and only then removes the original.
 Buttons: **Cancel**, **Add** (adds the download to the queue, paused if the queue is stopped) and **Download** (the
 default: starts it now). A file of that name in the list or the folder is handled as §5.6 says.
 
+**Starting early.** Once the link proves resumable (and the file fits), it starts downloading into the folder shown,
+while the window is still open, so no time is lost choosing the folder and name; the Size line adds "120 MB downloaded
+already" (or "already downloaded"). It isn't in the list yet. **Download** or **Add** takes it over: it moves to the
+folder and name chosen (copied to another drive if need be) and continues, or is listed as finished when it already
+is. **Cancel**, closing the window, changing the link, Skip in §5.6, the link becoming a mirror, or quitting discards
+what was fetched.
+
 ### 5.2 Add from Clipboard (⇧⌘V)
 
 Every link in the clipboard's text opens the Add Links window (§5.3).
@@ -373,8 +380,8 @@ answer is used. S8 arrives with checksum verification and isn't shown until then
 - **Expired link**: adding a working mirror (§7.1 M3) to a failed or paused download replaces the dead source and
   continues from where it stopped.
 - **Restart** discards the downloaded data (after confirming, Cancel the default) and starts again from all sources.
-- **Quit** while downloads run asks "Downloads are running. Pause them and quit?" (Cancel the default); quitting
-  pauses them, and they resume at the next launch if they were running.
+- **Quit** while downloads run asks "Downloads are running. Pause them and quit?" (Cancel the default) on every
+  platform; quitting pauses them, and they resume at the next launch if they were running.
 - **Delete** asks whether to remove only the list entry (the default) or to move the file to the Trash as well (the
   Recycle Bin on Windows), so it can be put back; nothing is ever erased. A file that can't go to the Trash (a drive
   without one) stays where it is, and the footer says so.

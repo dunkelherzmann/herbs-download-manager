@@ -299,6 +299,7 @@ impl DownloadManager {
         size: Option<u64>,
         connections: u32,
         start: bool,
+        early: Option<u64>,
     ) -> AddResult {
         let s = self.inner.settings();
         let added = self.inner.add_or_mirror(manager::NewDownload {
@@ -311,6 +312,7 @@ impl DownloadManager {
             retries: s.retries,
             start,
             size,
+            early,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }
@@ -849,5 +851,30 @@ impl DownloadManager {
             .move_file(id, std::path::Path::new(&target))
             .map(|p| p.display().to_string())
             .map_err(|message| CoreError::Message { message })
+    }
+}
+
+// --- Starting while New Download is open ------------------------------------------------------------------------------
+
+#[derive(uniffi::Record)]
+pub struct EarlyProgress {
+    pub downloaded: u64,
+    pub size: Option<u64>,
+}
+
+#[uniffi::export]
+impl DownloadManager {
+    /// Starts fetching the link while New Download is open, into `folder`; returns a token for `add` or `cancel_early`.
+    pub fn start_early(&self, url: String, mirrors: Vec<String>, folder: String, name: Option<String>) -> u64 {
+        self.inner.start_early(&url, &mirrors, std::path::Path::new(&folder), name.as_deref())
+    }
+
+    pub fn early_progress(&self, token: u64) -> Option<EarlyProgress> {
+        self.inner.early_progress(token).map(|(downloaded, size)| EarlyProgress { downloaded, size })
+    }
+
+    /// Cancel in New Download: what was fetched is discarded.
+    pub fn cancel_early(&self, token: u64) {
+        self.inner.cancel_early(token);
     }
 }

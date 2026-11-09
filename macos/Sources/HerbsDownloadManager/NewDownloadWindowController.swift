@@ -17,6 +17,11 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     /// The size the server gave for the link, used to match it with a download already in the list.
     private var probedSize: UInt64?
     private var probeTask: Task<Void, Never>?
+    /// The download started while this window is open (enhancements.md), once the link proved resumable; Download or
+    /// Add adopts it, Cancel discards it.
+    private var early: UInt64?
+    private var sizeText = ""
+    private var earlyTimer: Timer?
     private var onClose: (() -> Void)?
 
     init(link initial: String?, onClose: @escaping () -> Void) {
@@ -149,6 +154,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     private func linkChanged() {
         probeTask?.cancel()
         probedSize = nil
+        dropEarly()
         let url = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else { size.stringValue = ""; return }
         size.stringValue = "Checking…"
@@ -171,7 +177,10 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
                 // Said now rather than when the download fails (free space, FAT32's 4 GB limit).
                 if let total = info.size, let problem = spaceProblem(folder: self.folder.path, size: total) {
                     self.size.stringValue += " — \(problem)"
+                } else if info.resumable {
+                    self.startEarly(url: url, name: info.name)
                 }
+                self.sizeText = self.size.stringValue
             case .failure(let error):
                 self.size.stringValue = errorText(error)
             }
@@ -215,14 +224,44 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         let mirrorLinks = findLinks(text: mirrors.string).filter { $0 != url }
         let chosen = name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = UInt32(connections.titleOfSelectedItem ?? "") ?? AppModel.shared.settings.connections
-        let link = PendingLink(url: url, mirrors: mirrorLinks, name: chosen.isEmpty ? nil : chosen, size: probedSize)
+        var link = PendingLink(url: url, mirrors: mirrorLinks, name: chosen.isEmpty ? nil : chosen, size: probedSize)
+        // The download already under way is adopted (moved to the chosen folder and name), not started again.
+        link.early = early
+        early = nil
         let folder = self.folder
         close()
         let main = (NSApp.delegate as? AppDelegate)?.mainWindow?.window
         Task { await AppModel.shared.addAsking([link], folder: folder, connections: count, start: start, window: main) }
     }
 
+    /// Starts fetching now, so no time is lost while the folder and name are chosen; the size line shows how much
+    /// is in.
+    private func startEarly(url: String, name: String) {
+        dropEarly()
+        let manager = AppModel.shared.manager
+        early = manager.startEarly(url: url, mirrors: [], folder: folder.path, name: name)
+        earlyTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let early = self.early, let p = manager.earlyProgress(token: early), p.downloaded > 0 else { return }
+                let whole = p.size.map { p.downloaded >= $0 } ?? false
+                self.size.stringValue = self.sizeText + (whole ? " — already downloaded" : " — \(bytesText(bytes: p.downloaded)) downloaded already")
+            }
+        }
+    }
+
+    /// The link changed, or the window closed without adding: what was fetched is discarded.
+    private func dropEarly() {
+        earlyTimer?.invalidate()
+        earlyTimer = nil
+        if let early {
+            let manager = AppModel.shared.manager
+            DispatchQueue.global().async { manager.cancelEarly(token: early) }
+        }
+        early = nil
+    }
+
     override func close() {
+        dropEarly()
         probeTask?.cancel()
         super.close()
         onClose?()

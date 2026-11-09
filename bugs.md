@@ -14,3 +14,7 @@ No bugs reported yet.
   - [x] Windows (#48: full-width top and footer bands with one-pixel lines, and a sidebar divider; the list lost its sunken 3D edge)
 - [x] **The Windows app could crash when the list was rebuilt with downloads selected** (*found in testing*, 2026-11-09). Restoring the selection made the list report the change at once, which refreshed the list again while its state was in use, and the app ended. Found by the feature tests (#49); the main window now skips such a re-entrant refresh, as its dialogs already did.
   - [x] Windows
+- [x] **Quitting on Linux and Windows didn't ask while downloads ran, and on Linux didn't pause them for the next launch** (*found in testing*, 2026-11-09). §10 asks "Downloads are running. Pause them and quit?" (Cancel the default) and starts them again at the next launch; only the Mac did. On Linux, quitting also skipped the step that marks running downloads to start again and saves them. Both now ask, and Linux quits through the shared core as the others do. Fixed in #54.
+  - [x] Mac (already)
+  - [x] Linux
+  - [x] Windows

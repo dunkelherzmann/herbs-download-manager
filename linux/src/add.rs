@@ -2,7 +2,7 @@
 //! Batch), Batch Download (Ctrl+Shift+N) and Import Links (Ctrl+Shift+O). Every add goes through the core's
 //! `AddSession`, which gathers mirrors and asks about a name in use (§5.6) with the dialog drawn here.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -169,13 +169,19 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     // A6: ask the server about the link once it stops changing.
     let probed: Rc<RefCell<Option<u64>>> = Rc::default();
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::default();
+    // The download started while this window is open (enhancements.md), once the link proved resumable: Download or
+    // Add adopts it, Cancel discards it.
+    let early: Rc<Early> = Rc::new(Early { manager: ctx.manager.clone(), token: Cell::new(None), timer: RefCell::new(None) });
     {
         let (manager, name, size, probed, pending) = (ctx.manager.clone(), name.clone(), size.clone(), probed.clone(), pending.clone());
         let folder = folder.clone();
+        let early = early.clone();
         link_entry.connect_changed(move |entry| {
             if let Some(id) = pending.borrow_mut().take() {
                 id.remove();
             }
+            early.drop_it();
+            let early = early.clone();
             let url = entry.text().trim().to_string();
             let (manager, name, size, probed, pending2) = (manager.clone(), name.clone(), size.clone(), probed.clone(), pending.clone());
             let folder = folder.clone();
@@ -186,6 +192,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                     return;
                 }
                 size.set_label("Checking…");
+                let url2 = url.clone();
                 glib::spawn_future_local(async move {
                     let result = gio::spawn_blocking(move || manager.probe(&url)).await;
                     match result {
@@ -202,6 +209,8 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                             // Said now rather than when the download fails (free space, FAT32's 4 GB limit).
                             if let Some(problem) = p.size.and_then(|s| hd_core::disk::space_problem(&folder.borrow(), s)) {
                                 text = format!("{text} — {problem}");
+                            } else if p.resumable {
+                                early.start(&url2, &folder.borrow(), &p.name, &size, text.clone());
                             }
                             size.set_label(&text);
                         }
@@ -214,6 +223,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     }
     link_entry.emit_by_name::<()>("changed", &[]);
 
+    let early_for_close = early.clone();
     let submit = {
         let (ctx, window) = (ctx.clone(), window.clone());
         move |start: bool| {
@@ -230,6 +240,8 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                 mirrors: hd_core::links::find(&text),
                 name: Some(name.text().trim().to_string()).filter(|n| !n.is_empty()),
                 size: *probed.borrow(),
+                // The download already under way is adopted (moved to the chosen folder and name), not started again.
+                early: early.take(),
             };
             add_all(&ctx, vec![link], folder.borrow().clone(), connections.value() as u32, start);
             window.close();
@@ -237,6 +249,8 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     };
     let w = window.clone();
     cancel.connect_clicked(move |_| w.close());
+    // Closed without adding: what was fetched is discarded.
+    window.connect_destroy(move |_| early_for_close.drop_it());
     let s = submit.clone();
     add.connect_clicked(move |_| s(false));
     download.connect_clicked(move |_| submit(true));
@@ -610,4 +624,58 @@ pub fn new_download_from_clipboard(ctx: &Ctx) {
         let text = ctx.window.clipboard().read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
         new_download(&ctx, hd_core::links::find(&text).into_iter().next());
     });
+}
+
+/// New Download's early download (enhancements.md: start while New Download is open).
+struct Early {
+    manager: Manager,
+    token: Cell<Option<u64>>,
+    timer: RefCell<Option<glib::SourceId>>,
+}
+
+impl Early {
+    /// Starts fetching into the window's folder; the size line shows how much is in.
+    fn start(&self, url: &str, folder: &std::path::Path, name: &str, size: &gtk::Label, base: String) {
+        self.drop_it();
+        let token = self.manager.start_early(url, &[], folder, Some(name));
+        self.token.set(Some(token));
+        let (manager, size) = (self.manager.clone(), size.clone());
+        *self.timer.borrow_mut() = Some(glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+            match manager.early_progress(token) {
+                Some((got, total)) => {
+                    if got > 0 {
+                        let whole = total.is_some_and(|t| got >= t);
+                        size.set_label(&if whole {
+                            format!("{base} — already downloaded")
+                        } else {
+                            format!("{base} — {} downloaded already", format::bytes(got))
+                        });
+                    }
+                    glib::ControlFlow::Continue
+                }
+                None => glib::ControlFlow::Break,
+            }
+        }));
+    }
+
+    fn stop_timer(&self) {
+        if let Some(id) = self.timer.borrow_mut().take() {
+            id.remove();
+        }
+    }
+
+    /// Hands the early download over to the add (it is adopted there).
+    fn take(&self) -> Option<u64> {
+        self.stop_timer();
+        self.token.take()
+    }
+
+    /// Discards it, off the UI thread (stopping waits for it to save).
+    fn drop_it(&self) {
+        self.stop_timer();
+        if let Some(token) = self.token.take() {
+            let manager = self.manager.clone();
+            gio::spawn_blocking(move || manager.cancel_early(token));
+        }
+    }
 }

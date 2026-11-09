@@ -17,6 +17,8 @@ pub struct PendingLink {
     pub mirrors: Vec<String>,
     pub name: Option<String>,
     pub size: Option<u64>,
+    /// The early download New Download started for this link (`Manager::start_early`).
+    pub early: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +160,9 @@ impl AddSession {
             let name = name_of(&link);
             let key = format!("{name}\u{0}{}", link.size.map(|s| s.to_string()).unwrap_or_default());
             if let Some(earlier) = self.decided.get(&key) {
+                if let Some(token) = link.early {
+                    manager.cancel_early(token);
+                }
                 match earlier {
                     Some(id) => {
                         let mut urls = vec![link.url.clone()];
@@ -203,6 +208,9 @@ impl AddSession {
     fn apply(&mut self, manager: &Manager, link: PendingLink, clash: Clash, key: String, choice: Choice) {
         match choice {
             Choice::Skip => {
+                if let Some(token) = link.early {
+                    manager.cancel_early(token);
+                }
                 self.summary.skipped += 1;
                 self.decided.insert(key, None);
             }
@@ -239,6 +247,7 @@ impl AddSession {
             retries: s.retries,
             start: self.start,
             size: link.size,
+            early: link.early,
         });
         match added {
             Added::MirrorOf(_) => self.summary.mirrored += 1,

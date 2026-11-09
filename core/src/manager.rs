@@ -119,7 +119,12 @@ pub struct NewDownload {
     pub start: bool,
     /// The size the server gave when the link was checked, if it was.
     pub size: Option<u64>,
+    /// The early download New Download started for this link (`start_early`), adopted instead of starting afresh.
+    pub early: Option<u64>,
 }
+
+/// The first id of an early download.
+const EARLY_IDS: u64 = 1 << 48;
 
 /// What `add_or_mirror` did with a link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,6 +217,9 @@ struct Inner {
     /// Connection limits learned from servers (host-limits.json).
     learned: Arc<crate::hosts::Learned>,
     vault: Arc<crate::vault::Vault>,
+    /// Downloads started while New Download is still open (enhancements.md), not in the list until Download or Add
+    /// adopts them; Cancel discards them. Their ids start at EARLY_IDS so they never meet the list's.
+    early: Mutex<Vec<Slot>>,
     /// S5, shared by every download.
     limiter: Arc<Limiter>,
 }
@@ -296,6 +304,7 @@ impl Manager {
                 trash_dir: Mutex::new(None),
                 learned: Arc::new(crate::hosts::Learned::open(Some(dir))),
                 vault: Arc::new(crate::vault::Vault::open(Some(dir))),
+                early: Mutex::new(Vec::new()),
             }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
@@ -326,6 +335,11 @@ impl Manager {
             }
         }
         self.pause_running();
+        // New Download's early downloads go with the app.
+        let early: Vec<u64> = self.inner.early.lock().unwrap().iter().map(|s| s.entry.id).collect();
+        for token in early {
+            self.cancel_early(token);
+        }
         let stopped = self.wait_idle(timeout);
         self.save();
         stopped
@@ -374,7 +388,8 @@ impl Manager {
             });
         }
         let path = folder.join(&wanted);
-        if path.exists() {
+        let early_file = self.inner.early.lock().unwrap().iter().any(|s| s.entry.dest.as_deref() == Some(path.as_path()));
+        if path.exists() && !early_file {
             let size = std::fs::metadata(&path).ok().map(|m| m.len());
             return Plan::Clash(Clash { id: None, path: Some(path), size, finished: true, kept_name: kept() });
         }
@@ -387,6 +402,9 @@ impl Manager {
     pub fn add_or_mirror(&self, new: NewDownload) -> Added {
         let plan = self.plan_add(&new.url, new.name.as_deref(), &new.folder, new.size);
         let Plan::Mirror(id) = plan else { return Added::New(self.add(new)) };
+        if let Some(token) = new.early {
+            self.cancel_early(token);
+        }
         let mut urls = vec![new.url.clone()];
         urls.extend(new.mirrors.iter().cloned());
         self.add_mirrors(id, &urls);
@@ -398,6 +416,12 @@ impl Manager {
 
     /// Adds a new download at the top of the list and returns its id.
     pub fn add(&self, new: NewDownload) -> u64 {
+        if let Some(token) = new.early {
+            if let Some(id) = self.adopt_early(token, &new) {
+                return id;
+            }
+            self.cancel_early(token);
+        }
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();
             let id = slots.iter().map(|s| s.entry.id).max().unwrap_or(0) + 1;
@@ -447,7 +471,8 @@ impl Manager {
     fn start(&self, id: u64) {
         let (req, running) = {
             let mut slots = self.inner.slots.lock().unwrap();
-            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            let mut early = self.inner.early.lock().unwrap();
+            let Some(slot) = slots.iter_mut().chain(early.iter_mut()).find(|s| s.entry.id == id) else { return };
             if slot.running.is_some() || slot.entry.status == Status::Finished {
                 return;
             }
@@ -514,7 +539,8 @@ impl Manager {
         let state = ResumeState::load(&self.state_file(id)).ok();
         {
             let mut slots = self.inner.slots.lock().unwrap();
-            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            let mut early = self.inner.early.lock().unwrap();
+            let Some(slot) = slots.iter_mut().chain(early.iter_mut()).find(|s| s.entry.id == id) else { return };
             if !slot.running.as_ref().is_some_and(|r| Arc::ptr_eq(r, running)) {
                 return; // removed, or started again
             }
@@ -662,6 +688,170 @@ impl Manager {
         self.save();
         self.pump();
         kept
+    }
+
+    /// Starts fetching a link while New Download is still open (enhancements.md), into `folder` under `name` (or the
+    /// server's name). It isn't in the list: `add` with `NewDownload::early` adopts it, `cancel_early` discards it.
+    /// Returns its token.
+    pub fn start_early(&self, url: &str, mirrors: &[String], folder: &Path, name: Option<&str>) -> u64 {
+        let s = self.settings();
+        let token = {
+            let mut early = self.inner.early.lock().unwrap();
+            let token = early.iter().map(|s| s.entry.id + 1).max().unwrap_or(EARLY_IDS);
+            early.push(Slot {
+                entry: Entry {
+                    id: token,
+                    url: url.to_string(),
+                    mirrors: mirrors.to_vec(),
+                    folder: folder.to_path_buf(),
+                    name: name.map(str::to_string),
+                    dest: None,
+                    size: None,
+                    downloaded: 0,
+                    status: Status::Waiting,
+                    connections: s.connections,
+                    connections_per_server: s.connections_per_server,
+                    retries: s.retries,
+                    added: now(),
+                    finished: None,
+                    resume_at_launch: false,
+                    speed_limit: None,
+                    checksum: None,
+                    verified: None,
+                    needs_login: None,
+                },
+                running: None,
+            });
+            token
+        };
+        self.start(token);
+        token
+    }
+
+    /// Bytes an early download has fetched, and its size when known; `None` once it's gone.
+    pub fn early_progress(&self, token: u64) -> Option<(u64, Option<u64>)> {
+        let early = self.inner.early.lock().unwrap();
+        let slot = early.iter().find(|s| s.entry.id == token)?;
+        Some(match &slot.running {
+            Some(r) => (r.progress.downloaded.load(Ordering::SeqCst), r.progress.size()),
+            None => (slot.entry.downloaded, slot.entry.size),
+        })
+    }
+
+    /// Stops an early download and waits (up to 10 s) until it has saved; returns its entry.
+    fn stop_early(&self, token: u64) -> Option<Entry> {
+        let running = self.inner.early.lock().unwrap().iter().find(|s| s.entry.id == token)?.running.clone();
+        if let Some(r) = running {
+            r.control.pause();
+            let until = Instant::now() + std::time::Duration::from_secs(10);
+            while Instant::now() < until && self.inner.early.lock().unwrap().iter().any(|s| s.entry.id == token && s.running.is_some()) {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+        let mut early = self.inner.early.lock().unwrap();
+        let i = early.iter().position(|s| s.entry.id == token)?;
+        Some(early.remove(i).entry)
+    }
+
+    /// Cancel in New Download: the early download and what it fetched are discarded.
+    pub fn cancel_early(&self, token: u64) {
+        if let Some(e) = self.stop_early(token) {
+            self.discard_early(token, &e);
+        }
+    }
+
+    fn discard_early(&self, token: u64, e: &Entry) {
+        let dest = e.dest.clone().or_else(|| ResumeState::load(&self.state_file(token)).ok().map(|s| s.dest));
+        if let Some(dest) = dest {
+            let _ = std::fs::remove_file(transfer::part_path(&dest));
+            if e.status == Status::Finished {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+        let _ = std::fs::remove_file(self.state_file(token));
+    }
+
+    /// Download or Add in New Download: the early download becomes a list entry, its data moved to the chosen folder
+    /// and name. `None` when it can't be used (another link, or it failed): the caller starts afresh.
+    fn adopt_early(&self, token: u64, new: &NewDownload) -> Option<u64> {
+        let fits = self.inner.early.lock().unwrap().iter().any(|s| s.entry.id == token && transfer::same_link(&s.entry.url, &new.url));
+        if !fits {
+            return None;
+        }
+        let e = self.stop_early(token)?;
+        let state = ResumeState::load(&self.state_file(token)).ok();
+        let finished = e.status == Status::Finished;
+        let from = e.dest.clone().or_else(|| state.as_ref().map(|s| s.dest.clone()));
+        // Failed, or can't continue where it stopped: discarded, and the caller starts afresh.
+        let Some(from) = from.filter(|_| finished || state.as_ref().is_some_and(|s| s.resumable)) else {
+            self.discard_early(token, &e);
+            return None;
+        };
+        let name = new.name.clone().or(e.name.clone()).unwrap_or_else(|| name_from_url(&new.url));
+        let mut to = new.folder.join(&name);
+        if to != from {
+            // A name taken meanwhile gets "name (2)" as a fresh download would.
+            if to.exists() || transfer::part_path(&to).exists() {
+                to = new.folder.join(free_name(&new.folder, &name));
+            }
+            let (src, dst) = if finished { (from.clone(), to.clone()) } else { (transfer::part_path(&from), transfer::part_path(&to)) };
+            if std::fs::rename(&src, &dst).is_err() {
+                // Another drive.
+                let size = std::fs::metadata(&src).map(|m| m.len()).ok();
+                if size.is_none() || std::fs::copy(&src, &dst).ok() != size {
+                    let _ = std::fs::remove_file(&dst);
+                    self.discard_early(token, &e);
+                    return None;
+                }
+                let _ = std::fs::remove_file(&src);
+            }
+        }
+        let id = {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let id = slots.iter().map(|s| s.entry.id).max().unwrap_or(0) + 1;
+            if let Some(mut state) = state.filter(|_| !finished) {
+                state.dest = to.clone();
+                state.url = new.url.clone();
+                let _ = state.save(&self.state_file(id));
+            }
+            slots.push(Slot {
+                entry: Entry {
+                    id,
+                    url: new.url.clone(),
+                    mirrors: new.mirrors.clone(),
+                    folder: new.folder.clone(),
+                    name: Some(to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(name)),
+                    dest: Some(to),
+                    size: e.size,
+                    downloaded: e.downloaded,
+                    status: if finished { Status::Finished } else { Status::Waiting },
+                    connections: new.connections.clamp(1, 32),
+                    connections_per_server: new.connections_per_server.clamp(1, 32),
+                    retries: new.retries,
+                    added: now(),
+                    finished: finished.then(now),
+                    resume_at_launch: false,
+                    speed_limit: None,
+                    checksum: None,
+                    verified: e.verified,
+                    needs_login: None,
+                },
+                running: None,
+            });
+            id
+        };
+        let _ = std::fs::remove_file(self.state_file(token));
+        // Mirrors added in New Download are checked from the download's next start.
+        if !new.mirrors.is_empty() {
+            let _ = transfer::add_mirrors_to_state(&self.state_file(id), &new.mirrors);
+        }
+        self.save();
+        if new.start && !finished {
+            self.resume(&[id]);
+        } else {
+            self.pump();
+        }
+        Some(id)
     }
 
     /// Rename… (enhancements.md: more to do with a finished download): gives a finished download's file a new name in

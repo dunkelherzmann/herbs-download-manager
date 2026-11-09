@@ -26,6 +26,7 @@ use windows::core::{BOOL, PCWSTR, PWSTR, w};
 
 const WM_PROBED: u32 = WM_APP + 1;
 const TIMER_PROBE: usize = 10;
+const TIMER_EARLY: usize = 11;
 
 // Enter sends IDOK (1) and Esc IDCANCEL (2) through IsDialogMessage: Download (or Next) and Cancel.
 const ID_DOWNLOAD: u16 = 1;
@@ -237,6 +238,10 @@ struct Form {
     controls: HashMap<u16, HWND>,
     folder: PathBuf,
     probed_size: Option<u64>,
+    /// New Download's early download (enhancements.md), once the link proved resumable: Download or Add adopts it,
+    /// Cancel discards it. With the size line it adds to.
+    early: Option<u64>,
+    size_text: String,
     /// Add Links' rows: url, name, size, size text, checked.
     items: Vec<(String, String, Option<u64>, String, bool)>,
     shown: Vec<usize>,
@@ -321,6 +326,8 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 controls: map,
                 folder: crate::save_folder(&ctx.manager),
                 probed_size: None,
+                early: None,
+                size_text: String::new(),
                 items: Vec::new(),
                 shown: Vec::new(),
                 batch: Vec::new(),
@@ -543,6 +550,8 @@ fn submit(hwnd: HWND, start: bool) {
                         mirrors: hd_core::links::find(&text_of(f.controls[&20])),
                         name: Some(name).filter(|n| !n.is_empty()),
                         size: f.probed_size,
+                        // The download already under way is adopted (moved to the chosen folder and name).
+                        early: f.early.take(),
                     }],
                     f.folder.clone(),
                     connections,
@@ -606,6 +615,7 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     }
                     (ID_LINK, EN_CHANGE) => {
                         // A6: ask the server once the link stops changing.
+                        drop_early(hwnd);
                         SetTimer(Some(hwnd), TIMER_PROBE, 500, None);
                     }
                     (ID_FILTER, EN_CHANGE) => show_items(hwnd),
@@ -635,6 +645,21 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     }
                     _ => {}
                 }
+                LRESULT(0)
+            }
+            WM_TIMER if wparam.0 == TIMER_EARLY => {
+                with_form(hwnd, |f| {
+                    if let Some((got, total)) = f.early.and_then(|t| f.ctx.manager.early_progress(t))
+                        && got > 0
+                    {
+                        let whole = total.is_some_and(|t| got >= t);
+                        set_text(f.controls[&24], &if whole {
+                            format!("{} — already downloaded", f.size_text)
+                        } else {
+                            format!("{} — {} downloaded already", f.size_text, format::bytes(got))
+                        });
+                    }
+                });
                 LRESULT(0)
             }
             WM_TIMER if wparam.0 == TIMER_PROBE => {
@@ -670,7 +695,12 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                                 // Said now rather than when the download fails (free space, FAT32's 4 GB limit).
                                 if let Some(problem) = p.size.and_then(|s| hd_core::disk::space_problem(&f.folder, s)) {
                                     text = format!("{text} — {problem}");
+                                } else if p.resumable && f.early.is_none() {
+                                    // Fetching starts now, so no time is lost while the folder and name are chosen.
+                                    f.early = Some(f.ctx.manager.start_early(&answer.url, &[], &f.folder, Some(&p.name)));
+                                    SetTimer(Some(hwnd), TIMER_EARLY, 500, None);
                                 }
+                                f.size_text = text.clone();
                                 set_text(f.controls[&24], &text);
                             }
                             Err(e) => set_text(f.controls[&24], e),
@@ -723,6 +753,8 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 LRESULT(0)
             }
             WM_DESTROY => {
+                // Closed without adding: what was fetched is discarded.
+                drop_early(hwnd);
                 FORMS.with(|forms| forms.borrow_mut().remove(&(hwnd.0 as isize)));
                 OPEN_LINKS.with(|o| {
                     if *o.borrow() == Some(hwnd) {
@@ -749,5 +781,15 @@ pub fn dropped_files(drop: HDROP) -> Vec<PathBuf> {
             .collect();
         DragFinish(drop);
         paths
+    }
+}
+
+/// Discards New Download's early download, off the UI thread (stopping waits for it to save).
+fn drop_early(hwnd: HWND) {
+    unsafe {
+        let _ = KillTimer(Some(hwnd), TIMER_EARLY);
+    }
+    if let Some((manager, token)) = with_form(hwnd, |f| f.early.take().map(|t| (f.ctx.manager.clone(), t))).flatten() {
+        std::thread::spawn(move || manager.cancel_early(token));
     }
 }

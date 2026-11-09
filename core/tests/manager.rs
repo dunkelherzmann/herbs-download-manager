@@ -795,3 +795,57 @@ fn a_finished_file_can_be_renamed_and_moved_and_keep_the_server_s_date() {
     let m = Manager::open(&dir).unwrap();
     assert_eq!(m.rows()[0].path.as_deref(), Some(moved.as_path()), "the new place is saved");
 }
+
+#[test]
+fn an_early_download_is_adopted_in_another_folder_without_fetching_again() {
+    let data = pattern(8 * MIB, 47);
+    let (_rt, s) = server(&data, Some(4 * MIB as u64));
+    let dir = folder("early");
+    let m = Manager::open(&dir).unwrap();
+    let token = m.start_early(&s.url("/f.bin"), &[], &dir.join("files"), Some("f.bin"));
+    // New Download stays open a while: the early download fetches meanwhile, and isn't in the list.
+    let until = Instant::now() + Duration::from_secs(20);
+    while m.early_progress(token).unwrap().0 < 2 * MIB as u64 {
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(m.rows().is_empty());
+    s.update("/f.bin", |f| f.rate = None);
+    // Download, with another folder and name.
+    let other = dir.join("chosen");
+    std::fs::create_dir_all(&other).unwrap();
+    let id = m.add(NewDownload { name: Some("chosen.bin".into()), folder: other.clone(), early: Some(token), ..new(s.url("/f.bin"), &dir, true) });
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(other.join("chosen.bin")).unwrap(), data);
+    assert!(!dir.join("files/f.bin.hdpart").exists() && !dir.join("files/f.bin").exists());
+    assert!(m.early_progress(token).is_none());
+    // Not fetched twice (bytes already in flight to a cut connection count as sent).
+    assert!(s.stats("/f.bin").bytes < 2 * data.len() as u64 - 2 * MIB as u64, "{}", s.stats("/f.bin").bytes);
+}
+
+#[test]
+fn cancel_discards_an_early_download_and_a_finished_one_is_adopted_as_finished() {
+    let data = pattern(MIB, 48);
+    let (_rt, s) = server(&data, Some(MIB as u64 / 2));
+    let dir = folder("early-cancel");
+    let m = Manager::open(&dir).unwrap();
+    let token = m.start_early(&s.url("/f.bin"), &[], &dir.join("files"), None);
+    std::thread::sleep(Duration::from_millis(300));
+    m.cancel_early(token);
+    assert!(m.early_progress(token).is_none());
+    let left: Vec<_> = std::fs::read_dir(dir.join("files")).unwrap().collect();
+    assert!(left.is_empty(), "{left:?}");
+    assert!(m.rows().is_empty());
+
+    s.update("/f.bin", |f| f.rate = None);
+    let token = m.start_early(&s.url("/f.bin"), &[], &dir.join("files"), None);
+    let until = Instant::now() + Duration::from_secs(20);
+    while m.early_progress(token).unwrap().0 < MIB as u64 || !dir.join("files/f.bin").exists() {
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Add (to the queue): the file is already whole, so it's listed as finished.
+    let id = m.add(NewDownload { early: Some(token), ..new(s.url("/f.bin"), &dir, false) });
+    assert_eq!(m.rows().into_iter().find(|r| r.id == id).unwrap().status, Status::Finished);
+    assert_eq!(std::fs::read(dir.join("files/f.bin")).unwrap(), data);
+}

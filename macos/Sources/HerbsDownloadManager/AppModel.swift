@@ -156,7 +156,7 @@ final class AppModel {
     func add(url: String, mirrors: [String], folder: URL, name: String?, size: UInt64? = nil, connections: UInt32,
              start: Bool) -> UInt64 {
         let result = manager.add(url: url, mirrors: mirrors, folder: folder.path, name: name, size: size,
-                                 connections: connections, start: start)
+                                 connections: connections, start: start, early: nil)
         refresh()
         if result.asMirror, let row = rows.first(where: { $0.id == result.id }) {
             tell("Added as a mirror of “\(row.name)”")

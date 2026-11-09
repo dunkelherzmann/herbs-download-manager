@@ -7,6 +7,8 @@ struct PendingLink {
     var mirrors: [String] = []
     var name: String?
     var size: UInt64?
+    /// The download New Download started while it was open (`startEarly`), adopted instead of starting afresh.
+    var early: UInt64?
 }
 
 /// Skip, Replace or Keep Both, for a link whose file name is taken by a different file (SPECIFICATION.md §5.6).
@@ -34,6 +36,7 @@ extension AppModel {
         for (i, link) in links.enumerated() {
             let key = "\(link.name ?? URL(string: link.url)?.lastPathComponent ?? link.url)\u{0}\(link.size.map(String.init) ?? "")"
             if let earlier = decided[key] {
+                if let early = link.early { manager.cancelEarly(token: early) }
                 if let id = earlier {
                     _ = manager.addMirrors(id: id, urls: [link.url] + link.mirrors)
                     mirrored += 1
@@ -57,6 +60,7 @@ extension AppModel {
                 }
                 switch choice {
                 case .skip:
+                    if let early = link.early { manager.cancelEarly(token: early) }
                     skipped += 1
                     decided[key] = .some(nil)
                     continue
@@ -71,7 +75,7 @@ extension AppModel {
                 }
             }
             let result = manager.add(url: link.url, mirrors: link.mirrors, folder: folder.path, name: name,
-                                     size: link.size, connections: connections, start: start)
+                                     size: link.size, connections: connections, start: start, early: link.early)
             if result.asMirror { mirrored += 1 } else { new += 1 }
             decided[key] = .some(result.id)
         }

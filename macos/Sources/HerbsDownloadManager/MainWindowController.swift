@@ -298,7 +298,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     /// New Download (§5.1), its Link filled from the clipboard when it holds a link.
     @objc func newDownload(_ sender: Any?) {
         let clip = NSPasteboard.general.string(forType: .string).map { findLinks(text: $0) } ?? []
-        show(NewDownloadWindowController(link: clip.first, onClose: closer()))
+        newDownload(link: clip.first)
+    }
+
+    func newDownload(link: String?) {
+        show(NewDownloadWindowController(link: link, onClose: closer()))
     }
 
     /// Add from Clipboard (§5.2): every link in the clipboard's text opens Add Links.
