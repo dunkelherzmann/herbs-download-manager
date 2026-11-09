@@ -52,13 +52,17 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 640),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Herb's Download Manager"
         window.minSize = NSSize(width: 760, height: 420)
         window.toolbarStyle = .unified
+        // The title bar is one solid band across the window with a clear line under it; the sidebar and its divider
+        // start below that line. A sidebar running up under the title bar (full-size content) let macOS blend its
+        // edge into the title bar, which looked unfinished.
+        window.titlebarSeparatorStyle = .line
         window.setAccessibilityIdentifier("main-window")
         super.init(window: window)
 
@@ -84,18 +88,35 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         let content = DropView()
         content.onLinks = { [weak self] links in self?.openLinks(links) }
         let splitView = split.view
-        for v in [splitView, footer] {
+        // The footer is a bar of its own: a hairline above it and the window's bar background, as in Finder's and
+        // Mail's status bars, so the list visibly ends where it starts.
+        let footerBar = NSVisualEffectView()
+        footerBar.material = .titlebar
+        footerBar.blendingMode = .withinWindow
+        let footerLine = NSBox()
+        footerLine.boxType = .separator
+        for v in [splitView, footerBar, footerLine] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        footerBar.addSubview(footer)
         NSLayoutConstraint.activate([
             splitView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             splitView.topAnchor.constraint(equalTo: content.topAnchor),
-            splitView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -5),
-            footer.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
-            footer.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -12),
-            footer.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -5),
+            splitView.bottomAnchor.constraint(equalTo: footerLine.topAnchor),
+            footerLine.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            footerLine.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footerLine.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
+            footerLine.heightAnchor.constraint(equalToConstant: 1),
+            footerBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            footerBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footerBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            footerBar.heightAnchor.constraint(equalToConstant: 26),
+            footer.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: 12),
+            footer.trailingAnchor.constraint(lessThanOrEqualTo: footerBar.trailingAnchor, constant: -12),
+            footer.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
         ])
         let host = NSViewController()
         host.view = content

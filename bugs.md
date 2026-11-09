@@ -8,3 +8,7 @@ No bugs reported yet.
 
 - [ ] **Core test `downloads_of_one_file_starting_together_get_different_names` fails now and then** (*found in testing*, 2026-11-09). About one run in three of `cargo test -p hd-core --test engine` panics at `core/tests/engine.rs:418`; the others pass. All platforms (shared core).
 - [x] **A slow mirror kept its connections when the others ran under about 2.5 MB/s each** (*found in testing*, 2026-11-09). The check for slow connections compared the bytes each one had written in the last tenth of a second, but writes come in 256 KiB pieces, so at those speeds most ticks showed nothing written anywhere and no connection ever counted as slow; the download then waited minutes on the slow mirror's last range. Seen as `slow_connections_hand_their_ranges_to_a_faster_source` failing on the Windows CI runner. It now compares bytes received, and the test runs the fast server at 1 MiB/s per connection so it covers those speeds. Fixed in the shared core, so for all platforms, in #25.
+- [ ] **The window's edges looked unfinished** (reported 2026-11-09). Where the sidebar met the title bar the lines were faint and didn't line up: the sidebar ran up under the title bar, macOS blended its edge into it, and the line under the title bar stopped at the sidebar. The footer had no edge at all. Now the title bar is one solid band with a sharp line under it across the whole window, the sidebar's divider starts on that line, and the footer is a bar of its own with a line above it. Fixed for the Mac in #28.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows
