@@ -50,6 +50,9 @@ pub struct Entry {
     /// Seconds since 1970.
     pub added: u64,
     pub finished: Option<u64>,
+    /// Paused by quitting the app while it ran: it starts again at the next launch (§10).
+    #[serde(default)]
+    pub resume_at_launch: bool,
 }
 
 /// What the list shows for one download.
@@ -80,6 +83,8 @@ pub struct Row {
     pub path: Option<PathBuf>,
     /// While running: each source with connections now, as "host — N connections" for the Connections menu.
     pub live: Vec<String>,
+    /// False when it runs on a source that can't resume: pausing it means starting over.
+    pub resumable: bool,
 }
 
 /// What `add` needs.
@@ -163,7 +168,31 @@ impl Manager {
             client: crate::http::client(),
         };
         manager.save();
+        let again: Vec<u64> = manager
+            .inner
+            .slots
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .filter_map(|s| std::mem::take(&mut s.entry.resume_at_launch).then_some(s.entry.id))
+            .collect();
+        manager.resume(&again);
         Ok(manager)
+    }
+
+    /// Quitting (§10): pauses every running download, marks it to start again at the next launch, and waits up
+    /// to `timeout` for them to save. Returns false if some were still running.
+    pub fn quit(&self, timeout: std::time::Duration) -> bool {
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            for slot in slots.iter_mut().filter(|s| s.running.is_some()) {
+                slot.entry.resume_at_launch = true;
+            }
+        }
+        self.pause_all();
+        let stopped = self.wait_idle(timeout);
+        self.save();
+        stopped
     }
 
     fn state_file(&self, id: u64) -> PathBuf {
@@ -202,6 +231,7 @@ impl Manager {
                     retries: new.retries,
                     added: now(),
                     finished: None,
+                    resume_at_launch: false,
                 },
                 running: None,
             });
@@ -295,6 +325,8 @@ impl Manager {
             if let Some(state) = state {
                 e.dest = Some(state.dest);
             }
+            // Only a download that quitting paused starts again at launch.
+            e.resume_at_launch &= matches!(outcome, Outcome::Paused);
             match outcome {
                 Outcome::Finished(path) => {
                     e.name = path.file_name().map(|n| n.to_string_lossy().into_owned()).or(e.name.take());
@@ -439,6 +471,7 @@ fn row(slot: &Slot) -> Row {
     let mut name = e.name.clone();
     let (mut in_use, mut known) = (0u32, 1 + e.mirrors.len() as u32);
     let mut live = Vec::new();
+    let mut resumable = true;
     if let Some(r) = &slot.running {
         let p = &r.progress;
         downloaded = p.downloaded.load(Ordering::SeqCst);
@@ -466,6 +499,7 @@ fn row(slot: &Slot) -> Row {
         }
         if active > 0 || downloaded > e.downloaded {
             status = Status::Downloading;
+            resumable = p.resumable.load(Ordering::SeqCst);
         }
         speed = r.meter.lock().unwrap().sample(downloaded);
     }
@@ -496,6 +530,7 @@ fn row(slot: &Slot) -> Row {
         url: e.url.clone(),
         path: e.dest.clone(),
         live,
+        resumable,
     }
 }
 

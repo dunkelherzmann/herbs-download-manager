@@ -170,6 +170,8 @@ pub struct DownloadRow {
     pub path: Option<String>,
     /// While running: "host — N connections" per source in use.
     pub live: Vec<String>,
+    /// False when pausing it means starting over (no source can resume).
+    pub resumable: bool,
 }
 
 impl From<manager::Row> for DownloadRow {
@@ -199,6 +201,7 @@ impl From<manager::Row> for DownloadRow {
             url: r.url,
             path: r.path.map(|p| p.to_string_lossy().into_owned()),
             live: r.live,
+            resumable: r.resumable,
         }
     }
 }
@@ -253,6 +256,12 @@ impl DownloadManager {
 
     pub fn any_running(&self) -> bool {
         self.inner.any_running()
+    }
+
+    /// Quitting: pauses running downloads, marks them to start again at the next launch, and waits up to
+    /// `seconds` for them to save. False if some were still running.
+    pub fn quit(&self, seconds: f64) -> bool {
+        self.inner.quit(std::time::Duration::from_secs_f64(seconds))
     }
 
     /// Waits up to `seconds` for every download to stop; false if some still run.

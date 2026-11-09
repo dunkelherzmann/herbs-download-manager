@@ -251,11 +251,29 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     }
 
     @objc func pauseSelected(_ sender: Any?) {
-        AppModel.shared.pause(targets.filter { $0.status.isRunning }.map(\.id))
+        let rows = targets.filter { $0.status.isRunning }
+        confirmPause(rows) { AppModel.shared.pause(rows.map(\.id)) }
     }
 
     @objc func stopAll(_ sender: Any?) {
-        AppModel.shared.pauseAll()
+        confirmPause(AppModel.shared.rows.filter { $0.status.isRunning }) { AppModel.shared.pauseAll() }
+    }
+
+    /// Pausing a download no source can resume asks first, Cancel the default (§10).
+    private func confirmPause(_ rows: [DownloadRow], then pause: @escaping @MainActor () -> Void) {
+        let lost = rows.filter { !$0.resumable }
+        guard !lost.isEmpty, let window else { return pause() }
+        let alert = NSAlert()
+        alert.messageText = lost.count == 1 && rows.count == 1
+            ? "This download can't be resumed and will start over. Pause anyway?"
+            : "\(lost.count == 1 ? "“\(lost[0].name)”" : "\(lost.count) of these downloads") can't be resumed and will start over. Pause anyway?"
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Pause")
+        alert.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                if response == .alertSecondButtonReturn { pause() }
+            }
+        }
     }
 
     @objc func toggleSidebar(_ sender: Any?) {

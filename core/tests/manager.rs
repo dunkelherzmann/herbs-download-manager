@@ -80,6 +80,7 @@ fn pause_keeps_the_bytes_and_resume_finishes() {
     let id = m.add(new(s.url("/f.bin"), &dir, true));
     wait(&m, id, |s| *s == Status::Downloading);
     let row = m.rows().remove(0);
+    assert!(row.resumable);
     assert!(row.status_text.starts_with("Downloading "), "{}", row.status_text);
     assert_eq!(row.allowed_connections, 4);
     std::thread::sleep(Duration::from_millis(600));
@@ -194,4 +195,45 @@ fn connections_change_while_running_and_are_remembered() {
     drop(m);
     let again = Manager::open(&dir).unwrap();
     assert_eq!(again.rows()[0].allowed_connections, 7);
+}
+
+#[test]
+fn quitting_pauses_and_the_next_launch_continues() {
+    let data = pattern(8 * MIB, 7);
+    let (_rt, s) = server(&data, Some(MIB as u64));
+    let dir = folder("quit-resume");
+    let m = Manager::open(&dir).unwrap();
+    let running = m.add(new(s.url("/f.bin"), &dir, true));
+    let waiting = m.add(new(s.url("/f.bin"), &dir, false));
+    wait(&m, running, |s| *s == Status::Downloading);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(m.quit(Duration::from_secs(10)));
+    assert_eq!(m.rows().iter().find(|r| r.id == running).unwrap().status, Status::Paused);
+    drop(m);
+    s.update("/f.bin", |f| f.rate = None);
+    let again = Manager::open(&dir).unwrap();
+    wait(&again, running, |s| *s == Status::Finished);
+    assert_eq!(again.rows().iter().find(|r| r.id == waiting).unwrap().status, Status::Waiting, "only what was running");
+    drop(again);
+    // Started once: the next launch doesn't start it again.
+    let third = Manager::open(&dir).unwrap();
+    assert!(!third.any_running());
+}
+
+#[test]
+fn a_download_without_ranges_says_it_cant_resume() {
+    let data = pattern(8 * MIB, 8);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let mut f = MockFile::new(data);
+    f.ranges = false;
+    f.rate = Some(MIB as u64);
+    s.put("/f.bin", f);
+    let dir = folder("no-ranges");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/f.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Downloading);
+    assert!(!m.rows()[0].resumable);
+    m.pause(&[id]);
+    wait(&m, id, |s| *s == Status::Paused);
 }

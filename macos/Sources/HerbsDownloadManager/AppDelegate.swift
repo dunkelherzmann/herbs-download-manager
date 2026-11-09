@@ -19,11 +19,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
     }
 
-    /// Running downloads are paused (their resume state saved) before the app quits; the quit question (§10)
-    /// comes with pause and resume in the app.
-    func applicationWillTerminate(_ notification: Notification) {
-        AppModel.shared.pauseAll()
-        _ = AppModel.shared.manager.waitIdle(seconds: 5)
+    /// Quit while downloads run asks "Downloads are running. Pause them and quit?" with Cancel the default (§10);
+    /// quitting pauses them, and they start again at the next launch.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard AppModel.shared.manager.anyRunning() else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Downloads are running. Pause them and quit?"
+        alert.informativeText = "They continue the next time you open Herb's Download Manager."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Pause and Quit")
+        guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        _ = AppModel.shared.manager.quit(seconds: 5)
+        return .terminateNow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

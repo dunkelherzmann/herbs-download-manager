@@ -33,8 +33,8 @@ No open bugs in `bugs.md`.
 - [x] **Menus and context menu** with shortcuts. (§4) #10
   Connections ▸ Add/Remove Connection change a running download at once; Restart discards and starts again.
   Items for windows not built yet (New Download, Add Mirror, Properties, Settings, queue) stay disabled.
-- [ ] **Pause and resume in the app**: running downloads come back Paused at launch, the can't-resume question, the
-  quit question, Restart. (§10)
+- [x] **Pause and resume in the app**: running downloads come back Paused at launch, the can't-resume question, the
+  quit question, Restart. (§10) #11
 - [ ] **New Download, Add Links, clipboard, drag and drop, Batch Download.** (§5)
 - [ ] **Download window**: segments bar, Info, Connections, Mirrors and Options tabs. (§6)
 - [ ] **Queue**: Start Queue, Stop Queue, downloads at once. (§11)
