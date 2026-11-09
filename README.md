@@ -13,9 +13,19 @@ How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
 
 ## Status
 
-In design: the specification is written and the macOS version is built first, then Linux and Windows.
-What each version still lacks is in [pending.md](pending.md), [linux/pending.md](linux/pending.md) and
+Early development: the macOS version is being built first (it opens an empty window so far), then Linux and
+Windows. What each version still lacks is in [pending.md](pending.md), [linux/pending.md](linux/pending.md) and
 [windows/pending.md](windows/pending.md).
+
+## Building
+
+On a Mac with Apple silicon, the Xcode Command Line Tools and Rust (rustup):
+
+```sh
+scripts/build-macos.sh --install   # builds dist/Herb's Downloader.app and copies it to /Applications
+scripts/test.sh                    # Rust tests, then the app's self-check
+cargo run -p hd-mock               # local test server: a 64 MiB file and two mirrors
+```
 
 ## Support
 

@@ -12,8 +12,9 @@ No open bugs in `bugs.md`.
 
 ## To build
 
-- [ ] **Project skeleton**: Rust core (Cargo workspace) with UniFFI Swift bindings, Swift 6 AppKit host, `scripts/build-macos.sh`, `scripts/test.sh`, a
-  local mock HTTP server for tests (ranges on/off, several mirrors, changing files, stalls). (§1)
+- [x] **Project skeleton**: Rust core (Cargo workspace) with UniFFI Swift bindings, Swift 6 AppKit app,
+  `scripts/build-macos.sh`, `scripts/test.sh`, the `hd-mock` test server (ranges on/off, mirrors, changing files,
+  stalls, connection limits). (§1) #4
 - [ ] **Single-source download engine**: one connection, `.hdpart` file, rename at the end. (§8)
 - [ ] **Dynamic segmentation**: up to N connections, largest-range halving, 256 KiB minimum, takeover of silent
   connections. (§8)
@@ -30,8 +31,9 @@ No open bugs in `bugs.md`.
 - [ ] **Settings**. (§9)
 - [ ] **Checksum verification** and checksum-file lookup. (§6, §9 S8)
 - [ ] **Hover text, accessibility labels and menu commands on every control.** (§3, §4)
+- [ ] **App icon** in the Mac, Linux and Windows formats. (§1)
 - [ ] **Feature tests** driving the app's own commands against the mock server, results per feature. (all)
 
 ## Not checked automatically
 
-Nothing is built yet.
+The main window opening: checked by hand from a capture of the window.

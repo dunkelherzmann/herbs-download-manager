@@ -1,0 +1,13 @@
+[package]
+name = "hd-ffi"
+description = "Swift bindings (UniFFI) over hd-core for the macOS host."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[dependencies]
+hd-core = { version = "0.1.0", path = "../core" }
+uniffi = "0.32.2"

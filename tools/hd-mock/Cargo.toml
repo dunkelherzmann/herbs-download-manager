@@ -1,0 +1,10 @@
+[package]
+name = "hd-mock"
+description = "Local HTTP server for tests: ranges on or off, mirrors, files that change, stalls, connection limits."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal"] }

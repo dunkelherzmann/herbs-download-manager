@@ -2,3 +2,6 @@
 .DS_Store
 .build/
 dist/
+target/
+macos/Sources/hd_ffiFFI/
+macos/Sources/HDCore/

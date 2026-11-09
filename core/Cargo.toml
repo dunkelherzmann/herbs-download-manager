@@ -1,0 +1,10 @@
+[package]
+name = "hd-core"
+description = "Herb's Downloader engine: sources, segments, connections, mirrors, resume state and queue, with no UI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+hd-mock = { path = "../tools/hd-mock" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
