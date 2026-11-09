@@ -23,12 +23,17 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   builds GTK or Win32; build each on its machine in a throwaway worktree of the pushed branch
   (`~/Projects/wt-hdm-linux`, `%USERPROFILE%\Projects\wt-hdm-windows`), then remove it.
 - Linux: `sh linux/scripts/build.sh [--install]` runs flatpak-builder as the Flathub app `org.flatpak.Builder` (there
-  is no `flatpak-builder` command on linux); Rust comes from the `rust-stable//25.08` SDK extension. See the
+  is no `flatpak-builder` command on linux); Rust comes from the `rust-stable//25.08` SDK extension. For fast
+  compile loops, run cargo inside the SDK with a kept target folder: `flatpak run --filesystem=home --share=network
+  --command=sh org.gnome.Sdk//49 -c "export PATH=/usr/lib/sdk/rust-stable/bin:\$PATH
+  CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). See the
   window with `--capture FILE` inside `kwin_wayland --virtual --socket <name> --exit-with-session "flatpak run
   --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (set `XDG_RUNTIME_DIR` over ssh), never the desktop.
 - Windows: `powershell -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). `--capture
   FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
+  `IsWindowVisible` on a child is false until its top-level window first shows: keep layout state (such as whether
+  the sidebar is shown) in the app's own flags.
 
 ## Writing tests (learned the hard way)
 
