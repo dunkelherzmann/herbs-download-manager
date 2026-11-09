@@ -1,5 +1,6 @@
 import AppKit
 import HDCore
+@preconcurrency import UserNotifications
 
 /// The download list as the windows see it: the core's rows, refreshed twice a second.
 @MainActor
@@ -13,6 +14,8 @@ final class AppModel {
     private(set) var notice: String?
     private var noticeTask: Task<Void, Never>?
     private var timer: Timer?
+    /// Downloads that were finished at the last refresh, so a newly finished one can be announced (S9).
+    private var finishedIDs: Set<UInt64>?
 
     /// The list lives in ~/Library/Application Support/Herb's Download Manager, or in $HD_DATA_DIR (tests use a private
     /// folder so they never touch the user's list).
@@ -31,8 +34,18 @@ final class AppModel {
         return folder
     }
 
-    /// S1 when unset: the user's Downloads folder ($HD_DOWNLOADS_DIR in tests).
+    /// Where new downloads go: S1, or when it's unset or its folder is gone (a disk not plugged in), the user's
+    /// Downloads folder ($HD_DOWNLOADS_DIR in tests).
     static var downloadsFolder: URL {
+        var isFolder: ObjCBool = false
+        if let chosen = shared.settings.saveTo, FileManager.default.fileExists(atPath: chosen, isDirectory: &isFolder),
+           isFolder.boolValue {
+            return URL(fileURLWithPath: chosen, isDirectory: true)
+        }
+        return defaultDownloadsFolder
+    }
+
+    static var defaultDownloadsFolder: URL {
         if let dir = ProcessInfo.processInfo.environment["HD_DOWNLOADS_DIR"], !dir.isEmpty {
             return URL(fileURLWithPath: dir, isDirectory: true)
         }
@@ -61,12 +74,50 @@ final class AppModel {
 
     func refresh() {
         rows = manager.rows()
+        let finished = Set(rows.filter { $0.status.isFinished }.map(\.id))
+        if let before = finishedIDs {
+            for row in rows where finished.contains(row.id) && !before.contains(row.id) { announce(row) }
+        }
+        finishedIDs = finished
         observers.forEach { $0() }
+    }
+
+    /// The settings (§9), saved by the core in the data folder and applied as soon as they're set.
+    var settings: Settings {
+        get { manager.settings() }
+        set { manager.setSettings(settings: newValue); refresh() }
+    }
+
+    // MARK: notifications (S9)
+
+    /// Tests run with their own data folder and never show notifications.
+    private var notificationsAllowed: Bool {
+        ProcessInfo.processInfo.environment["HD_DATA_DIR"] == nil && Bundle.main.bundleIdentifier != nil
+    }
+
+    /// Asks macOS once for permission to show notifications (when S9 is turned on, or at the first finish).
+    func askToNotify() {
+        guard notificationsAllowed else { return }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    private func announce(_ row: DownloadRow) {
+        guard notificationsAllowed, settings.notifyWhenFinished else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Download finished"
+        content.body = row.name
+        content.sound = .default
+        let id = "finished-\(row.id)"
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+            try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        }
     }
 
     func add(url: String, start: Bool) {
         add(url: url, mirrors: [], folder: Self.downloadsFolder, name: nil,
-            connections: defaultSettings().connections, start: start)
+            connections: settings.connections, start: start)
     }
 
     /// Adds a download; `start` runs it now (Download), otherwise it waits in the queue (Add). A link to a file

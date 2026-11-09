@@ -9,6 +9,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::format::{self, FileKind};
+use crate::limit::Limiter;
+use crate::settings::Settings;
 use crate::transfer::{self, Control, Outcome, Progress, Request, ResumeState, Tuning};
 
 /// Where a download stands. Only Waiting, Paused, Finished and Failed are saved; a download that was running when
@@ -55,6 +57,9 @@ pub struct Entry {
     /// Paused by quitting the app while it ran: it starts again at the next launch (§10).
     #[serde(default)]
     pub resume_at_launch: bool,
+    /// This download's own speed limit in bytes per second (the Options tab), on top of S5.
+    #[serde(default)]
+    pub speed_limit: Option<u64>,
 }
 
 /// What the list shows for one download.
@@ -169,6 +174,8 @@ struct Running {
     control: Control,
     progress: Arc<Progress>,
     meter: Mutex<Meter>,
+    /// The download's own speed limit; changing it takes effect at once.
+    limiter: Arc<Limiter>,
 }
 
 /// Speed over the last few seconds, smoothed so the number doesn't jump with every packet.
@@ -188,21 +195,21 @@ struct Inner {
     slots: Mutex<Vec<Slot>>,
     tuning: Tuning,
     queue: Mutex<Queue>,
+    settings: Mutex<Settings>,
+    /// S5, shared by every download.
+    limiter: Arc<Limiter>,
 }
 
 /// The queue (§11): whether it starts waiting downloads, and how many may run at once.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 struct Queue {
     running: bool,
-    #[serde(default = "default_at_once")]
-    at_once: u32,
+    /// Downloads at once, kept here before it moved to `settings.json` (read once, never written).
+    #[serde(default, skip_serializing)]
+    at_once: Option<u32>,
     /// Quitting: nothing new starts, but `running` is kept for the next launch.
     #[serde(skip)]
     quitting: bool,
-}
-
-fn default_at_once() -> u32 {
-    crate::settings::Settings::default().downloads_at_once
 }
 
 /// The download list. Cheap to clone; every clone is the same list.
@@ -255,7 +262,12 @@ impl Manager {
         let queue = std::fs::read(dir.join("queue.json"))
             .ok()
             .and_then(|b| serde_json::from_slice::<Queue>(&b).ok())
-            .unwrap_or(Queue { running: false, at_once: default_at_once(), quitting: false });
+            .unwrap_or(Queue { running: false, at_once: None, quitting: false });
+        let settings = Settings::load(dir).unwrap_or_else(|| {
+            let mut s = Settings::default();
+            s.downloads_at_once = queue.at_once.unwrap_or(s.downloads_at_once);
+            s.clamped()
+        });
         let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().worker_threads(4).build()?;
         let manager = Manager {
             inner: Arc::new(Inner {
@@ -263,6 +275,8 @@ impl Manager {
                 slots: Mutex::new(slots),
                 tuning,
                 queue: Mutex::new(queue),
+                limiter: Arc::new(Limiter::new(settings.speed_limit)),
+                settings: Mutex::new(settings),
             }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
@@ -385,6 +399,7 @@ impl Manager {
                     added: now(),
                     finished: None,
                     resume_at_launch: false,
+                    speed_limit: None,
                 },
                 running: None,
             });
@@ -415,15 +430,19 @@ impl Manager {
                 return;
             }
             let e = &slot.entry;
+            let settings = self.inner.settings.lock().unwrap().clone();
+            let limiter = Arc::new(Limiter::new(e.speed_limit));
             let req = Request {
                 url: e.url.clone(),
                 mirrors: e.mirrors.clone(),
                 folder: e.folder.clone(),
                 name: e.name.clone(),
                 connections: e.connections,
-                connections_per_server: e.connections_per_server,
-                retries: e.retries,
+                // S3 and S6 apply to every download from its next start.
+                connections_per_server: settings.connections_per_server,
+                retries: settings.retries,
                 state_file: Some(self.state_file(id)),
+                limits: vec![self.inner.limiter.clone(), limiter.clone()],
             };
             let progress = Progress::new();
             progress.downloaded.store(e.downloaded, Ordering::SeqCst);
@@ -432,6 +451,7 @@ impl Manager {
                 control: transfer::control(),
                 progress,
                 meter: Mutex::new(Meter { at: Instant::now(), bytes: e.downloaded, speed: 0.0 }),
+                limiter,
             });
             slot.entry.status = Status::Connecting;
             slot.running = Some(running.clone());
@@ -621,8 +641,37 @@ impl Manager {
 
     /// Downloads at once (S4, 1–10).
     pub fn set_downloads_at_once(&self, n: u32) {
-        let n = n.clamp(*crate::settings::DOWNLOADS_AT_ONCE.start(), *crate::settings::DOWNLOADS_AT_ONCE.end());
-        self.set_queue(|q| q.at_once = n);
+        let s = Settings { downloads_at_once: n, ..self.settings() };
+        self.set_settings(s);
+    }
+
+    /// The settings (§9) as saved.
+    pub fn settings(&self) -> Settings {
+        self.inner.settings.lock().unwrap().clone()
+    }
+
+    /// Saves the settings and applies them: the speed limit at once, downloads at once to the queue, connections
+    /// per server and retries to each download from its next start.
+    pub fn set_settings(&self, s: Settings) {
+        let s = s.clamped();
+        let _ = s.save(&self.inner.dir);
+        self.inner.limiter.set_rate(s.speed_limit);
+        *self.inner.settings.lock().unwrap() = s;
+        self.pump();
+    }
+
+    /// One download's own speed limit (the Options tab), in bytes per second; `None` is none. Applies at once.
+    pub fn set_speed_limit(&self, id: u64, limit: Option<u64>) {
+        let limit = limit.filter(|&l| l > 0);
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            slot.entry.speed_limit = limit;
+            if let Some(r) = &slot.running {
+                r.limiter.set_rate(limit);
+            }
+        }
+        self.save();
     }
 
     fn set_queue(&self, change: impl FnOnce(&mut Queue)) {
@@ -650,7 +699,8 @@ impl Manager {
         let next: Vec<u64> = {
             let slots = self.inner.slots.lock().unwrap();
             let busy = slots.iter().filter(|s| s.running.is_some()).count();
-            let free = (q.at_once as usize).saturating_sub(busy);
+            let at_once = self.inner.settings.lock().unwrap().downloads_at_once;
+            let free = (at_once as usize).saturating_sub(busy);
             let mut waiting: Vec<&Slot> =
                 slots.iter().filter(|s| s.running.is_none() && s.entry.status == Status::Waiting).collect();
             waiting.sort_by_key(|s| s.entry.id);
@@ -831,6 +881,8 @@ pub struct Detail {
     pub segments: Vec<crate::segments::Segment>,
     pub connections: Vec<transfer::ConnInfo>,
     pub sources: Vec<transfer::SourceInfo>,
+    /// The download's own speed limit, bytes per second.
+    pub speed_limit: Option<u64>,
 }
 
 impl Manager {
@@ -850,6 +902,7 @@ impl Manager {
                 segments: p.segments.lock().unwrap().clone(),
                 connections: p.connections.lock().unwrap().clone(),
                 sources,
+                speed_limit: slot.entry.speed_limit,
             });
         }
         let state = ResumeState::load(&self.state_file(id)).ok();
@@ -858,7 +911,13 @@ impl Manager {
             (Some(s), _, _) => s.segments.clone(),
             _ => Vec::new(),
         };
-        Some(Detail { sources: saved_sources(&slot.entry, state.as_ref()), row, segments, connections: Vec::new() })
+        Some(Detail {
+            sources: saved_sources(&slot.entry, state.as_ref()),
+            row,
+            segments,
+            connections: Vec::new(),
+            speed_limit: slot.entry.speed_limit,
+        })
     }
 
     /// Add Mirror… (§7.1): M2 on a running download (checked at once, then used without a pause), M3 on a

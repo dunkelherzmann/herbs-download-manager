@@ -254,7 +254,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
     private func submit(start: Bool) {
         let chosen = checked
         guard !chosen.isEmpty else { NSSound.beep(); return }
-        let connections = defaultSettings().connections
+        let connections = AppModel.shared.settings.connections
         let links: [PendingLink] = mirrorsBox.state == .on
             ? [PendingLink(url: chosen[0].url, mirrors: chosen.dropFirst().map(\.url), name: chosen[0].name,
                            size: chosen.compactMap(\.size).first)]

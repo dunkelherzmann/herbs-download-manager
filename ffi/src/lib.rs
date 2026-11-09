@@ -8,7 +8,8 @@ use hd_core::settings;
 #[derive(uniffi::Enum)]
 pub enum WhenFileExists {
     Ask,
-    NumberedName,
+    KeepBoth,
+    Skip,
     Replace,
 }
 
@@ -36,8 +37,30 @@ impl From<settings::Settings> for Settings {
             retries: s.retries,
             when_file_exists: match s.when_file_exists {
                 settings::WhenFileExists::Ask => WhenFileExists::Ask,
-                settings::WhenFileExists::NumberedName => WhenFileExists::NumberedName,
+                settings::WhenFileExists::KeepBoth => WhenFileExists::KeepBoth,
+                settings::WhenFileExists::Skip => WhenFileExists::Skip,
                 settings::WhenFileExists::Replace => WhenFileExists::Replace,
+            },
+            look_for_checksum_files: s.look_for_checksum_files,
+            notify_when_finished: s.notify_when_finished,
+        }
+    }
+}
+
+impl From<Settings> for settings::Settings {
+    fn from(s: Settings) -> Self {
+        settings::Settings {
+            save_to: s.save_to.filter(|p| !p.is_empty()),
+            connections: s.connections,
+            connections_per_server: s.connections_per_server,
+            downloads_at_once: s.downloads_at_once,
+            speed_limit: s.speed_limit,
+            retries: s.retries,
+            when_file_exists: match s.when_file_exists {
+                WhenFileExists::Ask => settings::WhenFileExists::Ask,
+                WhenFileExists::KeepBoth => settings::WhenFileExists::KeepBoth,
+                WhenFileExists::Skip => settings::WhenFileExists::Skip,
+                WhenFileExists::Replace => settings::WhenFileExists::Replace,
             },
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
@@ -271,7 +294,7 @@ impl DownloadManager {
         connections: u32,
         start: bool,
     ) -> AddResult {
-        let s = settings::Settings::default();
+        let s = self.inner.settings();
         let added = self.inner.add_or_mirror(manager::NewDownload {
             url,
             mirrors,
@@ -334,6 +357,21 @@ impl DownloadManager {
         self.inner.set_downloads_at_once(n);
     }
 
+    /// The settings (§9) as saved in the data folder.
+    pub fn settings(&self) -> Settings {
+        self.inner.settings().into()
+    }
+
+    /// Saves and applies the settings; numbers out of range are brought into it.
+    pub fn set_settings(&self, settings: Settings) {
+        self.inner.set_settings(settings.into());
+    }
+
+    /// One download's own speed limit in bytes per second (`None`: no limit). Applies at once.
+    pub fn set_speed_limit(&self, id: u64, limit: Option<u64>) {
+        self.inner.set_speed_limit(id, limit);
+    }
+
     pub fn any_running(&self) -> bool {
         self.inner.any_running()
     }
@@ -392,6 +430,7 @@ impl DownloadManager {
                     bytes_text: if s.bytes > 0 { format::bytes(s.bytes) } else { String::new() },
                 })
                 .collect(),
+            speed_limit: d.speed_limit,
             row: d.row.into(),
         })
     }
@@ -530,4 +569,6 @@ pub struct DownloadDetail {
     pub segments: Vec<SegmentInfo>,
     pub connections: Vec<ConnectionRow>,
     pub sources: Vec<SourceRow>,
+    /// The download's own speed limit, bytes per second.
+    pub speed_limit: Option<u64>,
 }

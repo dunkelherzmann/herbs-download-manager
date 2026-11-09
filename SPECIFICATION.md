@@ -214,7 +214,8 @@ Opens for a download from the list (double-click or ⌘O). Its title is the file
   - **Connections**: one row per connection: source (host), byte range, downloaded, speed, state (Connecting,
     Downloading, Idle, Retrying in 5 s, Failed: reason). Buttons **+** and **−** add or remove a connection now.
   - **Mirrors**: the sources list (§7.3), with **Add Mirror…** and **Remove**.
-  - **Options**: connections for this download, speed limit for this download, checksum to verify at the end
+  - **Options**: connections for this download, speed limit for this download ("Limit to [500] [KB/s ▾]", applied
+    at once and remembered), checksum to verify at the end
     (algorithm MD5, SHA-1, SHA-256 or SHA-512, and the expected value).
 
 ## 7. Mirrors
@@ -298,9 +299,18 @@ as long as one source stays on.
 | S4 | Downloads at once (queue) | 3 | 1–10 |
 | S5 | Speed limit (all downloads) | Off | KB/s or MB/s |
 | S6 | Retries per source | 5 | 0–20 |
-| S7 | When a file exists | Ask | Ask, Numbered name, Replace |
+| S7 | When a file exists | Ask | Ask, Keep both, Skip the new link, Replace the existing file (§5.6) |
 | S8 | Look for checksum files | On | fetches `<file>.sha256` (and `.sha512`, `.sha1`, `.md5`) next to the link and verifies with it |
 | S9 | Show a notification when a download finishes | On | |
+
+Settings opens with ⌘, (Ctrl+, on Linux and Windows) as one window, and each change applies at once, with no OK
+button. They are kept in `settings.json` in the app's data folder, the same file on every platform; a missing or
+out-of-range value takes its default or the nearest allowed value. S1 offers **Choose…** and **Use Downloads**; when
+the chosen folder is missing (a disk not plugged in), new downloads go to Downloads. S2 is the default of the New
+Download and Add Links pickers. S3 and S6 apply to every download from its next start. S4 and S5 apply at once to
+running downloads. S5 is shared by all downloads together, whatever their number of connections, and a download's
+own limit (§6 Options) applies on top of it. With S7 other than Ask, the question in §5.6 isn't asked and that
+answer is used. S8 arrives with checksum verification and isn't shown until then.
 
 ## 10. Stop and resume
 

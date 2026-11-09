@@ -439,3 +439,89 @@ fn a_different_file_with_the_same_name_is_a_clash_with_a_kept_name() {
     let Plan::Clash(c) = m.plan_add("http://b.example/f.bin", None, &files, Some(7)) else { panic!() };
     assert_eq!((c.id, c.kept_name.as_str()), (Some(id), "f - kept 2.bin"));
 }
+
+#[test]
+fn settings_are_saved_and_an_old_queue_limit_carries_over() {
+    use hd_core::settings::{Settings, WhenFileExists};
+    let dir = folder("settings");
+    // Before settings.json, downloads at once lived in queue.json.
+    std::fs::write(
+        dir.join("queue.json"),
+        r#"{"running": false, "at_once": 7}"#,
+    )
+    .unwrap();
+    let m = Manager::open(&dir).unwrap();
+    assert_eq!(m.settings().downloads_at_once, 7);
+    let s = Settings {
+        save_to: Some("/tmp/elsewhere".into()),
+        connections: 8,
+        retries: 0,
+        speed_limit: Some(2 * MIB as u64),
+        when_file_exists: WhenFileExists::Replace,
+        notify_when_finished: false,
+        ..m.settings()
+    };
+    m.set_settings(s.clone());
+    drop(m);
+    let again = Manager::open(&dir).unwrap();
+    assert_eq!(again.settings(), s);
+    again.set_downloads_at_once(99);
+    assert_eq!(again.settings().downloads_at_once, 10);
+}
+
+/// 512 KiB at a limit of 256 KiB/s takes about two seconds, however many connections share it.
+fn timed_download(
+    dir: &std::path::Path,
+    url: String,
+    limit_all: Option<u64>,
+    limit_one: Option<u64>,
+) -> Duration {
+    let m = Manager::open(dir).unwrap();
+    m.set_settings(hd_core::settings::Settings {
+        speed_limit: limit_all,
+        ..m.settings()
+    });
+    let id = m.add(new(url, dir, false));
+    m.set_speed_limit(id, limit_one);
+    let t = Instant::now();
+    m.resume(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    t.elapsed()
+}
+
+#[test]
+fn the_speed_limit_for_all_downloads_holds() {
+    let data = pattern(MIB / 2, 21);
+    let (_rt, s) = server(&data, None);
+    let took = timed_download(
+        &folder("limit-all"),
+        s.url("/f.bin"),
+        Some(256 * 1024),
+        None,
+    );
+    assert!(
+        took >= Duration::from_millis(1500) && took < Duration::from_secs(6),
+        "took {took:?}"
+    );
+}
+
+#[test]
+fn one_download_s_own_limit_holds_and_can_be_lifted() {
+    let data = pattern(MIB / 2, 22);
+    let (_rt, s) = server(&data, None);
+    let took = timed_download(
+        &folder("limit-one"),
+        s.url("/f.bin"),
+        None,
+        Some(256 * 1024),
+    );
+    assert!(
+        took >= Duration::from_millis(1500) && took < Duration::from_secs(6),
+        "took {took:?}"
+    );
+    let took = timed_download(&folder("limit-none"), s.url("/f.bin"), None, None);
+    assert!(
+        took < Duration::from_millis(1500),
+        "took {took:?} without a limit"
+    );
+}

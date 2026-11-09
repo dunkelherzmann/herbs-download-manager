@@ -31,8 +31,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (i, arg) in args.enumerated() where ["--add", "--queue"].contains(arg) && i + 1 < args.count {
             AppModel.shared.add(url: args[i + 1], start: arg == "--add")
         }
+        // Test hook: --settings opens the Settings window (§9).
+        if args.contains("--settings") { SettingsWindowController.shared.show() }
         NSApp.activate()
     }
+
+    /// Settings… (⌘,) from the app menu, also when no window is open.
+    @objc func showSettings(_ sender: Any?) { SettingsWindowController.shared.show() }
 
     /// Quit while downloads run asks "Downloads are running. Pause them and quit?" with Cancel the default (§10);
     /// quitting pauses them, and they start again at the next launch.

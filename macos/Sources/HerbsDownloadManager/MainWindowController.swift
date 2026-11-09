@@ -226,8 +226,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
              #selector(importLinks(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
         case #selector(addMirror(_:)): return selected.count == 1
-        // Settings (§9) arrive with their own window.
-        case #selector(showSettings(_:)): return false
         default: return true
         }
     }
@@ -338,7 +336,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     @objc func startQueue(_ sender: Any?) { AppModel.shared.startQueue() }
     /// Stop Queue (T5): no more waiting downloads start; running ones carry on.
     @objc func stopQueue(_ sender: Any?) { AppModel.shared.stopQueue() }
-    @objc func showSettings(_ sender: Any?) {}
+    @objc func showSettings(_ sender: Any?) { SettingsWindowController.shared.show() }
     /// Add Mirror… (⌥⌘M, §7.1) on the selected download.
     @objc func addMirror(_ sender: Any?) {
         guard let row = targets.first, targets.count == 1, let window else { return }

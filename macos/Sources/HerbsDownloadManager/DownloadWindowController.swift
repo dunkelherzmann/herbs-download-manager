@@ -20,6 +20,9 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let removeConnection = NSButton(title: "−", target: nil, action: nil)
     private let removeMirror = NSButton(title: "Remove", target: nil, action: nil)
     private let optionConnections = NSPopUpButton()
+    private let optionSpeed = SpeedLimitControl(what: "this download")
+    /// The limit last shown, so a refresh never overwrites a number being typed.
+    private var shownSpeedLimit: UInt64?? = .none
     private var onClose: (() -> Void)?
 
     init(id: UInt64, onClose: @escaping () -> Void) {
@@ -201,8 +204,19 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         optionConnections.action = #selector(connectionsChosen(_:))
         optionConnections.toolTip = "Connections for this download (1–32), applied at once"
         optionConnections.setAccessibilityIdentifier("option-connections")
-        let grid = NSGridView(views: [[NSTextField(labelWithString: "Connections:"), optionConnections]])
+        optionSpeed.box.setAccessibilityIdentifier("option-speed-limit")
+        optionSpeed.onChange = { [weak self] limit in
+            guard let self else { return }
+            self.shownSpeedLimit = .some(limit)
+            AppModel.shared.manager.setSpeedLimit(id: self.id, limit: limit)
+        }
+        let grid = NSGridView(views: [
+            [NSTextField(labelWithString: "Connections:"), optionConnections],
+            [NSTextField(labelWithString: "Speed limit:"), optionSpeed],
+        ])
         grid.column(at: 0).xPlacement = .trailing
+        grid.rowAlignment = .firstBaseline
+        grid.rowSpacing = 10
         return padded(grid)
     }
 
@@ -242,6 +256,11 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         removeConnection.isEnabled = !done && r.allowedConnections > 1
         optionConnections.isEnabled = !done
         optionConnections.selectItem(withTitle: "\(r.allowedConnections)")
+        optionSpeed.isEnabled = !done
+        if shownSpeedLimit != .some(d.speedLimit) {
+            shownSpeedLimit = .some(d.speedLimit)
+            optionSpeed.limit = d.speedLimit
+        }
         reloadKeepingSelection(connectionsTable)
         reloadKeepingSelection(sourcesTable)
         let selected = sourcesTable.selectedRow

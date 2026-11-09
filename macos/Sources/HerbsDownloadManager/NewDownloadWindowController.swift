@@ -71,7 +71,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         folderRow.spacing = 8
 
         for n in connectionChoices() { connections.addItem(withTitle: "\(n)") }
-        connections.selectItem(withTitle: "\(defaultSettings().connections)")
+        connections.selectItem(withTitle: "\(AppModel.shared.settings.connections)")
         connections.setAccessibilityIdentifier("connections")
         connections.toolTip = "Connections: how many parts of the file download at once (1–32)"
 
@@ -206,7 +206,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         }
         let mirrorLinks = findLinks(text: mirrors.string).filter { $0 != url }
         let chosen = name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let count = UInt32(connections.titleOfSelectedItem ?? "") ?? defaultSettings().connections
+        let count = UInt32(connections.titleOfSelectedItem ?? "") ?? AppModel.shared.settings.connections
         let link = PendingLink(url: url, mirrors: mirrorLinks, name: chosen.isEmpty ? nil : chosen, size: probedSize)
         let folder = self.folder
         close()

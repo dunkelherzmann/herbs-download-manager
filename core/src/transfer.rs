@@ -38,6 +38,8 @@ pub struct Request {
     pub retries: u32,
     /// Where the resume state is kept (`None`: not saved).
     pub state_file: Option<PathBuf>,
+    /// Speed limits this download shares (all downloads', its own); every received chunk is paid to each.
+    pub limits: Vec<Arc<crate::limit::Limiter>>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -428,6 +430,7 @@ struct Job {
     tuning: Tuning,
     retries: u32,
     per_server: usize,
+    limits: Vec<Arc<crate::limit::Limiter>>,
     sequential: bool,
     /// What gets saved; `segments` and `sources` are filled in at each save.
     state: ResumeState,
@@ -814,6 +817,7 @@ impl Job {
             tuning,
             retries: req.retries,
             per_server: req.connections_per_server.clamp(1, 32) as usize,
+            limits: req.limits.clone(),
             sequential,
             state,
             state_file: req.state_file.clone(),
@@ -1107,6 +1111,21 @@ impl Job {
                 Ok(Ok(Some(bytes))) => {
                     stat.received.fetch_add(bytes.len() as u64, Ordering::SeqCst);
                     buf.extend_from_slice(&bytes);
+                    let wait = self
+                        .limits
+                        .iter()
+                        .map(|l| l.take(bytes.len()))
+                        .max()
+                        .unwrap_or_default();
+                    if !wait.is_zero() {
+                        tokio::select! {
+                            _ = tokio::time::sleep(wait) => {}
+                            _ = stopped_ref(&mut stop) => {
+                                self.flush(id, &source, &mut buf)?;
+                                return Err(Problem::Stopped);
+                            }
+                        }
+                    }
                     let (pos, end) = self.position(id).ok_or(Problem::Stopped)?;
                     if (buf.len() >= self.tuning.write_buffer || pos + buf.len() as u64 >= end)
                         && self.flush(id, &source, &mut buf)?

@@ -1,6 +1,9 @@
 //! Settings S1–S9 (SPECIFICATION.md §9): defaults and allowed ranges.
 
 use std::ops::RangeInclusive;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 /// Connections a download may use (S2, and the New Download window's picker, A5).
 pub const CONNECTIONS: RangeInclusive<u32> = 1..=32;
@@ -11,15 +14,23 @@ pub const DOWNLOADS_AT_ONCE: RangeInclusive<u32> = 1..=10;
 /// Retries per source (S6).
 pub const RETRIES: RangeInclusive<u32> = 0..=20;
 
-/// What happens when the destination file already exists (S7).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What happens when a different file already has the new download's name (S7, §5.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WhenFileExists {
+    /// Skip, Replace or Keep Both, asked each time.
     Ask,
-    NumberedName,
+    /// The new download is named "<name> - kept.<ext>".
+    KeepBoth,
+    /// The new link is not added.
+    Skip,
+    /// The existing file goes to the Trash and its download leaves the list.
     Replace,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Kept in `settings.json` in the app's data folder. A missing or unknown value takes its default.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     /// S1; `None` means the user's Downloads folder.
     pub save_to: Option<String>,
@@ -63,6 +74,23 @@ impl Settings {
         }
         self
     }
+
+    /// Reads `settings.json` in `dir`; `None` when there is none yet.
+    pub fn load(dir: &Path) -> Option<Settings> {
+        let bytes = std::fs::read(dir.join("settings.json")).ok()?;
+        serde_json::from_slice::<Settings>(&bytes)
+            .ok()
+            .map(Settings::clamped)
+    }
+
+    pub fn save(&self, dir: &Path) -> std::io::Result<()> {
+        let tmp = dir.join("settings.json.tmp");
+        std::fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?,
+        )?;
+        std::fs::rename(tmp, dir.join("settings.json"))
+    }
 }
 
 #[cfg(test)]
@@ -84,5 +112,31 @@ mod tests {
             .clamped();
         assert_eq!((s.connections, s.connections_per_server, s.downloads_at_once, s.retries), (1, 32, 10, 20));
         assert_eq!(s.speed_limit, None);
+    }
+
+    #[test]
+    fn saved_settings_come_back_and_missing_ones_take_defaults() {
+        let dir = std::env::temp_dir().join(format!("hd-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(Settings::load(&dir), None);
+        let s = Settings {
+            retries: 7,
+            speed_limit: Some(500_000),
+            when_file_exists: WhenFileExists::KeepBoth,
+            ..Settings::default()
+        };
+        s.save(&dir).unwrap();
+        assert_eq!(Settings::load(&dir), Some(s));
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"retries": 99, "when_file_exists": "skip"}"#,
+        )
+        .unwrap();
+        let s = Settings::load(&dir).unwrap();
+        assert_eq!(
+            (s.retries, s.when_file_exists, s.connections),
+            (20, WhenFileExists::Skip, 32)
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

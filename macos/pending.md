@@ -46,7 +46,7 @@ No open bugs in `bugs.md`.
   The Options tab has the connections picker; the per-download speed limit and checksum come with **Settings**
   and **Checksum verification** below.
 - [x] **Queue**: Start Queue, Stop Queue, downloads at once. (§11) — PR #16
-- [ ] **Settings**. (§9)
+- [x] **Settings**: the Settings window (⌘,), `settings.json`, speed limits for all downloads and for one. (§9, §6) — PR #23
 - [ ] **Checksum verification** and checksum-file lookup. (§6, §9 S8)
 - [ ] **Hover text, accessibility labels and menu commands on every control.** (§3, §4)
 - [x] **App icon** in the Mac, Linux and Windows formats. (§1) — PR #18 (the Linux and Windows apps use it when they are built)
