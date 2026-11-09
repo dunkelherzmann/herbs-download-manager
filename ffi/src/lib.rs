@@ -210,6 +210,17 @@ impl From<manager::Row> for DownloadRow {
 pub enum CoreError {
     #[error("{message}")]
     Io { message: String },
+    /// A message to show as it is ("404 Not Found", "That isn't a web link").
+    #[error("{message}")]
+    Message { message: String },
+}
+
+/// What the server says about a link (New Download's Name and Size, A3 and A6).
+#[derive(uniffi::Record)]
+pub struct LinkInfo {
+    pub name: String,
+    pub size: Option<u64>,
+    pub resumable: bool,
 }
 
 /// The download list, kept in a folder (the app's data folder).
@@ -269,6 +280,14 @@ impl DownloadManager {
         self.inner.wait_idle(std::time::Duration::from_secs_f64(seconds))
     }
 
+    /// Asks the server for the link's name, size and resume support. Blocks: call it off the main thread.
+    pub fn probe(&self, url: String) -> Result<LinkInfo, CoreError> {
+        self.inner
+            .probe(&url)
+            .map(|p| LinkInfo { name: p.name, size: p.size, resumable: p.resumable })
+            .map_err(|message| CoreError::Message { message })
+    }
+
     /// Discards the downloaded data and starts again (§10).
     pub fn restart(&self, ids: Vec<u64>) {
         self.inner.restart(&ids);
@@ -317,4 +336,28 @@ pub fn file_kind_title(kind: FileKind) -> String {
 #[uniffi::export]
 pub fn speed_text(bytes_per_second: u64) -> String {
     format::speed_text(bytes_per_second)
+}
+
+/// Every link in pasted or dropped text or HTML (§5.2–§5.4).
+#[uniffi::export]
+pub fn find_links(text: String) -> Vec<String> {
+    hd_core::links::find(&text)
+}
+
+/// The links a batch pattern like `https://e.com/img^(###1-100).jpg` makes (§5.5).
+#[uniffi::export]
+pub fn expand_batch(pattern: String) -> Result<Vec<String>, CoreError> {
+    hd_core::links::expand_batch(&pattern).map_err(|message| CoreError::Message { message })
+}
+
+/// The name a new file gets in a folder: the name itself, or "name (2).ext"… when taken.
+#[uniffi::export]
+pub fn free_name(folder: String, name: String) -> String {
+    manager::free_name(std::path::Path::new(&folder), &name)
+}
+
+/// "4.0 GB".
+#[uniffi::export]
+pub fn bytes_text(bytes: u64) -> String {
+    format::bytes(bytes)
 }

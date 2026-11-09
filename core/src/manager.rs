@@ -554,3 +554,47 @@ impl Meter {
         self.speed as u64
     }
 }
+
+/// What the New Download window shows once the first source answers (A3, A6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probe {
+    pub name: String,
+    pub size: Option<u64>,
+    pub resumable: bool,
+}
+
+impl Manager {
+    /// Asks the server about a link with a one-byte request: the file's name, size and whether it can resume.
+    /// Blocks the calling thread (never the app's main thread) for up to 20 seconds.
+    pub fn probe(&self, url: &str) -> Result<Probe, String> {
+        let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
+        let client = self.client.clone();
+        self.runtime.block_on(async move {
+            let sent = client
+                .get(parsed)
+                .header(reqwest::header::RANGE, "bytes=0-0")
+                .header(reqwest::header::ACCEPT_ENCODING, "identity")
+                .send();
+            let response = tokio::time::timeout(std::time::Duration::from_secs(20), sent)
+                .await
+                .map_err(|_| "The server didn't answer".to_string())?
+                .map_err(|e| transfer::error_text(&e))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("{} {}", status.as_u16(), status.canonical_reason().unwrap_or("")).trim().to_string());
+            }
+            let ranged = status == reqwest::StatusCode::PARTIAL_CONTENT;
+            let size = if ranged { crate::http::content_range_total(response.headers()) } else { response.content_length() };
+            Ok(Probe {
+                name: crate::http::file_name(response.headers(), response.url()),
+                size,
+                resumable: ranged && size.is_some(),
+            })
+        })
+    }
+}
+
+/// The name a new file gets in `folder`: `name` itself, or "name (2).ext"… when taken (§5.1).
+pub fn free_name(folder: &Path, name: &str) -> String {
+    transfer::unique_path(folder, name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| name.to_string())
+}

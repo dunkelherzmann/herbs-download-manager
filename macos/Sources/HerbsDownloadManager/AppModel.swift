@@ -42,7 +42,7 @@ final class AppModel {
         } catch {
             let alert = NSAlert()
             alert.messageText = "Herb's Download Manager can't open its download list"
-            alert.informativeText = "\(error)"
+            alert.informativeText = errorText(error)
             alert.runModal()
             exit(1)
         }
@@ -62,9 +62,17 @@ final class AppModel {
     }
 
     func add(url: String, start: Bool) {
-        _ = manager.add(url: url, mirrors: [], folder: Self.downloadsFolder.path, name: nil,
-                        connections: defaultSettings().connections, start: start)
+        add(url: url, mirrors: [], folder: Self.downloadsFolder, name: nil,
+            connections: defaultSettings().connections, start: start)
+    }
+
+    /// Adds a download; `start` runs it now (Download), otherwise it waits in the queue (Add).
+    @discardableResult
+    func add(url: String, mirrors: [String], folder: URL, name: String?, connections: UInt32, start: Bool) -> UInt64 {
+        let id = manager.add(url: url, mirrors: mirrors, folder: folder.path, name: name,
+                             connections: connections, start: start)
         refresh()
+        return id
     }
 
     func resume(_ ids: [UInt64]) { manager.resume(ids: ids); refresh() }
@@ -91,4 +99,12 @@ extension DownloadStatus {
     }
 
     var isFinished: Bool { if case .finished = self { true } else { false } }
+}
+
+/// The message of an error from the core ("404 Not Found"), without the Swift wrapping.
+func errorText(_ error: Error) -> String {
+    switch error as? CoreError {
+    case .Io(let message)?, .Message(let message)?: message
+    case nil: error.localizedDescription
+    }
 }

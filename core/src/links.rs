@@ -1,0 +1,157 @@
+//! Finding links in pasted or dropped text (SPECIFICATION.md §5.2–§5.4) and expanding batch patterns (§5.5).
+
+/// Every http, https and ftp link in plain text or HTML, in order, without repeats. Trailing punctuation that
+/// belongs to the sentence (".", ",", ")", quotes) is left out.
+pub fn find(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let lower = text.to_ascii_lowercase();
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &lower[i..];
+        let Some(at) = ["https://", "http://", "ftp://"].iter().filter_map(|p| rest.find(p)).min() else { break };
+        let start = i + at;
+        let end = text[start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | '`' | '[' | ']' | '{' | '}' | '|' | '\\'))
+            .map_or(text.len(), |n| start + n);
+        let mut link = &text[start..end];
+        while let Some(last) = link.chars().last() {
+            let unbalanced_paren = last == ')' && link.matches('(').count() < link.matches(')').count();
+            if matches!(last, '.' | ',' | ';' | ':' | '!' | '?') || unbalanced_paren {
+                link = &link[..link.len() - last.len_utf8()];
+            } else {
+                break;
+            }
+        }
+        let link = link.replace("&amp;", "&");
+        if reqwest::Url::parse(&link).is_ok_and(|u| u.host_str().is_some()) && !out.contains(&link) {
+            out.push(link);
+        }
+        i = end.max(start + 1);
+    }
+    out
+}
+
+/// One `^(…)` placeholder's values.
+fn expand_range(spec: &str) -> Result<Vec<String>, String> {
+    let bad = || format!("“{spec}” isn't a range like ###1-100, 0-ffH or a-z");
+    let mut values = Vec::new();
+    for part in spec.split(',').map(str::trim) {
+        let (body, hex) = match part.strip_suffix(['H', 'h']) {
+            Some(b) if b.contains('-') => (b, true),
+            _ => (part, false),
+        };
+        let pad = body.chars().take_while(|&c| c == '#').count();
+        let body = &body[pad..];
+        let (a, b) = body.split_once('-').ok_or_else(bad)?;
+        let (a, b) = (a.trim(), b.trim());
+        let numeric = |s: &str| if hex { s.chars().all(|c| c.is_ascii_hexdigit()) } else { s.chars().all(|c| c.is_ascii_digit()) };
+        if !a.is_empty() && !b.is_empty() && numeric(a) && numeric(b) {
+            let radix = if hex { 16 } else { 10 };
+            let from = u64::from_str_radix(a, radix).map_err(|_| bad())?;
+            let to = u64::from_str_radix(b, radix).map_err(|_| bad())?;
+            let width = pad.max(if a.starts_with('0') && a.len() > 1 { a.len() } else { 0 });
+            let upper = hex && a.chars().chain(b.chars()).any(|c| c.is_ascii_uppercase());
+            let step: Box<dyn Iterator<Item = u64>> = if from <= to { Box::new(from..=to) } else { Box::new((to..=from).rev()) };
+            for n in step {
+                let text = match (hex, upper) {
+                    (true, true) => format!("{n:0width$X}"),
+                    (true, false) => format!("{n:0width$x}"),
+                    _ => format!("{n:0width$}"),
+                };
+                values.push(text);
+                if values.len() > 100_000 {
+                    return Err("That makes more than 100,000 links".into());
+                }
+            }
+        } else if !a.is_empty() && a.len() == b.len() && a.chars().chain(b.chars()).all(|c| c.is_ascii_alphabetic()) {
+            // Letters count like digits in base 26: a-z, AA-BZ.
+            let upper = a.chars().all(|c| c.is_ascii_uppercase());
+            let base = if upper { b'A' } else { b'a' };
+            let num = |s: &str| s.to_ascii_lowercase().bytes().fold(0u64, |n, c| n * 26 + u64::from(c - b'a'));
+            let (from, to) = (num(a), num(b));
+            if from > to {
+                return Err(bad());
+            }
+            for mut n in from..=to {
+                let mut chars = vec![b'a'; a.len()];
+                for slot in chars.iter_mut().rev() {
+                    *slot = base + (n % 26) as u8;
+                    n /= 26;
+                }
+                values.push(String::from_utf8(chars).unwrap_or_default());
+                if values.len() > 100_000 {
+                    return Err("That makes more than 100,000 links".into());
+                }
+            }
+        } else {
+            return Err(bad());
+        }
+    }
+    Ok(values)
+}
+
+/// Batch Download (§5.5): `https://example.com/img^(###1-100).jpg` gives img001.jpg … img100.jpg. Several
+/// placeholders multiply.
+pub fn expand_batch(pattern: &str) -> Result<Vec<String>, String> {
+    let mut links = vec![String::new()];
+    let mut rest = pattern.trim();
+    let mut found = false;
+    while let Some(at) = rest.find("^(") {
+        let close = rest[at..].find(')').ok_or("A “^(” has no closing “)”")? + at;
+        let values = expand_range(&rest[at + 2..close])?;
+        let prefix = &rest[..at];
+        links = links.iter().flat_map(|l| values.iter().map(move |v| format!("{l}{prefix}{v}"))).collect();
+        if links.len() > 100_000 {
+            return Err("That makes more than 100,000 links".into());
+        }
+        rest = &rest[close + 1..];
+        found = true;
+    }
+    if !found {
+        return Err("Put a range like ^(###1-100) where the number goes".into());
+    }
+    let links: Vec<String> = links.into_iter().map(|l| l + rest).collect();
+    if links.first().is_some_and(|l| reqwest::Url::parse(l).is_err()) {
+        return Err("That isn't a web link".into());
+    }
+    Ok(links)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_links_in_text_and_html() {
+        let text = "Get https://a.com/x.zip, or (http://b.org/y.iso). <a href=\"https://c.net/z?a=1&amp;b=2\">z</a> \
+                    again https://a.com/x.zip and ftp://d.io/f and https://en.wikipedia.org/wiki/Foo_(bar).";
+        assert_eq!(
+            find(text),
+            vec![
+                "https://a.com/x.zip",
+                "http://b.org/y.iso",
+                "https://c.net/z?a=1&b=2",
+                "ftp://d.io/f",
+                "https://en.wikipedia.org/wiki/Foo_(bar)",
+            ]
+        );
+        assert!(find("no links, just http:// and words").is_empty());
+    }
+
+    #[test]
+    fn expands_batch_ranges() {
+        let l = expand_batch("https://e.com/img^(###1-100).jpg").unwrap();
+        assert_eq!((l.len(), l[0].as_str(), l[99].as_str()), (100, "https://e.com/img001.jpg", "https://e.com/img100.jpg"));
+        assert_eq!(expand_batch("https://e.com/^(8-bH)").unwrap(), ["https://e.com/8", "https://e.com/9", "https://e.com/a", "https://e.com/b"]);
+        assert_eq!(expand_batch("https://e.com/^(##0E-10h)").unwrap(), ["https://e.com/0E", "https://e.com/0F", "https://e.com/10"]);
+        assert_eq!(expand_batch("https://e.com/^(a-c)").unwrap().len(), 3);
+        let az = expand_batch("https://e.com/^(AA-BZ)").unwrap();
+        assert_eq!((az.len(), az[0].as_str(), az[51].as_str()), (52, "https://e.com/AA", "https://e.com/BZ"));
+        assert_eq!(expand_batch("https://e.com/^(1-2,7-8)").unwrap().len(), 4);
+        assert_eq!(expand_batch("https://e.com/^(1-2)/^(a-b)").unwrap()[3], "https://e.com/2/b");
+        assert_eq!(expand_batch("https://e.com/^(3-1)").unwrap()[0], "https://e.com/3");
+        assert!(expand_batch("https://e.com/x").is_err());
+        assert!(expand_batch("https://e.com/^(1-x)").is_err());
+        assert!(expand_batch("https://e.com/^(1-200000)").is_err());
+    }
+}

@@ -237,3 +237,22 @@ fn a_download_without_ranges_says_it_cant_resume() {
     m.pause(&[id]);
     wait(&m, id, |s| *s == Status::Paused);
 }
+
+#[test]
+fn probing_a_link_gives_its_name_size_and_resume_support() {
+    let data = pattern(3 * MIB, 9);
+    let (_rt, s) = server(&data, None);
+    let mut plain = MockFile::new(data.clone());
+    plain.ranges = false;
+    s.put("/plain.iso", plain);
+    let dir = folder("probe");
+    let m = Manager::open(&dir).unwrap();
+    let p = m.probe(&s.url("/f.bin")).unwrap();
+    assert_eq!((p.name.as_str(), p.size, p.resumable), ("f.bin", Some(data.len() as u64), true));
+    let p = m.probe(&s.url("/plain.iso")).unwrap();
+    assert_eq!((p.name.as_str(), p.size, p.resumable), ("plain.iso", Some(data.len() as u64), false));
+    assert_eq!(m.probe(&s.url("/missing")).unwrap_err(), "404 Not Found");
+    assert_eq!(m.probe("not a link").unwrap_err(), "That isn't a web link");
+    std::fs::write(dir.join("files/f.bin"), b"x").unwrap();
+    assert_eq!(hd_core::manager::free_name(&dir.join("files"), "f.bin"), "f (2).bin");
+}

@@ -10,6 +10,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     let list = DownloadListViewController()
     private let footer = NSTextField(labelWithString: "")
     private var searchItem: NSSearchToolbarItem?
+    /// Open New Download, Add Links and Batch windows (kept alive while shown).
+    private var panels: [NSWindowController] = []
 
     /// T1–T8 with their symbols, hover text and shortcut (shown in the hover text).
     private struct Button {
@@ -77,7 +79,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         footer.textColor = .secondaryLabelColor
         footer.setAccessibilityIdentifier("footer")
 
-        let content = NSView()
+        let content = DropView()
+        content.onLinks = { [weak self] links in self?.openLinks(links) }
         let splitView = split.view
         for v in [splitView, footer] {
             v.translatesAutoresizingMaskIntoConstraints = false
@@ -207,10 +210,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(removeConnection(_:)):
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
         case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)): return true
-        // These arrive with their own windows: New Download, Add from Clipboard, Batch Download (§5), Settings (§9),
+        // These arrive with their own windows: Settings (§9),
         // the queue (§11), Add Mirror (§7.1), Properties and the Download window (§6).
-        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
-             #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)),
+        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)): return true
+        case #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)),
              #selector(addMirror(_:)), #selector(showProperties(_:)), #selector(showDownloadWindow(_:)):
             return false
         default: return true
@@ -236,9 +239,55 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
 
     // MARK: actions
 
-    @objc func newDownload(_ sender: Any?) {}
-    @objc func addFromClipboard(_ sender: Any?) {}
-    @objc func batchDownload(_ sender: Any?) {}
+    /// New Download (§5.1), its Link filled from the clipboard when it holds a link.
+    @objc func newDownload(_ sender: Any?) {
+        let clip = NSPasteboard.general.string(forType: .string).map { findLinks(text: $0) } ?? []
+        show(NewDownloadWindowController(link: clip.first, onClose: closer()))
+    }
+
+    /// Add from Clipboard (§5.2): every link in the clipboard's text opens Add Links.
+    @objc func addFromClipboard(_ sender: Any?) {
+        let pasteboard = NSPasteboard.general
+        var text = pasteboard.string(forType: .string) ?? ""
+        if let html = pasteboard.string(forType: .html) { text += "\n" + html }
+        let links = findLinks(text: text)
+        guard !links.isEmpty, let window else {
+            let alert = NSAlert()
+            alert.messageText = "The clipboard has no links."
+            alert.informativeText = "Copy one or more web addresses (http, https or ftp), then try again."
+            if let window = self.window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+            return
+        }
+        _ = window
+        openLinks(links)
+    }
+
+    /// Batch Download (§5.5).
+    @objc func batchDownload(_ sender: Any?) {
+        show(BatchWindowController(onLinks: { [weak self] links in self?.openLinks(links) }, onClose: closer()))
+    }
+
+    /// Add Links (§5.3) for links from the clipboard, a drop, the Dock icon or a batch.
+    func openLinks(_ links: [String]) {
+        guard !links.isEmpty else { return }
+        showWindow(nil)
+        show(AddLinksWindowController(links: links, onClose: closer()))
+    }
+
+    private func show(_ panel: NSWindowController) {
+        panels.append(panel)
+        panel.showWindow(nil)
+        panel.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Forgets a panel once it closes.
+    private func closer() -> () -> Void {
+        let count = panels.count
+        return { [weak self] in
+            guard let self else { return }
+            if count < self.panels.count { self.panels.remove(at: count) } else { self.panels.removeAll { $0.window?.isVisible == false } }
+        }
+    }
     @objc func startQueue(_ sender: Any?) {}
     @objc func stopQueue(_ sender: Any?) {}
     @objc func showSettings(_ sender: Any?) {}
@@ -359,5 +408,77 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
                 }
             }
         }
+    }
+}
+
+/// The main window's content: dropping links, text or .txt/.html files adds every link found (§5.4); while
+/// dragging, the window dims and shows "Drop links here".
+final class DropView: NSView {
+    var onLinks: (([String]) -> Void)?
+    private let overlay = NSView()
+    private let message = NSTextField(labelWithString: "Drop links here")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([.string, .URL, .fileURL, .html])
+        overlay.wantsLayer = true
+        overlay.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
+        overlay.isHidden = true
+        message.font = .systemFont(ofSize: 24, weight: .semibold)
+        message.textColor = .white
+        message.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(message)
+        NSLayoutConstraint.activate([
+            message.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+            message.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        overlay.frame = bounds
+        if overlay.superview == nil || subviews.last !== overlay {
+            overlay.removeFromSuperview()
+            addSubview(overlay)
+        }
+    }
+
+    static func links(from pasteboard: NSPasteboard) -> [String] {
+        var text = ""
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+            for url in urls {
+                if url.isFileURL {
+                    let ext = url.pathExtension.lowercased()
+                    if ["txt", "html", "htm", "text", "md", "csv"].contains(ext),
+                       let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count < 20_000_000 {
+                        text += "\n" + String(decoding: data, as: UTF8.self)
+                    }
+                } else {
+                    text += "\n" + url.absoluteString
+                }
+            }
+        }
+        text += "\n" + (pasteboard.string(forType: .string) ?? "")
+        text += "\n" + (pasteboard.string(forType: .html) ?? "")
+        return findLinks(text: text)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !Self.links(from: sender.draggingPasteboard).isEmpty else { return [] }
+        overlay.isHidden = false
+        return .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { overlay.isHidden = true }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        overlay.isHidden = true
+        let links = Self.links(from: sender.draggingPasteboard)
+        guard !links.isEmpty else { return false }
+        DispatchQueue.main.async { self.onLinks?(links) }
+        return true
     }
 }

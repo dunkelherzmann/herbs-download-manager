@@ -1347,7 +1347,7 @@ fn status_problem(status: StatusCode) -> Problem {
     }
 }
 
-fn error_text(e: &reqwest::Error) -> String {
+pub(crate) fn error_text(e: &reqwest::Error) -> String {
     if e.is_timeout() {
         "The server didn't answer in time".into()
     } else if e.is_connect() {
@@ -1409,7 +1409,7 @@ pub fn part_path(dest: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// The destination, or "name (1).ext", "name (2).ext"… when that name is taken (by a file or a partial download).
+/// The destination, or "name (2).ext", "name (3).ext"… when that name is taken (by a file or a partial download).
 pub fn unique_path(folder: &Path, name: &str) -> PathBuf {
     let taken = |p: &Path| p.exists() || part_path(p).exists();
     let first = folder.join(name);
@@ -1420,7 +1420,7 @@ pub fn unique_path(folder: &Path, name: &str) -> PathBuf {
         Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
         _ => (name.to_string(), String::new()),
     };
-    (1..)
+    (2..)
         .map(|i| folder.join(format!("{stem} ({i}){ext}")))
         .find(|p| !taken(p))
         .expect("some numbered name is free")

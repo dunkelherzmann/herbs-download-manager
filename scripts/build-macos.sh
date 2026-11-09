@@ -65,6 +65,28 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <!-- Text and HTML files dropped on the Dock icon: their links open Add Links (never the default app). -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>Text with links</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Alternate</string>
+            <key>LSItemContentTypes</key><array><string>public.plain-text</string><string>public.html</string></array>
+        </dict>
+    </array>
+    <!-- The service that takes text and links: also what lets them be dropped on the Dock icon. -->
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key><dict><key>default</key><string>Download Links with $SHORT</string></dict>
+            <key>NSMessage</key><string>addLinksFromService</string>
+            <key>NSPortName</key><string>$NAME</string>
+            <key>NSRequiredContext</key><dict/>
+            <key>NSSendTypes</key>
+            <array><string>public.utf8-plain-text</string><string>public.url</string><string>public.html</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

@@ -35,7 +35,9 @@ No open bugs in `bugs.md`.
   Items for windows not built yet (New Download, Add Mirror, Properties, Settings, queue) stay disabled.
 - [x] **Pause and resume in the app**: running downloads come back Paused at launch, the can't-resume question, the
   quit question, Restart. (§10) #11
-- [ ] **New Download, Add Links, clipboard, drag and drop, Batch Download.** (§5)
+- [x] **New Download, Add Links, clipboard, drag and drop, Batch Download.** (§5) #13
+  The Mirrors field and "Treat as mirrors of one file" (M1) are in; Add Mirror… and the Mirrors tab stay with
+  "Mirrors in the app".
 - [ ] **Download window**: segments bar, Info, Connections, Mirrors and Options tabs. (§6)
 - [ ] **Queue**: Start Queue, Stop Queue, downloads at once. (§11)
 - [ ] **Settings**. (§9)

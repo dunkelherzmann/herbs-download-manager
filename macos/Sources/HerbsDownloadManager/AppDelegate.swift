@@ -4,12 +4,17 @@ import HDCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindow: MainWindowController?
+    /// Links that arrived (Dock drop, service) before the window was up.
+    private var pending: [String] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
         let window = MainWindowController()
         window.showWindow(nil)
         mainWindow = window
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
+        if !pending.isEmpty { window.openLinks(pending); pending = [] }
         // `--add URL` (repeatable) adds and starts a download: the hook the GUI tests use, with HD_DATA_DIR set
         // to a private folder.
         let args = CommandLine.arguments
@@ -38,6 +43,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { mainWindow?.showWindow(nil) }
         return true
+    }
+
+    /// Text and HTML files dropped on the Dock icon (§5.4) open Add Links with every link they contain.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let pasteboard = NSPasteboard(name: .init("hd-open-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+        openLinks(DropView.links(from: pasteboard))
+        pasteboard.releaseGlobally()
+    }
+
+    /// The "Download Links with Herb's DM" service, which is also what accepts text and links dropped on the
+    /// Dock icon (§5.4).
+    @objc func addLinksFromService(_ pasteboard: NSPasteboard, userData: String?,
+                                   error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        let links = DropView.links(from: pasteboard)
+        guard !links.isEmpty else {
+            error.pointee = "No links found" as NSString
+            return
+        }
+        openLinks(links)
+    }
+
+    private func openLinks(_ links: [String]) {
+        guard !links.isEmpty else { return }
+        if mainWindow == nil {
+            pending.append(contentsOf: links)
+            return
+        }
+        NSApp.activate()
+        mainWindow?.openLinks(links)
     }
 
     @objc func openGitHub(_ sender: Any?) {

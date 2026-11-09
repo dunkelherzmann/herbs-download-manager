@@ -220,8 +220,8 @@ async fn pausing_stops_every_connection() {
 fn taken_names_get_a_number() {
     let dir = folder("names");
     std::fs::write(dir.join("a.zip"), b"x").unwrap();
-    std::fs::write(dir.join("a (1).zip.hdpart"), b"x").unwrap();
-    assert_eq!(transfer::unique_path(&dir, "a.zip"), dir.join("a (2).zip"));
+    std::fs::write(dir.join("a (2).zip.hdpart"), b"x").unwrap();
+    assert_eq!(transfer::unique_path(&dir, "a.zip"), dir.join("a (3).zip"));
     assert_eq!(transfer::unique_path(&dir, "b.zip"), dir.join("b.zip"));
 }
 

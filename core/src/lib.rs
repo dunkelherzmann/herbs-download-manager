@@ -2,6 +2,7 @@
 
 pub mod format;
 pub mod http;
+pub mod links;
 pub mod manager;
 pub mod segments;
 pub mod settings;
