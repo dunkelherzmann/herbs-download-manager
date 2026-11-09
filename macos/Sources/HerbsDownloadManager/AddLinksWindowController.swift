@@ -2,7 +2,8 @@ import AppKit
 import HDCore
 
 /// Add Links (SPECIFICATION.md §5.3): the links found in the clipboard, a drop or a batch, each with a checkbox,
-/// name, size and folder, a filter field, and "Treat as mirrors of one file".
+/// name, size and folder, a filter field, and "Treat as mirrors of one file". Links, text and link files dropped on
+/// the window while it is open join the list as more rows (several mirrors of one file at once, for example).
 @MainActor
 final class AddLinksWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate,
     NSSearchFieldDelegate {
@@ -19,7 +20,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         }
     }
 
-    private let items: [Item]
+    private var items: [Item]
     private var shown: [Item] = []
     private let table = NSTableView()
     private let filter = NSSearchField()
@@ -34,15 +35,36 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         items = links.map(Item.init)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 460),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = links.count == 1 ? "Add 1 Link" : "Add \(links.count) Links"
+        window.title = Self.title(links.count)
         window.minSize = NSSize(width: 560, height: 320)
         window.setAccessibilityIdentifier("add-links")
         super.init(window: window)
         self.onClose = onClose
         build()
         applyFilter()
-        probeAll()
+        probe(items)
         window.center()
+    }
+
+    private static func title(_ n: Int) -> String { n == 1 ? "Add 1 Link" : "Add \(n) Links" }
+
+    /// Links dropped on the window: each one not listed yet becomes a checked row and is checked like the others.
+    /// Returns how many were new.
+    @discardableResult
+    func addLinks(_ links: [String]) -> Int {
+        var known = Set(items.map { $0.url.trimmingCharacters(in: .whitespaces) })
+        var added: [Item] = []
+        for link in links {
+            let url = link.trimmingCharacters(in: .whitespaces)
+            guard !url.isEmpty, known.insert(url).inserted else { continue }
+            added.append(Item(url: url))
+        }
+        guard !added.isEmpty else { NSSound.beep(); return 0 }
+        items += added
+        window?.title = Self.title(items.count)
+        applyFilter()
+        probe(added)
+        return added.count
     }
 
     @available(*, unavailable)
@@ -103,7 +125,9 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
+        let content = DropView()
+        content.message.stringValue = "Drop links to add them"
+        content.onLinks = { [weak self] links in self?.addLinks(links) }
         content.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -121,9 +145,8 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
     // MARK: names and sizes
 
     /// Asks each server for the file's name and size, four at a time.
-    private func probeAll() {
+    private func probe(_ queue: [Item]) {
         let manager = AppModel.shared.manager
-        let queue = items
         var next = 0
         for _ in 0..<min(4, queue.count) {
             probes.append(Task { [weak self] in

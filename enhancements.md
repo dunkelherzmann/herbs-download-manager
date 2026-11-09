@@ -118,3 +118,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Drop more links, such as several mirrors of one file, onto an open Add Links window,** each listed as another row. *Requested 2026-11-09.* Drops on the main window or the Dock icon join the open window too; a link already listed is skipped; links to the same file still become one download and its mirrors. Done for the Mac in #32.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows

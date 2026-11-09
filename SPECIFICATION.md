@@ -173,7 +173,9 @@ A list of the links found, each with a checkbox, name, size and folder, and a fi
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
 Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same
 name, and the same size when known) become one download and its mirrors (§7.1 M5); the footer line says so ("5
-links checked: 2 downloads with mirrors"), and afterwards the main window's footer sums up what was added.
+links checked: 2 downloads with mirrors"), and afterwards the main window's footer sums up what was added. While the
+window is open, links, text and link files dropped on it, or on the main window or the Dock icon, join the list as
+more rows (several mirrors of one file at once, say); a link already listed is skipped.
 
 ### 5.4 Drag and drop
 

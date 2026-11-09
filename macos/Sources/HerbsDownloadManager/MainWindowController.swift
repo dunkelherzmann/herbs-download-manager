@@ -327,9 +327,16 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         openLinks(links)
     }
 
+    /// Opens Add Links with the links, or, when it is already open, adds them to it as more rows.
     func openLinks(_ links: [String]) {
         guard !links.isEmpty else { return }
         showWindow(nil)
+        if let open = panels.last(where: { $0 is AddLinksWindowController && $0.window?.isVisible == true })
+            as? AddLinksWindowController {
+            open.addLinks(links)
+            open.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         show(AddLinksWindowController(links: links, onClose: closer()))
     }
 
@@ -507,7 +514,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
 final class DropView: NSView {
     var onLinks: (([String]) -> Void)?
     private let overlay = NSView()
-    private let message = NSTextField(labelWithString: "Drop links here")
+    let message = NSTextField(labelWithString: "Drop links here")
 
     override init(frame: NSRect) {
         super.init(frame: frame)
