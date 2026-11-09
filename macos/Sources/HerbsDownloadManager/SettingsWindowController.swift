@@ -94,6 +94,7 @@ final class SettingsWindowController: NSWindowController {
     private let speed = SpeedLimitControl(what: "all downloads together")
     private let retries = NSPopUpButton()
     private let whenExists = NSPopUpButton()
+    private let checksumFiles = NSButton(checkboxWithTitle: "Look for checksum files next to the link", target: nil, action: nil)
     private let notify = NSButton(checkboxWithTitle: "Show a notification when a download finishes", target: nil,
                                   action: nil)
 
@@ -155,6 +156,11 @@ final class SettingsWindowController: NSWindowController {
         whenExists.setAccessibilityIdentifier("settings-when-exists")
         speed.onChange = { [weak self] _ in self?.save(nil) }
         speed.box.setAccessibilityIdentifier("settings-speed-limit")
+        checksumFiles.target = self
+        checksumFiles.action = #selector(save(_:))
+        checksumFiles.toolTip = "When a download has no checksum set, look for <file>.sha256 (or .sha512, .sha1, .md5) "
+            + "next to its link and check the file with it"
+        checksumFiles.setAccessibilityIdentifier("settings-checksum-files")
         notify.target = self
         notify.action = #selector(save(_:))
         notify.toolTip = "Show a macOS notification each time a download finishes"
@@ -169,6 +175,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Speed limit:"), speed],
             [label("Retries per source:"), retries],
             [label("When a file exists:"), whenExists],
+            [NSGridCell.emptyContentView, checksumFiles],
             [NSGridCell.emptyContentView, notify],
         ])
         grid.column(at: 0).xPlacement = .trailing
@@ -198,6 +205,7 @@ final class SettingsWindowController: NSWindowController {
         retries.selectItem(withTitle: "\(s.retries)")
         speed.limit = s.speedLimit
         whenExists.selectItem(at: Self.existsChoices.firstIndex { $0.1 == s.whenFileExists } ?? 0)
+        checksumFiles.state = s.lookForChecksumFiles ? .on : .off
         notify.state = s.notifyWhenFinished ? .on : .off
     }
 
@@ -210,6 +218,7 @@ final class SettingsWindowController: NSWindowController {
         s.retries = number(retries, s.retries)
         s.speedLimit = speed.limit
         s.whenFileExists = Self.existsChoices[max(0, whenExists.indexOfSelectedItem)].1
+        s.lookForChecksumFiles = checksumFiles.state == .on
         s.notifyWhenFinished = notify.state == .on
         AppModel.shared.settings = s
         if s.notifyWhenFinished, (sender as? NSButton) === notify { AppModel.shared.askToNotify() }

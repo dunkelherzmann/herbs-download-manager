@@ -221,13 +221,16 @@ Opens for a download from the list (double-click or ⌘O). Its title is the file
   left empty), percentage, downloaded / total, speed, time left.
 - **Buttons**: Resume / Pause (one toggling button), Close. Closing the window never stops the download.
 - **Tabs**:
-  - **Info**: link, folder, size, resumable or not, date added, date finished.
+  - **Info**: link, folder, size, resumable or not, date added, date finished, checksum.
   - **Connections**: one row per connection: source (host), byte range, downloaded, speed, state (Connecting,
     Downloading, Idle, Retrying in 5 s, Failed: reason). Buttons **+** and **−** add or remove a connection now.
   - **Mirrors**: the sources list (§7.3), with **Add Mirror…** and **Remove**.
   - **Options**: connections for this download, speed limit for this download ("Limit to [500] [KB/s ▾]", applied
-    at once and remembered), checksum to verify at the end
-    (algorithm MD5, SHA-1, SHA-256 or SHA-512, and the expected value).
+    at once and remembered), checksum to verify at the end (algorithm MD5, SHA-1, SHA-256 or SHA-512, and the
+    expected value; a pasted value picks its algorithm by its length). The whole file is checked before it gets its
+    name; a mismatch fails the download ("The SHA-256 checksum doesn't match…") and keeps its data, so Restart fetches
+    it again. A checksum set on a finished download is checked at once. Info shows the result ("SHA-256 matches
+    (file.iso.sha256)").
 
 ## 7. Mirrors
 

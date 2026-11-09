@@ -40,6 +40,8 @@ pub struct Request {
     pub state_file: Option<PathBuf>,
     /// Speed limits this download shares (all downloads', its own); every received chunk is paid to each.
     pub limits: Vec<Arc<crate::limit::Limiter>>,
+    /// S8: with no checksum set, look for `<link>.sha256` and the like before naming the file.
+    pub look_for_checksum_files: bool,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -164,6 +166,10 @@ pub struct Progress {
     pub sources: Mutex<Vec<SourceInfo>>,
     /// Every byte is in: the file is being flushed to disk and given its name.
     pub finishing: AtomicBool,
+    /// The checksum to verify before the file gets its name (§6); can be set while the download runs.
+    pub checksum: Mutex<Option<crate::checksum::Checksum>>,
+    /// After a verified finish: "SHA-256 matches (f.bin.sha256)".
+    pub verified: Mutex<Option<String>>,
 }
 
 /// A connection as the Connections tab shows it (§6).
@@ -430,6 +436,7 @@ struct Job {
     retries: u32,
     per_server: usize,
     limits: Vec<Arc<crate::limit::Limiter>>,
+    look_for_checksum_files: bool,
     sequential: bool,
     /// What gets saved; `segments` and `sources` are filled in at each save.
     state: ResumeState,
@@ -696,6 +703,33 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
         return Outcome::Failed(format!("Can't write the file: {e}"));
     }
     let dest = job.state.dest.clone();
+    // §6, S8: the whole file is checked against its checksum before it gets its name.
+    let name = dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let set = job.progress.checksum.lock().unwrap().clone();
+    let expected = match set {
+        Some(c) => Some((c, None)),
+        None if job.look_for_checksum_files => {
+            crate::checksum::look_for(&job.client, &job.state.url, &name).await.map(|(c, from)| (c, Some(from)))
+        }
+        None => None,
+    };
+    if let Some((expected, from)) = expected {
+        let (part, algorithm) = (part_path(&dest), expected.algorithm);
+        let from = from.map(|f| format!(" ({f})")).unwrap_or_default();
+        match tokio::task::spawn_blocking(move || crate::checksum::hash_file(&part, algorithm)).await {
+            Ok(Ok(got)) if got == expected.value => {
+                *job.progress.verified.lock().unwrap() = Some(format!("{} matches{from}", algorithm.name()));
+            }
+            Ok(Ok(_)) => {
+                job.save();
+                return Outcome::Failed(format!(
+                    "The {} checksum doesn't match{from}: the file is damaged or isn't the expected one. Restart downloads it again",
+                    algorithm.name()
+                ));
+            }
+            _ => return Outcome::Failed("Can't read the file to check its checksum".into()),
+        }
+    }
     match std::fs::rename(part_path(&dest), &dest) {
         Ok(()) => {
             if let Some(path) = &job.state_file {
@@ -817,6 +851,7 @@ impl Job {
             retries: req.retries,
             per_server: req.connections_per_server.clamp(1, 32) as usize,
             limits: req.limits.clone(),
+            look_for_checksum_files: req.look_for_checksum_files,
             sequential,
             state,
             state_file: req.state_file.clone(),

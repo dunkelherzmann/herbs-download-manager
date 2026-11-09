@@ -49,7 +49,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     // Info.
     let info_grid = gtk::Grid::builder().row_spacing(8).column_spacing(12).margin_top(12).margin_start(12).margin_end(12).build();
     let mut info = HashMap::new();
-    for (i, key) in ["Link", "Folder", "Size", "Resumable", "Date Added", "Date Finished"].iter().enumerate() {
+    for (i, key) in ["Link", "Folder", "Size", "Resumable", "Date Added", "Date Finished", "Checksum"].iter().enumerate() {
         info_grid.attach(&gtk::Label::builder().label(format!("{key}:")).xalign(1.0).build(), 0, i as i32, 1, 1);
         let value = gtk::Label::builder().xalign(0.0).selectable(true).wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar).hexpand(true).build();
         info_grid.attach(&value, 1, i as i32, 1, 1);
@@ -101,6 +101,52 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     options.attach(&connections, 1, 0, 1, 1);
     options.attach(&gtk::Label::builder().label("Speed limit:").xalign(1.0).build(), 0, 1, 1, 1);
     options.attach(&limit_row, 1, 1, 1, 1);
+    // §6: the checksum to verify before the file gets its name; a pasted value picks its algorithm by length.
+    let algorithms = gtk::DropDown::from_strings(&["None", "MD5", "SHA-1", "SHA-256", "SHA-512"]);
+    algorithms.set_tooltip_text(Some("The kind of checksum: MD5, SHA-1, SHA-256 or SHA-512"));
+    let value = gtk::Entry::builder().placeholder_text("Paste the expected value").width_chars(48).build();
+    value.set_tooltip_text(Some("The value the site publishes for this file; it's checked once every byte is in"));
+    let note = gtk::Label::builder().xalign(0.0).build();
+    note.add_css_class("dim-label");
+    let index_of = |a: Option<hd_core::checksum::Algorithm>| a.map(|a| 1 + hd_core::checksum::Algorithm::ALL.iter().position(|x| *x == a).unwrap_or(0) as u32).unwrap_or(0);
+    algorithms.set_selected(index_of(first.checksum.as_ref().map(|c| c.algorithm)));
+    if let Some(c) = &first.checksum {
+        value.set_text(&c.value);
+    }
+    let checksum_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    checksum_row.append(&algorithms);
+    checksum_row.append(&value);
+    options.attach(&gtk::Label::builder().label("Checksum:").xalign(1.0).build(), 0, 2, 1, 1);
+    options.attach(&checksum_row, 1, 2, 1, 1);
+    options.attach(&note, 1, 3, 1, 1);
+    let apply_checksum = {
+        let (manager, algorithms, value, note) = (ctx.manager.clone(), algorithms.clone(), value.clone(), note.clone());
+        move |guess: bool| {
+            let text = value.text().trim().to_string();
+            if guess && let Some(a) = hd_core::checksum::Algorithm::of_value(&text) {
+                algorithms.set_selected(index_of(Some(a)));
+            }
+            let chosen = (algorithms.selected() as usize).checked_sub(1).map(|i| hd_core::checksum::Algorithm::ALL[i]);
+            match chosen.filter(|_| !text.is_empty()) {
+                None => {
+                    manager.set_checksum(id, None);
+                    note.set_label("");
+                }
+                Some(a) => match hd_core::checksum::Checksum::new(a, &text) {
+                    Ok(c) => {
+                        manager.set_checksum(id, Some(c));
+                        note.set_label("Checked once every byte is in, before the file gets its name");
+                    }
+                    Err(e) => note.set_label(&e),
+                },
+            }
+        }
+    };
+    let a = apply_checksum.clone();
+    value.connect_activate(move |_| a(true));
+    let a = apply_checksum.clone();
+    value.connect_changed(move |_| a(true));
+    algorithms.connect_selected_notify(move |_| apply_checksum(false));
 
     let stack = adw::ViewStack::new();
     stack.add_titled_with_icon(&info_grid, Some("info"), "Info", "dialog-information-symbolic");
@@ -216,6 +262,10 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
             info["Size"].set_label(&r.size.map(format::bytes).unwrap_or_else(|| "Unknown".into()));
             info["Resumable"].set_label(if r.resumable { "Yes" } else { "No: pausing starts it over" });
             info["Date Added"].set_label(&crate::list::date_text(Some(r.added)));
+            info["Checksum"].set_label(&d.verified.clone().unwrap_or_else(|| match &d.checksum {
+                Some(c) => format!("{}, checked when the download finishes", c.algorithm.name()),
+                None => "—".into(),
+            }));
             info["Date Finished"].set_label(&r.finished.map(|f| crate::list::date_text(Some(f))).unwrap_or_else(|| "—".into()));
             plus.set_sensitive(!finished && r.allowed_connections < 32);
             minus.set_sensitive(!finished && r.allowed_connections > 1);

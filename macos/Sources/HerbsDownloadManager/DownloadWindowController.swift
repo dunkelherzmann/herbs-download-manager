@@ -115,7 +115,7 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
 
     private func infoView() -> NSView {
         var rows: [[NSView]] = []
-        for key in ["Link", "Folder", "Size", "Resumable", "Date Added", "Date Finished"] {
+        for key in ["Link", "Folder", "Size", "Resumable", "Date Added", "Date Finished", "Checksum"] {
             let value = NSTextField(labelWithString: "")
             value.isSelectable = true
             value.lineBreakMode = .byTruncatingMiddle
@@ -198,6 +198,29 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         return view
     }
 
+    private let checksumAlgorithm = NSPopUpButton()
+    private let checksumValue = NSTextField()
+    private let checksumNote = NSTextField(labelWithString: "")
+    private var checksumShown = false
+    private static let algorithms: [(String, ChecksumAlgorithm?)] = [
+        ("None", nil), ("MD5", .md5), ("SHA-1", .sha1), ("SHA-256", .sha256), ("SHA-512", .sha512),
+    ]
+
+    @objc private func checksumChanged(_ sender: Any?) {
+        let value = checksumValue.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var algorithm = Self.algorithms[max(0, checksumAlgorithm.indexOfSelectedItem)].1
+        if sender as? NSTextField === checksumValue, let guessed = checksumAlgorithmOf(value: value) {
+            algorithm = guessed
+            checksumAlgorithm.selectItem(at: Self.algorithms.firstIndex { $0.1 == guessed } ?? 0)
+        }
+        if value.isEmpty { algorithm = nil }
+        if let problem = AppModel.shared.manager.setChecksum(id: id, algorithm: algorithm, value: value) {
+            checksumNote.stringValue = problem
+        } else {
+            checksumNote.stringValue = algorithm == nil ? "" : "Checked once every byte is in, before the file gets its name"
+        }
+    }
+
     private func optionsView() -> NSView {
         for n in connectionChoices() { optionConnections.addItem(withTitle: "\(n)") }
         optionConnections.target = self
@@ -210,9 +233,26 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
             self.shownSpeedLimit = .some(limit)
             AppModel.shared.manager.setSpeedLimit(id: self.id, limit: limit)
         }
+        // §6: the checksum to verify before the file gets its name. A pasted value picks its algorithm by length.
+        checksumAlgorithm.addItems(withTitles: Self.algorithms.map(\.0))
+        checksumAlgorithm.target = self
+        checksumAlgorithm.action = #selector(checksumChanged(_:))
+        checksumAlgorithm.toolTip = "The kind of checksum: MD5, SHA-1, SHA-256 or SHA-512"
+        checksumAlgorithm.setAccessibilityIdentifier("option-checksum-algorithm")
+        checksumValue.placeholderString = "Paste the expected value"
+        checksumValue.target = self
+        checksumValue.action = #selector(checksumChanged(_:))
+        checksumValue.toolTip = "The value the site publishes for this file; it's checked once every byte is in"
+        checksumValue.setAccessibilityIdentifier("option-checksum-value")
+        checksumValue.widthAnchor.constraint(equalToConstant: 380).isActive = true
+        checksumNote.textColor = .secondaryLabelColor
+        checksumNote.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        let checksumRow = NSStackView(views: [checksumAlgorithm, checksumValue])
         let grid = NSGridView(views: [
             [NSTextField(labelWithString: "Connections:"), optionConnections],
             [NSTextField(labelWithString: "Speed limit:"), optionSpeed],
+            [NSTextField(labelWithString: "Checksum:"), checksumRow],
+            [NSGridCell.emptyContentView, checksumNote],
         ])
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
@@ -247,6 +287,14 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         info["Size"]?.stringValue = r.size.map { bytesText(bytes: $0) } ?? "Unknown"
         info["Resumable"]?.stringValue = r.resumable ? "Yes" : "No: pausing starts it over"
         info["Date Added"]?.stringValue = Self.dates.string(from: Date(timeIntervalSince1970: TimeInterval(r.added)))
+        info["Checksum"]?.stringValue = d.verified ?? d.checksumAlgorithm.map { a in
+            "\(Self.algorithms.first { $0.1 == a }?.0 ?? ""), checked when the download finishes"
+        } ?? "—"
+        if !checksumShown {
+            checksumShown = true
+            checksumAlgorithm.selectItem(at: Self.algorithms.firstIndex { $0.1 == d.checksumAlgorithm } ?? 0)
+            checksumValue.stringValue = d.checksumValue ?? ""
+        }
         info["Date Finished"]?.stringValue = r.finished.map {
             Self.dates.string(from: Date(timeIntervalSince1970: TimeInterval($0)))
         } ?? "—"

@@ -60,6 +60,12 @@ pub struct Entry {
     /// This download's own speed limit in bytes per second (the Options tab), on top of S5.
     #[serde(default)]
     pub speed_limit: Option<u64>,
+    /// The checksum to verify (the Options tab, §6).
+    #[serde(default)]
+    pub checksum: Option<crate::checksum::Checksum>,
+    /// What the check found: "SHA-256 matches (f.bin.sha256)", or for a finished file checked later, a mismatch.
+    #[serde(default)]
+    pub verified: Option<String>,
 }
 
 /// What the list shows for one download.
@@ -403,6 +409,8 @@ impl Manager {
                     finished: None,
                     resume_at_launch: false,
                     speed_limit: None,
+                    checksum: None,
+                    verified: None,
                 },
                 running: None,
             });
@@ -446,9 +454,11 @@ impl Manager {
                 retries: settings.retries,
                 state_file: Some(self.state_file(id)),
                 limits: vec![self.inner.limiter.clone(), limiter.clone()],
+                look_for_checksum_files: settings.look_for_checksum_files,
             };
             let progress = Progress::new();
             progress.downloaded.store(e.downloaded, Ordering::SeqCst);
+            *progress.checksum.lock().unwrap() = e.checksum.clone();
             let running = Arc::new(Running {
                 restart: std::sync::atomic::AtomicBool::new(false),
                 control: transfer::control(),
@@ -507,6 +517,7 @@ impl Manager {
             e.resume_at_launch &= matches!(outcome, Outcome::Paused);
             match outcome {
                 Outcome::Finished(path) => {
+                    e.verified = running.progress.verified.lock().unwrap().clone();
                     e.name = path.file_name().map(|n| n.to_string_lossy().into_owned()).or(e.name.take());
                     e.dest = Some(path);
                     e.size = Some(e.downloaded);
@@ -695,6 +706,40 @@ impl Manager {
         self.inner.limiter.set_rate(s.speed_limit);
         *self.inner.settings.lock().unwrap() = s;
         self.pump();
+    }
+
+    /// The checksum to verify (the Options tab, §6), `None` for none. A running download checks it before naming
+    /// its file; a finished one is checked now, on another thread, and its note says whether it matches.
+    pub fn set_checksum(&self, id: u64, checksum: Option<crate::checksum::Checksum>) {
+        let finished_file = {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            slot.entry.checksum = checksum.clone();
+            slot.entry.verified = None;
+            if let Some(r) = &slot.running {
+                *r.progress.checksum.lock().unwrap() = checksum.clone();
+            }
+            (slot.entry.status == Status::Finished).then(|| slot.entry.dest.clone()).flatten()
+        };
+        self.save();
+        if let (Some(path), Some(expected)) = (finished_file, checksum) {
+            let this = Manager { _runtime: None, ..self.clone() };
+            std::thread::spawn(move || {
+                let name = expected.algorithm.name();
+                let note = match crate::checksum::hash_file(&path, expected.algorithm) {
+                    Ok(got) if got == expected.value => format!("{name} matches"),
+                    Ok(_) => format!("{name} doesn't match: the file is damaged or isn't the expected one"),
+                    Err(e) => format!("Can't read the file to check it: {e}"),
+                };
+                {
+                    let mut slots = this.inner.slots.lock().unwrap();
+                    if let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id && s.entry.checksum.as_ref() == Some(&expected)) {
+                        slot.entry.verified = Some(note);
+                    }
+                }
+                this.save();
+            });
+        }
     }
 
     /// One download's own speed limit (the Options tab), in bytes per second; `None` is none. Applies at once.
@@ -920,6 +965,9 @@ pub struct Detail {
     pub sources: Vec<transfer::SourceInfo>,
     /// The download's own speed limit, bytes per second.
     pub speed_limit: Option<u64>,
+    pub checksum: Option<crate::checksum::Checksum>,
+    /// "SHA-256 matches (f.bin.sha256)", or a finished file's mismatch.
+    pub verified: Option<String>,
 }
 
 impl Manager {
@@ -940,6 +988,8 @@ impl Manager {
                 connections: p.connections.lock().unwrap().clone(),
                 sources,
                 speed_limit: slot.entry.speed_limit,
+                checksum: slot.entry.checksum.clone(),
+                verified: slot.entry.verified.clone(),
             });
         }
         let state = ResumeState::load(&self.state_file(id)).ok();
@@ -954,6 +1004,8 @@ impl Manager {
             segments,
             connections: Vec::new(),
             speed_limit: slot.entry.speed_limit,
+            checksum: slot.entry.checksum.clone(),
+            verified: slot.entry.verified.clone(),
         })
     }
 

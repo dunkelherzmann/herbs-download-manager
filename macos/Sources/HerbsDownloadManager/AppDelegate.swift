@@ -38,6 +38,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Test hook: --settings opens the Settings window (§9).
         if args.contains("--settings") { SettingsWindowController.shared.show() }
+        // Test hook: --download-window [TAB] opens the first download's window, on Info, Connections, Mirrors or Options.
+        if let i = args.firstIndex(of: "--download-window"), let row = AppModel.shared.rows.first {
+            let tab = args.indices.contains(i + 1) && !args[i + 1].hasPrefix("--") ? args[i + 1] : nil
+            let opened = mainWindow?.openDownloadWindow(row.id)
+            if let tab { opened?.showTab(tab) }
+        }
+        // Test hook: --capture FILE saves the frontmost window (with its title bar) as PNG after 2.5 s, then quits.
+        if let i = args.firstIndex(of: "--capture"), i + 1 < args.count {
+            let path = args[i + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                let window = NSApp.orderedWindows.first { $0.isVisible } ?? NSApp.windows.first
+                if let frame = window?.contentView?.superview,
+                   let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
+                    frame.cacheDisplay(in: frame.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+                exit(0)
+            }
+        }
         NSApp.activate()
     }
 

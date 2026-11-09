@@ -41,6 +41,10 @@ const D_CONN_COUNT: u16 = 47;
 const D_LIMIT_ON: u16 = 48;
 const D_LIMIT: u16 = 49;
 const D_UNIT: u16 = 50;
+const D_ALGO_LABEL: u16 = 51;
+const D_ALGO: u16 = 52;
+const D_VALUE: u16 = 53;
+const D_NOTE: u16 = 54;
 // Add Mirror.
 const M_TEXT: u16 = 60;
 const M_ADD: u16 = 1; // IDOK
@@ -58,15 +62,18 @@ const S_PER_SERVER: u16 = 78;
 const S_RETRIES: u16 = 79;
 const S_EXISTS: u16 = 80;
 const S_NOTIFY: u16 = 81;
+const S_CHECKSUM_FILES: u16 = 82;
 const S_CLOSE: u16 = 2;
 
-const INFO_KEYS: [&str; 6] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:"];
+const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
+const ALGORITHMS: [&str; 5] = ["None", "MD5", "SHA-1", "SHA-256", "SHA-512"];
 /// Which controls each tab shows.
 const PAGES: [&[u16]; 4] = [
-    &[D_INFO, D_INFO + 1, D_INFO + 2, D_INFO + 3, D_INFO + 4, D_INFO + 5, D_INFO + 10, D_INFO + 11, D_INFO + 12, D_INFO + 13, D_INFO + 14, D_INFO + 15],
+    &[D_INFO, D_INFO + 1, D_INFO + 2, D_INFO + 3, D_INFO + 4, D_INFO + 5, D_INFO + 6,
+      D_INFO + 10, D_INFO + 11, D_INFO + 12, D_INFO + 13, D_INFO + 14, D_INFO + 15, D_INFO + 16],
     &[D_CONNS, D_PLUS, D_MINUS],
     &[D_SOURCES, D_ADD_MIRROR, D_REMOVE],
-    &[D_CONN_LABEL, D_CONN_COUNT, D_LIMIT_ON, D_LIMIT, D_UNIT],
+    &[D_CONN_LABEL, D_CONN_COUNT, D_LIMIT_ON, D_LIMIT, D_UNIT, D_ALGO_LABEL, D_ALGO, D_VALUE, D_NOTE],
 ];
 
 enum Kind {
@@ -221,6 +228,10 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 22, 160, 110, 24),
         (D_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 140, 160, 90, 24),
         (D_UNIT, w!("COMBOBOX"), "", combo_style, 238, 160, 80, 120),
+        (D_ALGO_LABEL, w!("STATIC"), "Checksum:", LABEL, 22, 202, 110, 20),
+        (D_ALGO, w!("COMBOBOX"), "", combo_style, 140, 198, 100, 160),
+        (D_VALUE, w!("EDIT"), "", EDIT, 248, 198, 410, 24),
+        (D_NOTE, w!("STATIC"), "", 0, 140, 230, 518, 20),
     ];
     let info_labels: Vec<String> = INFO_KEYS.iter().map(|k| k.to_string()).collect();
     for (i, k) in info_labels.iter().enumerate() {
@@ -237,6 +248,12 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         columns(w.controls[&D_CONNS], &[("Source", 150), ("Range", 170), ("Downloaded", 90), ("Speed", 90), ("State", 120)], false);
         columns(w.controls[&D_SOURCES], &[("Source", 300), ("State", 110), ("Active", 60), ("Speed", 80), ("Served", 80)], true);
         combo(w.controls[&D_UNIT], &["KB/s", "MB/s"], 0);
+        let algo = d.checksum.as_ref().map(|c| 1 + hd_core::checksum::Algorithm::ALL.iter().position(|a| *a == c.algorithm).unwrap_or(0)).unwrap_or(0);
+        combo(w.controls[&D_ALGO], &ALGORITHMS, algo);
+        if let Some(c) = &d.checksum {
+            set_text(w.controls[&D_VALUE], &c.value);
+        }
+        SendMessageW(w.controls[&D_VALUE], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("Paste the expected value").0 as isize)));
         if let Some(l) = d.speed_limit {
             let mb = l >= 1_000_000 && l % 100_000 == 0;
             set_checked(w.controls[&D_LIMIT_ON], true);
@@ -304,6 +321,10 @@ fn refresh(hwnd: HWND) {
             if r.resumable { "Yes".into() } else { "No: pausing starts it over".into() },
             crate::app::date_text(Some(r.added)),
             r.finished.map(|f| crate::app::date_text(Some(f))).unwrap_or_else(|| "—".into()),
+            d.verified.clone().unwrap_or_else(|| match &d.checksum {
+                Some(c) => format!("{}, checked when the download finishes", c.algorithm.name()),
+                None => "—".into(),
+            }),
         ];
         for (i, v) in values.iter().enumerate() {
             let c = w.controls[&(D_INFO + 10 + i as u16)];
@@ -420,7 +441,7 @@ pub fn settings(ctx: &Ctx) {
     let s = ctx.manager.settings();
     let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
     let folder = crate::save_folder(&ctx.manager).display().to_string();
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 400), &[
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 420), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -439,8 +460,9 @@ pub fn settings(ctx: &Ctx) {
         (S_RETRIES, w!("EDIT"), &s.retries.to_string(), EDIT | ES_NUMBER as u32, 190, 230, 60, 24),
         (0, w!("STATIC"), "When a file exists:", LABEL, 12, 270, 170, 20),
         (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 266, 230, 160),
-        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 306, 340, 24),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 354, 85, 30),
+        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 302, 340, 24),
+        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 330, 340, 24),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 374, 85, 30),
     ]);
     with_win(hwnd, |w| {
         combo(w.controls[&S_UNIT], &["KB/s", "MB/s"], 0);
@@ -454,6 +476,7 @@ pub fn settings(ctx: &Ctx) {
             set_text(w.controls[&S_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
         }
         set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
+        set_checked(w.controls[&S_CHECKSUM_FILES], s.look_for_checksum_files);
     });
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
@@ -477,9 +500,38 @@ fn save_settings(hwnd: HWND) {
             retries: number(S_RETRIES, current.retries),
             when_file_exists: EXISTS[selection(w.controls[&S_EXISTS]).min(3)].1,
             notify_when_finished: checked(w.controls[&S_NOTIFY]),
+            look_for_checksum_files: checked(w.controls[&S_CHECKSUM_FILES]),
             ..current
         };
         w.ctx.manager.set_settings(s);
+    });
+}
+
+/// §6: the checksum to verify; a pasted value picks its algorithm by length.
+fn apply_checksum(hwnd: HWND, id: u64, guess: bool) {
+    with_win(hwnd, |w| {
+        let text = text_of(w.controls[&D_VALUE]).trim().to_string();
+        if guess && let Some(a) = hd_core::checksum::Algorithm::of_value(&text) {
+            let i = 1 + hd_core::checksum::Algorithm::ALL.iter().position(|x| *x == a).unwrap_or(0);
+            unsafe {
+                SendMessageW(w.controls[&D_ALGO], CB_SETCURSEL, Some(WPARAM(i)), None);
+            }
+        }
+        let chosen = selection(w.controls[&D_ALGO]).checked_sub(1).map(|i| hd_core::checksum::Algorithm::ALL[i]);
+        let note = match chosen.filter(|_| !text.is_empty()) {
+            None => {
+                w.ctx.manager.set_checksum(id, None);
+                String::new()
+            }
+            Some(a) => match hd_core::checksum::Checksum::new(a, &text) {
+                Ok(c) => {
+                    w.ctx.manager.set_checksum(id, Some(c));
+                    "Checked once every byte is in, before the file gets its name".into()
+                }
+                Err(e) => e,
+            },
+        };
+        set_text(w.controls[&D_NOTE], &note);
     });
 }
 
@@ -563,6 +615,8 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                         D_LIMIT_ON => apply_limit(hwnd, did),
                         D_LIMIT if code == EN_CHANGE => apply_limit(hwnd, did),
                         D_UNIT if code == CBN_SELCHANGE => apply_limit(hwnd, did),
+                        D_VALUE if code == EN_CHANGE => apply_checksum(hwnd, did, true),
+                        D_ALGO if code == CBN_SELCHANGE => apply_checksum(hwnd, did, false),
                         D_ADD_MIRROR => {
                             if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
                                 ask_mirrors(&ctx, did);
@@ -614,7 +668,7 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
                         })),
                         S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == EN_KILLFOCUS => save_settings(hwnd),
-                        S_LIMIT_ON | S_NOTIFY => save_settings(hwnd),
+                        S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES => save_settings(hwnd),
                         S_UNIT | S_EXISTS if code == CBN_SELCHANGE => save_settings(hwnd),
                         _ => {}
                     },

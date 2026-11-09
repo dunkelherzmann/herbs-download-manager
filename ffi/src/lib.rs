@@ -367,6 +367,24 @@ impl DownloadManager {
         self.inner.set_settings(settings.into());
     }
 
+    /// The checksum to verify (§6), or `None` to clear it. Returns why a value is refused ("A SHA-256 value is 64
+    /// hexadecimal digits"), or `None` when it was set.
+    pub fn set_checksum(&self, id: u64, algorithm: Option<ChecksumAlgorithm>, value: String) -> Option<String> {
+        match algorithm {
+            None => {
+                self.inner.set_checksum(id, None);
+                None
+            }
+            Some(a) => match hd_core::checksum::Checksum::new(a.into(), &value) {
+                Ok(c) => {
+                    self.inner.set_checksum(id, Some(c));
+                    None
+                }
+                Err(e) => Some(e),
+            },
+        }
+    }
+
     /// One download's own speed limit in bytes per second (`None`: no limit). Applies at once.
     pub fn set_speed_limit(&self, id: u64, limit: Option<u64>) {
         self.inner.set_speed_limit(id, limit);
@@ -431,6 +449,9 @@ impl DownloadManager {
                 })
                 .collect(),
             speed_limit: d.speed_limit,
+            checksum_algorithm: d.checksum.as_ref().map(|c| c.algorithm.into()),
+            checksum_value: d.checksum.as_ref().map(|c| c.value.clone()),
+            verified: d.verified,
             row: d.row.into(),
         })
     }
@@ -577,4 +598,44 @@ pub struct DownloadDetail {
     pub sources: Vec<SourceRow>,
     /// The download's own speed limit, bytes per second.
     pub speed_limit: Option<u64>,
+    pub checksum_algorithm: Option<ChecksumAlgorithm>,
+    pub checksum_value: Option<String>,
+    /// "SHA-256 matches (f.bin.sha256)", or a mismatch found on a finished file.
+    pub verified: Option<String>,
+}
+
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+pub enum ChecksumAlgorithm {
+    Md5,
+    Sha1,
+    Sha256,
+    Sha512,
+}
+
+impl From<ChecksumAlgorithm> for hd_core::checksum::Algorithm {
+    fn from(a: ChecksumAlgorithm) -> Self {
+        match a {
+            ChecksumAlgorithm::Md5 => Self::Md5,
+            ChecksumAlgorithm::Sha1 => Self::Sha1,
+            ChecksumAlgorithm::Sha256 => Self::Sha256,
+            ChecksumAlgorithm::Sha512 => Self::Sha512,
+        }
+    }
+}
+
+impl From<hd_core::checksum::Algorithm> for ChecksumAlgorithm {
+    fn from(a: hd_core::checksum::Algorithm) -> Self {
+        match a {
+            hd_core::checksum::Algorithm::Md5 => Self::Md5,
+            hd_core::checksum::Algorithm::Sha1 => Self::Sha1,
+            hd_core::checksum::Algorithm::Sha256 => Self::Sha256,
+            hd_core::checksum::Algorithm::Sha512 => Self::Sha512,
+        }
+    }
+}
+
+/// The algorithm a pasted checksum's length implies (32 hex digits: MD5, 40: SHA-1, 64: SHA-256, 128: SHA-512).
+#[uniffi::export]
+pub fn checksum_algorithm_of(value: String) -> Option<ChecksumAlgorithm> {
+    hd_core::checksum::Algorithm::of_value(&value).map(Into::into)
 }

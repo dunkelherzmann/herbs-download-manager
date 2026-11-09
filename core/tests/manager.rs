@@ -577,3 +577,60 @@ fn link_files_are_read_as_text_and_binary_files_are_refused() {
     assert_eq!(hd_core::links::find(&text), vec!["https://example.com/a.zip".to_string()]);
     assert_eq!(hd_core::links::text_of_file(&dir.join("photo.png")), None);
 }
+
+fn sha256_of(data: &[u8], dir: &std::path::Path) -> String {
+    let path = dir.join("expected.bin");
+    std::fs::write(&path, data).unwrap();
+    hd_core::checksum::hash_file(&path, hd_core::checksum::Algorithm::Sha256).unwrap()
+}
+
+#[test]
+fn a_checksum_is_verified_before_the_file_gets_its_name() {
+    use hd_core::checksum::{Algorithm, Checksum};
+    let data = pattern(MIB, 41);
+    let (_rt, s) = server(&data, None);
+    let dir = folder("checksum");
+    let good = sha256_of(&data, &dir);
+    let m = Manager::open(&dir).unwrap();
+    // Right: finished, and the note says so.
+    let id = m.add(new(s.url("/f.bin"), &dir, false));
+    m.set_checksum(id, Some(Checksum::new(Algorithm::Sha256, &good.to_uppercase()).unwrap()));
+    m.resume(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(m.detail(id).unwrap().verified.as_deref(), Some("SHA-256 matches"));
+    // Wrong: failed, with the data kept for Restart and no file under the final name.
+    let wrong = Checksum::new(Algorithm::Sha256, &"0".repeat(64)).unwrap();
+    s.put("/f2.bin", MockFile::new(data.clone()));
+    let id = m.add(new(s.url("/f2.bin"), &dir, false));
+    m.set_checksum(id, Some(wrong.clone()));
+    m.resume(&[id]);
+    let status = wait(&m, id, |s| matches!(s, Status::Failed(_)));
+    assert!(matches!(&status, Status::Failed(r) if r.contains("SHA-256 checksum doesn't match")), "{status:?}");
+    // Set on a finished file: checked at once.
+    let first = m.rows().into_iter().find(|r| r.status == Status::Finished).unwrap().id;
+    m.set_checksum(first, Some(wrong));
+    let until = Instant::now() + Duration::from_secs(10);
+    while m.detail(first).unwrap().verified.is_none() {
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(m.detail(first).unwrap().verified.unwrap().contains("doesn't match"));
+}
+
+#[test]
+fn a_checksum_file_next_to_the_link_is_found_and_used() {
+    let data = pattern(MIB, 42);
+    let (_rt, s) = server(&data, None);
+    let dir = folder("checksum-file");
+    let good = sha256_of(&data, &dir);
+    s.put("/f.bin.sha256", MockFile::new(format!("{good}  f.bin\n").into_bytes()));
+    s.put("/g.bin", MockFile::new(data.clone()));
+    s.put("/g.bin.sha256", MockFile::new(format!("{}  g.bin\n", "1".repeat(64)).into_bytes()));
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/f.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(m.detail(id).unwrap().verified.as_deref(), Some("SHA-256 matches (f.bin.sha256)"));
+    let id = m.add(new(s.url("/g.bin"), &dir, true));
+    let status = wait(&m, id, |s| matches!(s, Status::Failed(_)));
+    assert!(matches!(&status, Status::Failed(r) if r.contains("(g.bin.sha256)")), "{status:?}");
+}

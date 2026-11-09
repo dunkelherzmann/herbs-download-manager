@@ -22,9 +22,9 @@ The Windows version is ported once the Mac version has each feature, item by ite
 - [x] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Windows: `scripts/check.sh` runs every core test there on each pull request, #27). (§7, §8, §10)
 - [x] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
   menu in the title bar's left corner. (§2–§4) #39. The progress bar under a name and dropping links come later (the list shows the percentage in Status meanwhile).
-- [ ] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11)
+- [x] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11) Checksums and S8 in #45.
   - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, files dropped on the window (§5) #42. Still to do: links and text dragged from a browser (an OLE drop target), .doc/.docx/.odt and .webloc files, and links dropped on a row becoming its mirrors.
-  - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #44. The queue works through the toolbar and Tasks menu (§11). Still to do: checksums (§6, S8).
+  - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #44. The queue works through the toolbar and Tasks menu (§11).
 - [ ] **Hover text and accessibility labels on every control.** (§3, §4)
 - [ ] **Feature tests** run on Windows. (all)
 
