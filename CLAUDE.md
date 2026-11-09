@@ -29,6 +29,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). See the
   window with `--capture FILE` inside `kwin_wayland --virtual --socket <name> --exit-with-session "flatpak run
   --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (set `XDG_RUNTIME_DIR` over ssh), never the desktop.
+  Paths given to the Flatpak (`--capture`, `HD_DATA_DIR`) must be under the home folder: the sandbox has its own
+  `/tmp`, so a picture "saved" to `/tmp` never appears on the host.
 - Windows: `powershell -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). `--capture
   FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
