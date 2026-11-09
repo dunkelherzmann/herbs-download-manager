@@ -4,12 +4,12 @@ import HDCore
 /// The main window (SPECIFICATION.md §2, §3): title with the search field at the right, toolbar, resizable sidebar
 /// of filters, the download list, and a footer with the selection, active downloads and total speed.
 @MainActor
-final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation, NSSearchFieldDelegate {
+final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation {
     private let split = NSSplitViewController()
     private let sidebar = SidebarViewController()
     let list = DownloadListViewController()
     private let footer = NSTextField(labelWithString: "")
-    private var searchItem: NSSearchToolbarItem?
+    private let findBar = FindBar()
     /// Open New Download, Add Links and Batch windows (kept alive while shown).
     private var panels: [NSWindowController] = []
     /// Open Download windows by download id: one each.
@@ -41,6 +41,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
                help: "Delete: remove the selected downloads from the list (⌘⌫)", action: #selector(deleteSelected(_:))),
         Button(id: "settings", label: "Settings", symbol: "gearshape",
                help: "Settings (⌘,)", action: #selector(showSettings(_:))),
+        Button(id: "search", label: "Search", symbol: "magnifyingglass",
+               help: "Search: show only downloads whose name or link contains some text (⌘F)",
+               action: #selector(toggleSearch(_:))),
     ]
 
     /// Separators group T2–T3, T4–T5, T6, T7 and T8 (§3).
@@ -95,7 +98,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         footerBar.blendingMode = .withinWindow
         let footerLine = NSBox()
         footerLine.boxType = .separator
-        for v in [splitView, footerBar, footerLine] {
+        findBar.onChange = { [weak self] text in self?.list.search = text }
+        for v in [splitView, footerBar, footerLine, findBar] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
@@ -117,6 +121,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             footer.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: 12),
             footer.trailingAnchor.constraint(lessThanOrEqualTo: footerBar.trailingAnchor, constant: -12),
             footer.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+            // Top right of the list, just below its column titles, as Herb's Terminal's find bar.
+            findBar.topAnchor.constraint(equalTo: content.topAnchor, constant: 34),
+            findBar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
         ])
         let host = NSViewController()
         host.view = content
@@ -181,16 +188,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             item.view = line
             return item
         }
-        if id.rawValue == "search" {
-            let item = NSSearchToolbarItem(itemIdentifier: id)
-            item.searchField.placeholderString = "Search"
-            item.searchField.delegate = self
-            item.searchField.setAccessibilityIdentifier("search")
-            item.searchField.toolTip = "Search: show downloads whose name or link contains the text (⌘F)"
-            item.preferredWidthForSearchField = 220
-            searchItem = item
-            return item
-        }
         if id.rawValue == "mainMenu" { return InWindowMenu.toolbarItem(id) }
         guard let b = Self.buttons.first(where: { $0.id == id.rawValue }) else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
@@ -243,7 +240,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections < 32
         case #selector(removeConnection(_:)):
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
-        case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)): return true
+        case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)), #selector(toggleSearch(_:)): return true
         case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
              #selector(importLinks(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
@@ -259,15 +256,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
 
     // MARK: search
 
-    func controlTextDidChange(_ notification: Notification) {
-        guard let field = notification.object as? NSSearchField else { return }
-        list.search = field.stringValue
-    }
+    /// Find (⌘F): opens the find bar, or moves the cursor back into it.
+    @objc func focusSearch(_ sender: Any?) { findBar.open() }
 
-    @objc func focusSearch(_ sender: Any?) {
-        guard let field = searchItem?.searchField else { return }
-        window?.makeFirstResponder(field)
-    }
+    /// The toolbar's 🔍: opens or closes the find bar.
+    @objc func toggleSearch(_ sender: Any?) { findBar.toggle() }
 
     // MARK: actions
 

@@ -39,8 +39,10 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 
 The layout, top to bottom:
 
-1. **Title bar**: the window controls, the title "Herb's Download Manager", the toolbar (§3), the **search field**
-   and, at the right end on macOS, the **Main Menu** (☰, §4). Every menu is in the window, so on a wide screen no
+1. **Title bar**: the window controls, the title "Herb's Download Manager", the toolbar (§3), **Search** (🔍, T10)
+   and, at the right end on macOS, the **Main Menu** (☰, §4). Search opens a find bar at the top right of the list,
+   as in Herb's Terminal: it shows only downloads whose name or link contains the text as you type, and Done (Esc)
+   hides it and shows every download again. Every menu is in the window, so on a wide screen no
    command needs a trip to the top of the screen.
 2. **Toolbar** (§3).
 3. **Sidebar** on the left, resizable by dragging its edge: the status filters (§2.1).
@@ -99,6 +101,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T6 | Stop All | "Stop All: stop the queue and pause every running download" | ⌥⌘. / Ctrl+Alt+. |
 | T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
+| T10 | Search (🔍): opens the find bar (§2) | "Search: show only downloads whose name or link contains some text" | ⌘F / Ctrl+F |
 | T9 | Main Menu (☰, after the search field on macOS; the left corner on Linux and Windows) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
 
 Separators group T2–T3, T4–T5, T6, T7 and T8, as in AB Download Manager.
@@ -115,6 +118,7 @@ Icons use each platform's own monochrome symbols, never another app's artwork:
 | Stop All | `stop.fill` | `process-stop-symbolic` | Stop (filled) |
 | Delete | `trash` | `user-trash-symbolic` | Delete |
 | Settings | `gearshape` | `emblem-system-symbolic` | Settings |
+| Search | `magnifyingglass` | `system-search-symbolic` | Search |
 | Main Menu | `line.3.horizontal` | `open-menu-symbolic` | GlobalNavigationButton |
 
 ## 4. Menus
@@ -129,7 +133,7 @@ and Paste in text fields included.
 |---|---|
 | Herb's DM (macOS menu bar only) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
 | File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
-| Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (focuses the search field) |
+| Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Columns ▸ · Show Download Window ⌘O |
 | Window | standard (macOS) |

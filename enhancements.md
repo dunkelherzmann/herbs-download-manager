@@ -114,3 +114,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 - [x] **No paid CI.** *Requested 2026-11-09.* GitHub charges for a private repo's Actions minutes, so the GitHub build no longer runs on pull requests or pushes (it can still be started by hand). Every pull request is checked instead on Herbert's own machines with `scripts/check.sh`: the Mac build and tests here, `cargo test --workspace` on Linux and Windows over ssh. Done in #27.
+- [ ] **Search as a 🔍 button that opens a find bar,** as in Herb's Terminal, instead of a search field always in the title bar. *Requested 2026-11-09.* ⌘F or the button shows it at the top right of the list; it filters as you type; Done or Esc hides it and clears the filter. Done for the Mac in #29.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows
