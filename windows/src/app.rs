@@ -371,7 +371,8 @@ pub fn run() {
         }
         SendMessageW(sidebar, TVM_SELECTITEM, Some(WPARAM(TVGN_CARET as usize)), Some(LPARAM(sidebar_items[0].2)));
 
-        let list = child(WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS, WS_EX_CLIENTEDGE, ID_LIST);
+        // No sunken 3D edge: the window draws one-pixel lines between its parts (bands()).
+        let list = child(WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS, Default::default(), ID_LIST);
         set_font(list, text_font);
         SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, Some(WPARAM(0)),
                      Some(LPARAM((LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP | LVS_EX_LABELTIP) as isize)));
@@ -584,12 +585,40 @@ fn layout(hwnd: HWND) {
                 }
             }
             let _ = MoveWindow(s.title, px(50), 0, (x - px(60)).max(0), bar, true);
-            let _ = MoveWindow(s.sidebar, 0, bar, side, h - bar - foot, true);
-            let _ = MoveWindow(s.list, side, bar, w - side, h - bar - foot, true);
+            // One-pixel lines under the top bar, above the footer and right of the sidebar (painted in bands()).
+            let _ = MoveWindow(s.sidebar, 0, bar + 1, side, h - bar - foot - 2, true);
+            let x = if side > 0 { side + 1 } else { 0 };
+            let _ = MoveWindow(s.list, x, bar + 1, w - x, h - bar - foot - 2, true);
             let _ = MoveWindow(s.footer, px(12), h - foot, w - px(24), foot, true);
             let _ = MoveWindow(s.find_edit, w - px(330), bar + px(30), px(250), px(26), true);
             let _ = MoveWindow(s.find_done, w - px(74), bar + px(30), px(60), px(26), true);
         });
+        let _ = InvalidateRect(Some(hwnd), None, true);
+    }
+}
+
+/// The window's own parts (bug: edges looked unfinished): the top bar and the footer as full-width bands in the
+/// system's face color, with crisp one-pixel lines under the top bar, above the footer and right of the sidebar, so
+/// the junctions line up.
+fn bands(hwnd: HWND, dc: HDC) {
+    unsafe {
+        let scale = GetDpiForWindow(hwnd).max(96) as i32;
+        let px = |v: i32| v * scale / 96;
+        let mut rect = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rect);
+        let (w, h) = (rect.right, rect.bottom);
+        let (bar, foot) = (px(44), px(26));
+        let side = with(|s| if s.sidebar_shown { px(190) } else { 0 }).unwrap_or(0);
+        let face = GetSysColorBrush(COLOR_BTNFACE);
+        let line = CreateSolidBrush(COLORREF(0x00C8C8C8));
+        FillRect(dc, &RECT { left: 0, top: 0, right: w, bottom: bar }, face);
+        FillRect(dc, &RECT { left: 0, top: h - foot, right: w, bottom: h }, face);
+        FillRect(dc, &RECT { left: 0, top: bar, right: w, bottom: bar + 1 }, line);
+        FillRect(dc, &RECT { left: 0, top: h - foot - 1, right: w, bottom: h - foot }, line);
+        if side > 0 {
+            FillRect(dc, &RECT { left: side, top: bar + 1, right: side + 1, bottom: h - foot - 1 }, line);
+        }
+        let _ = DeleteObject(line.into());
     }
 }
 
@@ -1183,6 +1212,23 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             WM_SIZE => {
                 layout(hwnd);
                 LRESULT(0)
+            }
+            WM_PAINT => {
+                let mut ps = PAINTSTRUCT::default();
+                let dc = BeginPaint(hwnd, &mut ps);
+                bands(hwnd, dc);
+                let _ = EndPaint(hwnd, &ps);
+                LRESULT(0)
+            }
+            WM_PRINTCLIENT => {
+                bands(hwnd, HDC(wparam.0 as *mut _));
+                LRESULT(0)
+            }
+            // The title and the footer's text sit on their bands.
+            WM_CTLCOLORSTATIC => {
+                let dc = HDC(wparam.0 as *mut _);
+                SetBkMode(dc, TRANSPARENT);
+                LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
             }
             WM_TIMER if wparam.0 == TIMER_REFRESH => {
                 refresh();
