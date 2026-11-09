@@ -221,13 +221,15 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 
     // MARK: actions
 
-    /// A finished download opens its file; an unfinished one will open its Download window (§6).
+    /// A finished download opens its file; an unfinished one opens its Download window (§6).
     @objc func openRow(_ sender: Any?) {
         let row = table.clickedRow
         guard row >= 0, row < shown.count else { return }
         let item = shown[row]
-        if item.status.isFinished, let path = item.path {
+        if item.status.isFinished, let path = item.path, FileManager.default.fileExists(atPath: path) {
             NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        } else {
+            (NSApp.delegate as? AppDelegate)?.mainWindow?.openDownloadWindow(item.id)
         }
     }
 

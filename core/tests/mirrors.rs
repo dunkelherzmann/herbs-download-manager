@@ -265,3 +265,42 @@ async fn a_mirror_with_ranges_rescues_a_link_without() {
     assert_eq!(std::fs::read(finished(&finish(task).await)).unwrap(), data);
     assert!(progress.resumable.load(Ordering::SeqCst), "the mirror's ranges make it resumable");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_mirror_removed_while_running_stops_serving_and_isnt_saved() {
+    let data = pattern(16 * MIB, 13);
+    let s = servers(2, &data, Some(MIB as u64)).await;
+    let dir = folder("remove");
+    let mirror = s[1].url("/f.bin");
+    let (control, progress, task) = spawn(request(s[0].url("/f.bin"), vec![mirror.clone()], &dir, 8), fast());
+    while s[1].stats("/f.bin").bytes < MIB as u64 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // The Download window's detail is published while it runs.
+    let until = Instant::now() + Duration::from_secs(10);
+    loop {
+        let conns = progress.connections.lock().unwrap().clone();
+        let downloading = conns.iter().filter(|c| c.state == "Downloading").count();
+        if downloading >= 2 && !progress.segments.lock().unwrap().is_empty() {
+            let c = conns.iter().find(|c| c.state == "Downloading").unwrap();
+            assert!(c.end > c.start && c.pos >= c.start && !c.source.is_empty(), "{c:?}");
+            break;
+        }
+        assert!(Instant::now() < until, "{conns:?}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Each connection's speed is measured as bytes arrive, not only when its buffer is written.
+    while !progress.connections.lock().unwrap().iter().any(|c| c.speed > 0) {
+        assert!(Instant::now() < until, "no connection speed");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    control.remove_source(&mirror);
+    control.remove_source(&s[0].url("/f.bin")); // the original link can't be removed
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let before = s[1].stats("/f.bin").bytes;
+    s[0].update("/f.bin", |f| f.rate = None);
+    assert_eq!(std::fs::read(finished(&finish(task).await)).unwrap(), data);
+    assert!(s[1].stats("/f.bin").bytes - before < MIB as u64, "nothing new asked of the removed mirror");
+    let urls: Vec<String> = progress.sources().into_iter().map(|i| i.url).collect();
+    assert_eq!(urls, vec![s[0].url("/f.bin")]);
+}

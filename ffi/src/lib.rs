@@ -288,6 +288,60 @@ impl DownloadManager {
             .map_err(|message| CoreError::Message { message })
     }
 
+    /// The Download window's view (§6), or nothing if the download was removed.
+    pub fn detail(&self, id: u64) -> Option<DownloadDetail> {
+        let d = self.inner.detail(id)?;
+        let original = d.row.url.clone();
+        Some(DownloadDetail {
+            segments: d.segments.iter().map(|s| SegmentInfo { start: s.start, end: s.end, pos: s.pos, active: s.owner.is_some() }).collect(),
+            connections: d
+                .connections
+                .into_iter()
+                .map(|c| ConnectionRow {
+                    id: c.id as u32,
+                    host: reqwest_host(&c.source),
+                    range_text: match (c.start, c.end) {
+                        (_, 0) => String::new(),
+                        (0, end) => format!("0–{}", format::bytes(end)),
+                        (start, end) => format!("{}–{}", format::bytes(start), format::bytes(end)),
+                    },
+                    downloaded_text: if c.bytes > 0 { format::bytes(c.bytes) } else { String::new() },
+                    speed_text: format::speed_text(c.speed),
+                    state: c.state,
+                })
+                .collect(),
+            sources: d
+                .sources
+                .into_iter()
+                .map(|s| SourceRow {
+                    is_original: s.url == original,
+                    status_text: s.status.text(),
+                    url: s.url,
+                    enabled: s.enabled,
+                    active: s.active as u32,
+                    speed_text: format::speed_text(s.speed),
+                    bytes_text: if s.bytes > 0 { format::bytes(s.bytes) } else { String::new() },
+                })
+                .collect(),
+            row: d.row.into(),
+        })
+    }
+
+    /// Add Mirror… (§7.1): used at once when running, saved for later otherwise. Returns how many were new.
+    pub fn add_mirrors(&self, id: u64, urls: Vec<String>) -> u32 {
+        self.inner.add_mirrors(id, &urls) as u32
+    }
+
+    /// Remove a mirror (the original link stays).
+    pub fn remove_source(&self, id: u64, url: String) {
+        self.inner.remove_source(id, &url);
+    }
+
+    /// A source's on/off checkbox; at least one stays on.
+    pub fn set_source_enabled(&self, id: u64, url: String, enabled: bool) {
+        self.inner.set_source_enabled(id, &url, enabled);
+    }
+
     /// Discards the downloaded data and starts again (§10).
     pub fn restart(&self, ids: Vec<u64>) {
         self.inner.restart(&ids);
@@ -360,4 +414,50 @@ pub fn free_name(folder: String, name: String) -> String {
 #[uniffi::export]
 pub fn bytes_text(bytes: u64) -> String {
     format::bytes(bytes)
+}
+
+fn reqwest_host(url: &str) -> String {
+    url.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or(url).to_string()
+}
+
+/// One range of the file for the segments bar: `start..end`, bytes up to `pos` in; `active` while a connection
+/// works on it.
+#[derive(uniffi::Record)]
+pub struct SegmentInfo {
+    pub start: u64,
+    pub end: u64,
+    pub pos: u64,
+    pub active: bool,
+}
+
+/// One line of the Connections tab.
+#[derive(uniffi::Record)]
+pub struct ConnectionRow {
+    pub id: u32,
+    pub host: String,
+    pub range_text: String,
+    pub downloaded_text: String,
+    pub speed_text: String,
+    pub state: String,
+}
+
+/// One line of the Mirrors tab (§7.3).
+#[derive(uniffi::Record)]
+pub struct SourceRow {
+    pub url: String,
+    pub is_original: bool,
+    pub enabled: bool,
+    pub status_text: String,
+    pub active: u32,
+    pub speed_text: String,
+    pub bytes_text: String,
+}
+
+/// What the Download window shows.
+#[derive(uniffi::Record)]
+pub struct DownloadDetail {
+    pub row: DownloadRow,
+    pub segments: Vec<SegmentInfo>,
+    pub connections: Vec<ConnectionRow>,
+    pub sources: Vec<SourceRow>,
 }

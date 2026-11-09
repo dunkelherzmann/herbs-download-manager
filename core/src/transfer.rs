@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -111,9 +111,9 @@ impl SourceStatus {
             SourceStatus::Working => "Working".into(),
             SourceStatus::Idle => "Idle".into(),
             SourceStatus::Slow => "Slow".into(),
-            SourceStatus::Failed(reason) => reason.clone(),
+            SourceStatus::Failed(reason) => format!("Failed: {reason}"),
             SourceStatus::DifferentFile => "Different file".into(),
-            SourceStatus::FileChanged => "File changed on the server".into(),
+            SourceStatus::FileChanged => "File changed".into(),
             SourceStatus::NoResumeSupport => "No resume support".into(),
         }
     }
@@ -154,8 +154,29 @@ pub struct Progress {
     pub resumable: AtomicBool,
     /// Connections allowed now.
     pub allowed: AtomicUsize,
+    /// The ranges and who works on them, refreshed every tick (the Download window's segments bar).
+    pub segments: Mutex<Vec<Segment>>,
+    /// One line per connection in use, refreshed every tick (the Connections tab).
+    pub connections: Mutex<Vec<ConnInfo>>,
     pub name: Mutex<Option<String>>,
     pub sources: Mutex<Vec<SourceInfo>>,
+}
+
+/// A connection as the Connections tab shows it (§6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConnInfo {
+    pub id: usize,
+    /// The source's link, empty while it has none.
+    pub source: String,
+    /// The range it works on: `start..end`, with bytes up to `pos` written. All 0 when it has none.
+    pub start: u64,
+    pub end: u64,
+    pub pos: u64,
+    /// Bytes this connection received.
+    pub bytes: u64,
+    pub speed: u64,
+    /// Connecting, Downloading, Idle, Retrying in 5 s.
+    pub state: String,
 }
 
 impl Progress {
@@ -178,6 +199,7 @@ enum Command {
     AddMirrors(Vec<String>),
     Enable(String, bool),
     SetConnections(usize),
+    Remove(String),
 }
 
 /// Steers a running download from another task or thread: pause it, add mirrors (M2), turn sources on or off.
@@ -209,6 +231,12 @@ impl Control {
     /// their range back and close.
     pub fn set_connections(&self, n: u32) {
         self.inbox.lock().unwrap().push(Command::SetConnections(n.clamp(1, 32) as usize));
+    }
+
+    /// Removes a mirror from the running download: its connections move to the other sources and it isn't saved.
+    /// The original link can only be turned off.
+    pub fn remove_source(&self, url: &str) {
+        self.inbox.lock().unwrap().push(Command::Remove(url.to_string()));
     }
 
     pub fn set_source_enabled(&self, url: &str, enabled: bool) {
@@ -266,7 +294,7 @@ pub fn add_mirrors_to_state(state_file: &Path, urls: &[String]) -> std::io::Resu
     Ok(added)
 }
 
-fn same_link(a: &str, b: &str) -> bool {
+pub(crate) fn same_link(a: &str, b: &str) -> bool {
     match (reqwest::Url::parse(a), reqwest::Url::parse(b)) {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
@@ -307,6 +335,8 @@ struct Source {
     bytes: AtomicU64,
     last_bytes: AtomicU64,
     speed: AtomicU64,
+    /// Removed while running: off, never saved or shown.
+    removed: AtomicBool,
 }
 
 impl Source {
@@ -327,6 +357,7 @@ impl Source {
             bytes: AtomicU64::new(0),
             last_bytes: AtomicU64::new(0),
             speed: AtomicU64::new(0),
+            removed: AtomicBool::new(false),
         }))
     }
 
@@ -367,7 +398,18 @@ struct ConnStat {
     moving: AtomicBool,
     /// A task is working in this slot.
     running: AtomicBool,
+    speed: AtomicU64,
+    /// Bytes received (counted as they arrive, before they're written), for its speed.
+    received: AtomicU64,
+    last_received: AtomicU64,
+    /// IDLE, CONNECTING, DOWNLOADING or WAITING.
+    phase: AtomicU8,
 }
+
+const IDLE: u8 = 0;
+const CONNECTING: u8 = 1;
+const DOWNLOADING: u8 = 2;
+const WAITING: u8 = 3;
 
 enum Pick {
     Use(usize),
@@ -682,9 +724,11 @@ async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Resp
                 if job.segs.lock().unwrap().owned_by(id).is_none() && job.segs.lock().unwrap().take(id).is_none() {
                     break;
                 }
+                job.conns[id].phase.store(CONNECTING, Ordering::SeqCst);
                 let src = match job.pick(avoid) {
                     Pick::Use(src) => src,
                     Pick::Wait => {
+                        job.conns[id].phase.store(WAITING, Ordering::SeqCst);
                         job.release(id);
                         job.wait_for_change().await;
                         continue;
@@ -711,9 +755,11 @@ async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Resp
         stat.handoff.store(false, Ordering::SeqCst);
         stat.moving.store(false, Ordering::SeqCst);
         stat.slow_ticks.store(0, Ordering::SeqCst);
+        stat.phase.store(DOWNLOADING, Ordering::SeqCst);
         job.progress.active.fetch_add(1, Ordering::SeqCst);
         job.progress.peak.fetch_max(job.progress.active.load(Ordering::SeqCst), Ordering::SeqCst);
         let result = job.stream(id, src, response).await;
+        stat.phase.store(IDLE, Ordering::SeqCst);
         job.progress.active.fetch_sub(1, Ordering::SeqCst);
         stat.source.store(usize::MAX, Ordering::SeqCst);
         job.unuse(src);
@@ -797,7 +843,7 @@ impl Job {
         let _ = self.file.sync_data();
         let mut state = self.state.clone();
         state.segments = if state.resumable { segments } else { Vec::new() };
-        state.sources = self.sources.read().unwrap().iter().map(|s| s.saved()).collect();
+        state.sources = self.sources.read().unwrap().iter().filter(|s| !s.removed.load(Ordering::SeqCst)).map(|s| s.saved()).collect();
         let _ = state.save(path);
     }
 
@@ -834,7 +880,13 @@ impl Job {
 
     /// Marks a source as never to be used again in this run, remembering why.
     fn kill(&self, src: usize, status: SourceStatus) {
-        *self.last_reason.lock().unwrap() = Some(status.text());
+        // The download's failure message gives the plain reason ("404 Not Found"), not the Mirrors tab's text.
+        let reason = match &status {
+            SourceStatus::Failed(reason) => reason.clone(),
+            SourceStatus::FileChanged => "File changed on the server".into(),
+            other => other.text(),
+        };
+        *self.last_reason.lock().unwrap() = Some(reason);
         self.source(src).set_status(status);
         self.changed.notify_waiters();
     }
@@ -1045,6 +1097,7 @@ impl Job {
                     };
                 }
                 Ok(Ok(Some(bytes))) => {
+                    stat.received.fetch_add(bytes.len() as u64, Ordering::SeqCst);
                     buf.extend_from_slice(&bytes);
                     let (pos, end) = self.position(id).ok_or(Problem::Stopped)?;
                     if (buf.len() >= self.tuning.write_buffer || pos + buf.len() as u64 >= end)
@@ -1180,6 +1233,15 @@ impl Job {
                         self.spawn_check_if_needed(idx);
                     }
                 }
+                Command::Remove(url) => {
+                    let sources = self.sources.read().unwrap();
+                    if let Some(s) = sources.iter().skip(1).find(|s| same_link(&s.text, &url)) {
+                        s.removed.store(true, Ordering::SeqCst);
+                        s.enabled.store(false, Ordering::SeqCst);
+                    }
+                    drop(sources);
+                    self.changed.notify_waiters();
+                }
                 Command::SetConnections(n) => {
                     if self.sequential {
                         continue;
@@ -1229,6 +1291,11 @@ impl Job {
         for (id, c) in self.conns.iter().enumerate() {
             let now = c.bytes.load(Ordering::SeqCst);
             let delta = now - c.last_bytes.swap(now, Ordering::SeqCst);
+            let got = c.received.load(Ordering::SeqCst);
+            let rate = ((got - c.last_received.swap(got, Ordering::SeqCst)) as f64 / secs) as u64;
+            let old = c.speed.load(Ordering::SeqCst);
+            let idle = c.source.load(Ordering::SeqCst) == usize::MAX;
+            c.speed.store(if idle { 0 } else if old == 0 { rate } else { (old * 2 + rate) / 3 }, Ordering::SeqCst);
             let src = c.source.load(Ordering::SeqCst);
             if src != usize::MAX {
                 rates.push((id, src, delta));
@@ -1302,6 +1369,7 @@ impl Job {
             .read()
             .unwrap()
             .iter()
+            .filter(|s| !s.removed.load(Ordering::SeqCst))
             .map(|s| {
                 let active = s.active.load(Ordering::SeqCst);
                 let status = match s.status() {
@@ -1319,6 +1387,53 @@ impl Job {
             })
             .collect();
         *self.progress.sources.lock().unwrap() = infos;
+        self.publish_detail();
+    }
+
+    /// The segments and the connections in use, for the Download window.
+    fn publish_detail(&self) {
+        let segs = self.segs.lock().unwrap().clone();
+        let sources = self.sources.read().unwrap();
+        let now = Instant::now();
+        let retry = sources
+            .iter()
+            .filter(|s| s.enabled.load(Ordering::SeqCst) && !s.status().is_dead())
+            .filter_map(|s| *s.retry_at.lock().unwrap())
+            .filter(|&t| t > now)
+            .min();
+        let allowed = self.allowed();
+        let mut conns = Vec::new();
+        for (id, c) in self.conns.iter().enumerate() {
+            if !c.running.load(Ordering::SeqCst) && id >= allowed {
+                continue;
+            }
+            let src = c.source.load(Ordering::SeqCst);
+            let source = sources.get(src).map(|s| s.text.clone()).unwrap_or_default();
+            let (start, end, pos) = segs.owned_by(id).map(|i| segs.get(i)).map_or((0, 0, 0), |g| (g.start, g.end, g.pos));
+            let state = match c.phase.load(Ordering::SeqCst) {
+                _ if !c.running.load(Ordering::SeqCst) => "Idle".to_string(),
+                CONNECTING => "Connecting".to_string(),
+                DOWNLOADING => "Downloading".to_string(),
+                WAITING => match retry {
+                    Some(t) => format!("Retrying in {} s", (t - now).as_secs().max(1)),
+                    None => "Idle".to_string(),
+                },
+                _ => "Idle".to_string(),
+            };
+            conns.push(ConnInfo {
+                id,
+                source,
+                start,
+                end: if end == u64::MAX { 0 } else { end },
+                pos,
+                bytes: c.bytes.load(Ordering::SeqCst),
+                speed: c.speed.load(Ordering::SeqCst),
+                state,
+            });
+        }
+        drop(sources);
+        *self.progress.segments.lock().unwrap() = if self.sequential { Vec::new() } else { segs.all().to_vec() };
+        *self.progress.connections.lock().unwrap() = conns;
     }
 }
 

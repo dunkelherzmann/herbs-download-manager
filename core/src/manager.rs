@@ -131,7 +131,10 @@ struct Inner {
 #[derive(Clone)]
 pub struct Manager {
     inner: Arc<Inner>,
-    runtime: Arc<tokio::runtime::Runtime>,
+    /// Owned by the clones the app holds; the downloads' own tasks hold none (`_runtime: None`), so the runtime is
+    /// never dropped from inside itself.
+    _runtime: Option<Arc<tokio::runtime::Runtime>>,
+    handle: tokio::runtime::Handle,
     client: reqwest::Client,
 }
 
@@ -158,13 +161,24 @@ impl Manager {
                 if entry.status.is_running() {
                     entry.status = Status::Paused;
                 }
+                // After a crash the list's numbers are older than the saved resume state: take them from it.
+                if entry.status != Status::Finished
+                    && let Ok(state) = ResumeState::load(&dir.join("state").join(format!("{}.json", entry.id)))
+                {
+                    entry.size = state.size.or(entry.size);
+                    entry.dest = Some(state.dest);
+                    if state.resumable {
+                        entry.downloaded = state.segments.iter().map(|g| g.pos - g.start).sum();
+                    }
+                }
                 Slot { entry, running: None }
             })
             .collect();
         let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().worker_threads(4).build()?;
         let manager = Manager {
             inner: Arc::new(Inner { dir: dir.to_path_buf(), slots: Mutex::new(slots), tuning }),
-            runtime: Arc::new(runtime),
+            handle: runtime.handle().clone(),
+            _runtime: Some(Arc::new(runtime)),
             client: crate::http::client(),
         };
         manager.save();
@@ -282,10 +296,10 @@ impl Manager {
             slot.running = Some(running.clone());
             (req, running)
         };
-        let this = self.clone();
+        let this = Manager { _runtime: None, ..self.clone() };
         let tuning = self.inner.tuning.clone();
         let client = self.client.clone();
-        self.runtime.spawn(async move {
+        self.handle.spawn(async move {
             let outcome =
                 transfer::download(&client, req, tuning, running.progress.clone(), running.control.clone()).await;
             this.finished(id, &running, outcome);
@@ -569,7 +583,7 @@ impl Manager {
     pub fn probe(&self, url: &str) -> Result<Probe, String> {
         let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
         let client = self.client.clone();
-        self.runtime.block_on(async move {
+        self.handle.block_on(async move {
             let sent = client
                 .get(parsed)
                 .header(reqwest::header::RANGE, "bytes=0-0")
@@ -597,4 +611,140 @@ impl Manager {
 /// The name a new file gets in `folder`: `name` itself, or "name (2).ext"… when taken (§5.1).
 pub fn free_name(folder: &Path, name: &str) -> String {
     transfer::unique_path(folder, name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| name.to_string())
+}
+
+/// What the Download window shows (§6): the segments, the connections and the sources.
+#[derive(Clone, Debug)]
+pub struct Detail {
+    pub row: Row,
+    pub segments: Vec<crate::segments::Segment>,
+    pub connections: Vec<transfer::ConnInfo>,
+    pub sources: Vec<transfer::SourceInfo>,
+}
+
+impl Manager {
+    /// The Download window's view of a download: live while it runs, from its saved state otherwise.
+    pub fn detail(&self, id: u64) -> Option<Detail> {
+        let slots = self.inner.slots.lock().unwrap();
+        let slot = slots.iter().find(|s| s.entry.id == id)?;
+        let row = row(slot);
+        if let Some(r) = &slot.running {
+            let p = &r.progress;
+            let mut sources = p.sources();
+            if sources.is_empty() {
+                sources = saved_sources(&slot.entry, None);
+            }
+            return Some(Detail {
+                row,
+                segments: p.segments.lock().unwrap().clone(),
+                connections: p.connections.lock().unwrap().clone(),
+                sources,
+            });
+        }
+        let state = ResumeState::load(&self.state_file(id)).ok();
+        let segments = match (&state, slot.entry.status == Status::Finished, slot.entry.size) {
+            (_, true, Some(size)) => vec![crate::segments::Segment { start: 0, end: size, pos: size, owner: None }],
+            (Some(s), _, _) => s.segments.clone(),
+            _ => Vec::new(),
+        };
+        Some(Detail { sources: saved_sources(&slot.entry, state.as_ref()), row, segments, connections: Vec::new() })
+    }
+
+    /// Add Mirror… (§7.1): M2 on a running download (checked at once, then used without a pause), M3 on a
+    /// stopped one (saved and used when it resumes). Links already among its sources are ignored.
+    pub fn add_mirrors(&self, id: u64, urls: &[String]) -> usize {
+        let added = {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return 0 };
+            let e = &mut slot.entry;
+            let mut added = Vec::new();
+            for url in urls.iter().map(|u| u.trim()).filter(|u| reqwest::Url::parse(u).is_ok()) {
+                let known = transfer::same_link(&e.url, url) || e.mirrors.iter().any(|m| transfer::same_link(m, url));
+                if !known && !added.iter().any(|a: &String| transfer::same_link(a, url)) {
+                    added.push(url.to_string());
+                }
+            }
+            e.mirrors.extend(added.iter().cloned());
+            match &slot.running {
+                Some(r) => r.control.add_mirrors(added.clone()),
+                None => {
+                    let _ = transfer::add_mirrors_to_state(&self.state_file(id), &added);
+                }
+            }
+            added.len()
+        };
+        self.save();
+        added
+    }
+
+    /// Remove (Mirrors tab): drops a mirror; its connections move to the other sources. The original link stays.
+    pub fn remove_source(&self, id: u64, url: &str) {
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            if transfer::same_link(&slot.entry.url, url) {
+                return;
+            }
+            slot.entry.mirrors.retain(|m| !transfer::same_link(m, url));
+            match &slot.running {
+                Some(r) => r.control.remove_source(url),
+                None => self.edit_state(id, |s| s.sources.retain(|x| !transfer::same_link(&x.url, url))),
+            }
+        }
+        self.save();
+    }
+
+    /// The on/off checkbox of a source (§7.3). At least one source stays on.
+    pub fn set_source_enabled(&self, id: u64, url: &str, on: bool) {
+        let slots = self.inner.slots.lock().unwrap();
+        let Some(slot) = slots.iter().find(|s| s.entry.id == id) else { return };
+        match &slot.running {
+            Some(r) => r.control.set_source_enabled(url, on),
+            None => self.edit_state(id, |s| {
+                let others_on = s.sources.iter().any(|x| !transfer::same_link(&x.url, url) && x.enabled);
+                if let Some(x) = s.sources.iter_mut().find(|x| transfer::same_link(&x.url, url))
+                    && (on || others_on)
+                {
+                    x.enabled = on;
+                }
+            }),
+        }
+    }
+
+    fn edit_state(&self, id: u64, change: impl FnOnce(&mut ResumeState)) {
+        let path = self.state_file(id);
+        if let Ok(mut state) = ResumeState::load(&path) {
+            change(&mut state);
+            let _ = state.save(&path);
+        }
+    }
+}
+
+/// The sources of a stopped download: from its saved state, else its link and mirrors (not checked yet).
+fn saved_sources(e: &Entry, state: Option<&ResumeState>) -> Vec<transfer::SourceInfo> {
+    let info = |url: &str, status: transfer::SourceStatus, enabled: bool| transfer::SourceInfo {
+        url: url.to_string(),
+        status,
+        enabled,
+        active: 0,
+        speed: 0,
+        bytes: 0,
+    };
+    match state {
+        Some(s) if !s.sources.is_empty() => s
+            .sources
+            .iter()
+            .map(|x| {
+                let status = match &x.status {
+                    transfer::SourceStatus::Working | transfer::SourceStatus::Slow => transfer::SourceStatus::Idle,
+                    other => other.clone(),
+                };
+                info(&x.url, status, x.enabled)
+            })
+            .collect(),
+        _ => std::iter::once(&e.url)
+            .chain(e.mirrors.iter())
+            .map(|u| info(u, transfer::SourceStatus::Idle, true))
+            .collect(),
+    }
 }

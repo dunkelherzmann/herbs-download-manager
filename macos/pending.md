@@ -26,8 +26,8 @@ No open bugs in `bugs.md`.
   source, turning sources on and off, a mirror rescuing a link without ranges. (§7) #7
 - [x] **Add mirrors before, during and after in the engine** (M1–M3), including an expired link finished by a
   mirror added while paused. (§7.1, §10) #7
-- [ ] **Mirrors in the app**: the Mirrors field, Add Mirror… (⌥⌘M), the Mirrors tab with its sources list. (§5.1,
-  §7.1, §7.3)
+- [x] **Mirrors in the app**: the Mirrors field, Add Mirror… (⌥⌘M), the Mirrors tab with its sources list. (§5.1,
+  §7.1, §7.3) #14
 - [x] **Main window**: title bar, toolbar, sidebar filters, download list with columns, footer, search. (§2, §3) #8
   New Download, the queue buttons and Settings stay disabled until their items below.
 - [x] **Menus and context menu** with shortcuts. (§4) #10
@@ -38,7 +38,9 @@ No open bugs in `bugs.md`.
 - [x] **New Download, Add Links, clipboard, drag and drop, Batch Download.** (§5) #13
   The Mirrors field and "Treat as mirrors of one file" (M1) are in; Add Mirror… and the Mirrors tab stay with
   "Mirrors in the app".
-- [ ] **Download window**: segments bar, Info, Connections, Mirrors and Options tabs. (§6)
+- [x] **Download window**: segments bar, Info, Connections, Mirrors and Options tabs. (§6) #14
+  The Options tab has the connections picker; the per-download speed limit and checksum come with **Settings**
+  and **Checksum verification** below.
 - [ ] **Queue**: Start Queue, Stop Queue, downloads at once. (§11)
 - [ ] **Settings**. (§9)
 - [ ] **Checksum verification** and checksum-file lookup. (§6, §9 S8)

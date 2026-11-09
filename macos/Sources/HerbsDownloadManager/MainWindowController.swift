@@ -12,6 +12,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     private var searchItem: NSSearchToolbarItem?
     /// Open New Download, Add Links and Batch windows (kept alive while shown).
     private var panels: [NSWindowController] = []
+    /// Open Download windows by download id: one each.
+    private var downloadWindows: [UInt64: DownloadWindowController] = [:]
 
     /// T1–T8 with their symbols, hover text and shortcut (shown in the hover text).
     private struct Button {
@@ -210,11 +212,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(removeConnection(_:)):
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
         case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)): return true
-        // These arrive with their own windows: Settings (§9),
-        // the queue (§11), Add Mirror (§7.1), Properties and the Download window (§6).
         case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)): return true
-        case #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)),
-             #selector(addMirror(_:)), #selector(showProperties(_:)), #selector(showDownloadWindow(_:)):
+        case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
+        case #selector(addMirror(_:)): return selected.count == 1
+        // These arrive with their own windows: Settings (§9) and the queue (§11).
+        case #selector(startQueue(_:)), #selector(stopQueue(_:)), #selector(showSettings(_:)):
             return false
         default: return true
         }
@@ -291,9 +293,39 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     @objc func startQueue(_ sender: Any?) {}
     @objc func stopQueue(_ sender: Any?) {}
     @objc func showSettings(_ sender: Any?) {}
-    @objc func addMirror(_ sender: Any?) {}
-    @objc func showProperties(_ sender: Any?) {}
-    @objc func showDownloadWindow(_ sender: Any?) {}
+    /// Add Mirror… (⌥⌘M, §7.1) on the selected download.
+    @objc func addMirror(_ sender: Any?) {
+        guard let row = targets.first, targets.count == 1, let window else { return }
+        AddMirrorSheet.ask(for: row.id, on: window)
+    }
+
+    /// Properties (⌘I): the Download window's Info tab.
+    @objc func showProperties(_ sender: Any?) {
+        for row in targets { openDownloadWindow(row.id)?.showTab("Info") }
+    }
+
+    /// Show Download Window (⌘O, §6).
+    @objc func showDownloadWindow(_ sender: Any?) {
+        for row in targets { openDownloadWindow(row.id) }
+    }
+
+    @discardableResult
+    func openDownloadWindow(_ id: UInt64) -> DownloadWindowController? {
+        if let open = downloadWindows[id] {
+            open.showWindow(nil)
+            return open
+        }
+        let controller = DownloadWindowController(id: id, onClose: { [weak self] in self?.downloadWindows[id] = nil })
+        downloadWindows[id] = controller
+        controller.showWindow(nil)
+        return controller
+    }
+
+    /// Pause from a Download window: the same question as the toolbar's Pause.
+    func pause(rows: [DownloadRow]) {
+        let running = rows.filter { $0.status.isRunning }
+        confirmPause(running) { AppModel.shared.pause(running.map(\.id)) }
+    }
 
     @objc func resumeSelected(_ sender: Any?) {
         AppModel.shared.resume(targets.filter { $0.status.canResume }.map(\.id))

@@ -111,6 +111,8 @@ fn downloads_running_at_quit_come_back_paused() {
     std::fs::write(dir.join("downloads.json"), text).unwrap();
     let again = Manager::open(&dir).unwrap();
     assert_eq!(again.rows()[0].status, Status::Paused);
+    assert_eq!(again.rows()[0].size, Some(data.len() as u64), "numbers come from the saved state");
+    assert!(again.rows()[0].downloaded > 0);
     s.update("/f.bin", |f| f.rate = None);
     again.resume(&[id]);
     wait(&again, id, |s| *s == Status::Finished);
@@ -255,4 +257,46 @@ fn probing_a_link_gives_its_name_size_and_resume_support() {
     assert_eq!(m.probe("not a link").unwrap_err(), "That isn't a web link");
     std::fs::write(dir.join("files/f.bin"), b"x").unwrap();
     assert_eq!(hd_core::manager::free_name(&dir.join("files"), "f.bin"), "f (2).bin");
+}
+
+#[test]
+fn mirrors_are_added_and_removed_before_during_and_after() {
+    let data = pattern(16 * MIB, 10);
+    let (_rt, a) = server(&data, Some(MIB as u64));
+    let (_rt2, b) = server(&data, Some(MIB as u64));
+    let (_rt3, c) = server(&data, None);
+    let dir = folder("mirrors");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(a.url("/f.bin"), &dir, true));
+    wait(&m, id, |s| *s == Status::Downloading);
+    // M2: added while running, used without a pause; a repeat of the link is ignored.
+    assert_eq!(m.add_mirrors(id, &[b.url("/f.bin"), a.url("/f.bin")]), 1);
+    let until = Instant::now() + Duration::from_secs(20);
+    while b.stats("/f.bin").bytes < MIB as u64 {
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let d = m.detail(id).unwrap();
+    assert_eq!(d.sources.len(), 2);
+    assert!(!d.segments.is_empty());
+    m.pause(&[id]);
+    wait(&m, id, |s| *s == Status::Paused);
+    // Stopped: the saved state gives the detail; M3 adds c; Remove drops b; the original stays.
+    let d = m.detail(id).unwrap();
+    assert!(d.connections.is_empty() && !d.segments.is_empty());
+    assert_eq!(m.add_mirrors(id, &[c.url("/f.bin")]), 1);
+    m.remove_source(id, &b.url("/f.bin"));
+    m.remove_source(id, &a.url("/f.bin"));
+    m.set_source_enabled(id, &a.url("/f.bin"), false);
+    let urls: Vec<(String, bool)> = m.detail(id).unwrap().sources.into_iter().map(|s| (s.url, s.enabled)).collect();
+    assert_eq!(urls, vec![(a.url("/f.bin"), false), (c.url("/f.bin"), true)]);
+    // Bytes already in flight at the pause may still be counted; new requests would not be.
+    std::thread::sleep(Duration::from_millis(300));
+    let before = b.stats("/f.bin").requests;
+    m.resume(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    assert_eq!(b.stats("/f.bin").requests, before, "the removed mirror isn't asked again");
+    let finished = m.detail(id).unwrap();
+    assert_eq!(finished.segments.len(), 1);
 }
