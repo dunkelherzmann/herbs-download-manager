@@ -38,4 +38,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 
-- [ ] **Keep each platform's files in its own folder.** The root holds only what applies to the whole project (Rust core and bindings, docs, trackers, version and test scripts); `macos/` holds the Mac app's `Package.swift`, sources, build script and `pending.md`, and `linux/` and `windows/` their own. Also line endings fixed by `.gitattributes` and a build check on every pull request (GitHub Actions). *Requested 2026-11-09.* All platforms.
+- [x] **Keep each platform's files in its own folder.** The root holds only what applies to the whole project (Rust core and bindings, docs, trackers, version and test scripts); `macos/` holds the Mac app's `Package.swift`, sources, build script and `pending.md`, and `linux/` and `windows/` their own. Also line endings fixed by `.gitattributes` and a build check on every pull request (GitHub Actions). *Requested 2026-11-09.* All platforms. Done in #12.
