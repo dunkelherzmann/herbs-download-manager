@@ -30,6 +30,44 @@ pub fn downloads_folder() -> PathBuf {
     }
 }
 
+/// Every control explains itself: a name for screen readers and hover text (what it is, what it does). GTK uses
+/// hover text as the name when there's none, and then reads no description, so both are set.
+pub fn explain(widget: &impl gtk::prelude::IsA<gtk::Widget>, name: &str, help: &str) {
+    use gtk::prelude::{AccessibleExtManual, Cast, EditableExt, WidgetExt};
+    let widget = widget.upcast_ref::<gtk::Widget>();
+    // A "labelled by" or "described by" relation outranks the name and description set here, so it goes first.
+    let set = |w: &gtk::Widget| {
+        w.reset_relation(gtk::AccessibleRelation::LabelledBy);
+        w.reset_relation(gtk::AccessibleRelation::DescribedBy);
+        w.update_property(&[gtk::accessible::Property::Label(name), gtk::accessible::Property::Description(help)]);
+        w.set_tooltip_text(Some(help));
+    };
+    set(widget);
+    // An entry's accessible part is the text widget inside it.
+    if let Some(inner) = widget.dynamic_cast_ref::<gtk::Editable>().and_then(|e| e.delegate()) {
+        set(inner.upcast_ref());
+    }
+}
+
+/// Hover text for a libadwaita row and the switch or control inside it, which doesn't inherit the row's.
+pub fn explain_row(row: &impl gtk::prelude::IsA<gtk::Widget>, help: &str) {
+    use gtk::prelude::{AccessibleExtManual, Cast, WidgetExt};
+    let row = row.upcast_ref::<gtk::Widget>();
+    let mut stack = vec![row.clone()];
+    while let Some(w) = stack.pop() {
+        if &w == row || w.is::<gtk::Switch>() || w.is::<gtk::CheckButton>() {
+            w.reset_relation(gtk::AccessibleRelation::DescribedBy);
+            w.update_property(&[gtk::accessible::Property::Description(help)]);
+            w.set_tooltip_text(Some(help));
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            child = c.next_sibling();
+            stack.push(c);
+        }
+    }
+}
+
 /// Where new downloads go: S1, or when it's unset or its folder is gone, the Downloads folder.
 pub fn save_folder(manager: &hd_core::manager::Manager) -> PathBuf {
     manager.settings().save_to.map(PathBuf::from).filter(|p| p.is_dir()).unwrap_or_else(downloads_folder)

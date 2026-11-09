@@ -93,7 +93,9 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         filter.delegate = self
         filter.toolTip = "Filter: show links whose name or address contains the text"
         let all = NSButton(title: "Check All", target: self, action: #selector(checkAll(_:)))
+        all.toolTip = "Tick every link shown"
         let none = NSButton(title: "Uncheck All", target: self, action: #selector(checkNone(_:)))
+        none.toolTip = "Untick every link shown"
         let top = NSStackView(views: [filter, all, none])
         top.spacing = 8
 
@@ -104,12 +106,16 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
 
         folderLabel.url = folder
         folderLabel.pathStyle = .popUp
+        folderLabel.toolTip = "The folder the files are saved to; Choose… picks another"
+        folderLabel.setAccessibilityLabel("Save to")
         let choose = NSButton(title: "Choose…", target: self, action: #selector(chooseFolder(_:)))
+        choose.toolTip = "Choose the folder the files are saved to"
         let folderRow = NSStackView(views: [NSTextField(labelWithString: "Save to:"), folderLabel, choose])
         folderRow.spacing = 8
 
         summary.textColor = .secondaryLabelColor
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel(_:)))
+        cancel.toolTip = "Close without adding anything (Esc)"
         cancel.keyEquivalent = "\u{1b}"
         let add = NSButton(title: "Add", target: self, action: #selector(addToQueue(_:)))
         add.toolTip = "Add: put them in the queue without starting them"

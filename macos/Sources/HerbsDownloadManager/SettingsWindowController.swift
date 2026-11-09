@@ -120,7 +120,8 @@ final class SettingsWindowController: NSWindowController {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    private func popUp(_ p: NSPopUpButton, _ values: ClosedRange<Int>, id: String, help: String) {
+    private func popUp(_ p: NSPopUpButton, _ values: ClosedRange<Int>, id: String, name: String = "", help: String) {
+        p.setAccessibilityLabel(name)
         p.removeAllItems()
         for n in values { p.addItem(withTitle: "\(n)") }
         p.target = self
@@ -142,18 +143,19 @@ final class SettingsWindowController: NSWindowController {
         let folderRow = NSStackView(views: [folderLabel, choose, reset])
         folderRow.spacing = 6
 
-        popUp(connections, 1...32, id: "settings-connections",
+        popUp(connections, 1...32, id: "settings-connections", name: "Connections per download",
               help: "Connections a new download uses at most (1–32); New Download can choose another number")
-        popUp(perServer, 1...32, id: "settings-per-server",
+        popUp(perServer, 1...32, id: "settings-per-server", name: "Connections per server",
               help: "Connections a download opens to any one server (1–32), from its next start")
-        popUp(atOnce, 1...10, id: "settings-at-once", help: "Downloads the queue runs at the same time (1–10)")
-        popUp(retries, 0...20, id: "settings-retries",
+        popUp(atOnce, 1...10, id: "settings-at-once", name: "Downloads at once", help: "Downloads the queue runs at the same time (1–10)")
+        popUp(retries, 0...20, id: "settings-retries", name: "Retries per source",
               help: "Times a link or mirror is tried again after failing before it counts as failed (0–20)")
         whenExists.addItems(withTitles: Self.existsChoices.map(\.0))
         whenExists.target = self
         whenExists.action = #selector(save(_:))
         whenExists.toolTip = "What happens when a different file already has a new download's name"
         whenExists.setAccessibilityIdentifier("settings-when-exists")
+        whenExists.setAccessibilityLabel("When a file exists")
         speed.onChange = { [weak self] _ in self?.save(nil) }
         speed.box.setAccessibilityIdentifier("settings-speed-limit")
         checksumFiles.target = self

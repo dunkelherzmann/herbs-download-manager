@@ -80,6 +80,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
 
     // Options.
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
+    connections.update_property(&[gtk::accessible::Property::Label("Connections")]);
     connections.set_tooltip_text(Some("Connections for this download (1–32), applied at once"));
     let limit_on = gtk::CheckButton::with_label("Limit to");
     let limit = gtk::SpinButton::with_range(1.0, 1_000_000.0, 50.0);

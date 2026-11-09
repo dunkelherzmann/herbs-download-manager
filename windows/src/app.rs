@@ -66,6 +66,11 @@ const ID_LIST: u16 = 201;
 const ID_SEARCH: u16 = 202;
 const TIMER_REFRESH: usize = 1;
 const TIMER_CAPTURE: usize = 2;
+const TIMER_A11Y: usize = 3;
+
+thread_local! {
+    static A11Y_REPORT: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 /// Commands that arrive with their own windows later in `windows\pending.md`; their items show, disabled.
 const LATER: [u16; 0] = [];
@@ -131,6 +136,7 @@ struct State {
     capture: Option<std::path::PathBuf>,
     notice: Option<(String, std::time::Instant)>,
     font: HFONT,
+    tooltips: HWND,
     /// Downloads finished at the last refresh, so a newly finished one can be announced (S9).
     finished_ids: Option<std::collections::HashSet<u64>>,
     tray_icon: bool,
@@ -331,19 +337,7 @@ pub fn run() {
                                        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, Some(hwnd), None,
                                        Some(instance.into()), None)
             .unwrap_or_default();
-        let add_tip = |control: HWND, text: &str| {
-            let text = wide(text);
-            let info = TTTOOLINFOW {
-                cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32,
-                uFlags: TTF_IDISHWND | TTF_SUBCLASS,
-                hwnd,
-                uId: control.0 as usize,
-                lpszText: PWSTR(text.as_ptr() as *mut _),
-                ..Default::default()
-            };
-            SendMessageW(tooltips, TTM_ADDTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
-        };
-        add_tip(menu_button, "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit");
+        crate::a11y::explain(menu_button, "Main Menu", "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit");
         let mut tools = Vec::new();
         for (id, glyph, name, help) in TOOLS {
             if id == 0 {
@@ -352,7 +346,7 @@ pub fn run() {
             }
             let b = child(w!("BUTTON"), &glyph.to_string(), BS_PUSHBUTTON as u32 | BS_FLAT as u32, Default::default(), id);
             set_font(b, glyph_font);
-            add_tip(b, help);
+            crate::a11y::explain(b, name, help);
             let label = wide(name);
             let _ = SetPropW(b, w!("name"), Some(HANDLE(label.as_ptr() as *mut _)));
             std::mem::forget(label);
@@ -360,7 +354,7 @@ pub fn run() {
         }
         let search_button = child(w!("BUTTON"), "\u{E721}", BS_PUSHBUTTON as u32 | BS_FLAT as u32, Default::default(), C_FIND);
         set_font(search_button, glyph_font);
-        add_tip(search_button, "Search: show only downloads whose name or link contains some text (Ctrl+F)");
+        crate::a11y::explain(search_button, "Search", "Search: show only downloads whose name or link contains some text (Ctrl+F)");
 
         // Sidebar (§2.1): each filter with its count, its file-type groups under it.
         let sidebar = child(WC_TREEVIEWW, "", (TVS_HASBUTTONS | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_LINESATROOT) as u32,
@@ -406,7 +400,10 @@ pub fn run() {
         SendMessageW(find_edit, EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("Search downloads").0 as isize)));
         let find_done = child(w!("BUTTON"), "Done", BS_PUSHBUTTON as u32, Default::default(), C_FIND_DONE);
         set_font(find_done, text_font);
-        add_tip(find_done, "Done: hide the search and show every download (Esc)");
+        crate::a11y::tip(find_done, "Done: hide the search and show every download (Esc)");
+        crate::a11y::explain(find_edit, "Search downloads", "Show only downloads whose name or link contains this text");
+        crate::a11y::explain(sidebar, "Filters", "Show downloads by status; open a filter for its file types");
+        crate::a11y::explain(list, "Downloads", "Your downloads: double-click to open, right-click for more, click a column title to sort");
         let _ = ShowWindow(find_edit, SW_HIDE);
         let _ = ShowWindow(find_done, SW_HIDE);
 
@@ -442,6 +439,7 @@ pub fn run() {
                 capture: capture.clone(),
                 notice: None,
                 font: text_font,
+                tooltips,
                 finished_ids: None,
                 tray_icon: false,
             })
@@ -474,6 +472,23 @@ pub fn run() {
                 }
                 _ => {}
             }
+        }
+        // Test hook: --a11y-report FILE opens every window and lists controls without hover text or a name a screen
+        // reader can say (a11y.rs).
+        if let Some(i) = args.iter().position(|a| a == "--a11y-report")
+            && let Some(path) = args.get(i + 1).cloned()
+            && let Some(ctx) = add_ctx()
+        {
+            open_find();
+            crate::add::new_download(&ctx, None);
+            crate::add::add_links(&ctx, vec!["http://127.0.0.1:9/a.bin".into(), "http://127.0.0.1:9/b.bin".into()]);
+            crate::add::batch(&ctx);
+            crate::detail::settings(&ctx);
+            if let Some(r) = ctx.manager.rows().first() {
+                crate::detail::open(&ctx, r.id, None);
+            }
+            A11Y_REPORT.with(|p| *p.borrow_mut() = Some(path));
+            SetTimer(Some(hwnd), TIMER_A11Y, 1500, None);
         }
         let accelerators = accelerator_table();
         let mut msg = MSG::default();
@@ -974,6 +989,11 @@ fn confirm_delete(hwnd: HWND, rows: Vec<Row>, files_gone: bool) {
     refresh();
 }
 
+/// The main window's tooltip control (for the accessibility audit).
+pub(crate) fn main_tooltips() -> Option<HWND> {
+    with(|s| s.tooltips)
+}
+
 /// What the add windows need from the main window.
 fn add_ctx() -> Option<crate::add::Ctx> {
     with(|s| crate::add::Ctx { manager: s.manager.clone(), owner: s.window, font: s.font, done: added })
@@ -1166,6 +1186,14 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             WM_TIMER if wparam.0 == TIMER_REFRESH => {
                 refresh();
+                LRESULT(0)
+            }
+            WM_TIMER if wparam.0 == TIMER_A11Y => {
+                let _ = KillTimer(Some(hwnd), TIMER_A11Y);
+                if let Some(path) = A11Y_REPORT.with(|p| p.borrow_mut().take()) {
+                    let _ = std::fs::write(path, crate::a11y::report().join("\n") + "\n");
+                }
+                let _ = DestroyWindow(hwnd);
                 LRESULT(0)
             }
             WM_TIMER if wparam.0 == TIMER_CAPTURE => {

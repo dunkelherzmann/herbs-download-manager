@@ -57,6 +57,7 @@ pub fn open(ctx: &Ctx) {
     }
     limit.add_row(&limit_value);
     limit.add_row(&unit);
+    crate::explain_row(&limit, "Limit the speed of all downloads together");
     downloads.add(&limit);
 
     // S2, S3, S6.
@@ -73,8 +74,11 @@ pub fn open(ctx: &Ctx) {
     exists.set_selected(EXISTS.iter().position(|e| e.1 == s.when_file_exists).unwrap_or(0) as u32);
     let notify = adw::SwitchRow::builder().title("Show a notification when a download finishes").active(s.notify_when_finished).build();
     let checksum_files = adw::SwitchRow::builder().title("Look for checksum files next to the link")
-        .subtitle("With no checksum set, check the file with <file>.sha256 (or .sha512, .sha1, .md5) if the site has one")
+        .subtitle("With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5), if it has one")
         .active(s.look_for_checksum_files).build();
+    crate::explain_row(&exists, "What happens when a different file already has a new download's name");
+    crate::explain_row(&notify, "Show a notification each time a download finishes");
+    crate::explain_row(&checksum_files, "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)");
     behaviour.add(&exists);
     behaviour.add(&checksum_files);
     behaviour.add(&notify);

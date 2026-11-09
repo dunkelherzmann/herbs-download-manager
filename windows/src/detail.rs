@@ -137,6 +137,17 @@ fn create(ctx: &Ctx, kind: Kind, title: &str, size: (i32, i32), controls: &[Spec
     }
 }
 
+/// Names (where a control's text isn't one) and hover texts for a window's controls.
+fn explain_ids(hwnd: HWND, items: &[(u16, &str, &str)]) {
+    with_win(hwnd, |w| {
+        for &(id, name, help) in items {
+            if let Some(&c) = w.controls.get(&id) {
+                if name.is_empty() { crate::a11y::tip(c, help) } else { crate::a11y::explain(c, name, help) }
+            }
+        }
+    });
+}
+
 fn columns(list: HWND, names: &[(&str, i32)], checkboxes: bool) {
     unsafe {
         let mut style = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER;
@@ -262,6 +273,23 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         }
         set_text(w.controls[&D_CONN_COUNT], &d.row.allowed_connections.to_string());
     });
+    explain_ids(hwnd, &[
+        (D_TOGGLE, "", "Pause or resume this download (Ctrl+. / Ctrl+R)"),
+        (D_CLOSE, "", "Close this window; the download carries on (Esc)"),
+        (D_TABS, "Pages", "Info, Connections, Mirrors and Options"),
+        (D_CONNS, "Connections", "Each connection: its server, the part it fetches, how much it got, its speed and state"),
+        (D_PLUS, "Add a connection", "Add a connection now"),
+        (D_MINUS, "Remove a connection", "Remove a connection now"),
+        (D_SOURCES, "Sources", "The link and its mirrors: untick one to stop using it"),
+        (D_ADD_MIRROR, "", "Add other links to the same file (Ctrl+Alt+M)"),
+        (D_REMOVE, "", "Remove the selected mirror (the original link stays)"),
+        (D_CONN_COUNT, "", "Connections for this download (1–32), applied when you leave the field"),
+        (D_LIMIT_ON, "", "Limit this download's speed"),
+        (D_LIMIT, "Speed limit", "The most this download may fetch each second"),
+        (D_UNIT, "Speed limit unit", "Kilobytes or megabytes a second"),
+        (D_ALGO, "", "The kind of checksum: MD5, SHA-1, SHA-256 or SHA-512"),
+        (D_VALUE, "Checksum value", "The value the site publishes for this file; it's checked once every byte is in"),
+    ]);
     show_tab(hwnd, tab.unwrap_or(0));
     refresh(hwnd);
     unsafe {
@@ -463,6 +491,21 @@ pub fn settings(ctx: &Ctx) {
         (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 302, 340, 24),
         (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 330, 340, 24),
         (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 374, 85, 30),
+    ]);
+    explain_ids(hwnd, &[
+        (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
+        (S_RESET, "", "Save new downloads to your Downloads folder"),
+        (S_AT_ONCE, "", "Downloads the queue runs at the same time (1–10)"),
+        (S_LIMIT_ON, "", "Limit the speed of all downloads together"),
+        (S_LIMIT, "Speed limit", "The most all downloads together may fetch each second"),
+        (S_UNIT, "Speed limit unit", "Kilobytes or megabytes a second"),
+        (S_CONNECTIONS, "", "The most connections a new download uses (1–32); New Download can choose another number"),
+        (S_PER_SERVER, "", "Connections a download opens to any one server (1–32), from its next start"),
+        (S_RETRIES, "", "Times a link or mirror is tried again before it counts as failed (0–20)"),
+        (S_EXISTS, "", "What happens when a different file already has a new download's name"),
+        (S_CHECKSUM_FILES, "", "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)"),
+        (S_NOTIFY, "", "Show a notification each time a download finishes"),
+        (S_CLOSE, "", "Close Settings; changes are already saved"),
     ]);
     with_win(hwnd, |w| {
         combo(w.controls[&S_UNIT], &["KB/s", "MB/s"], 0);

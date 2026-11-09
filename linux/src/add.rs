@@ -100,6 +100,7 @@ fn buttons(cancel: &gtk::Button, add: &gtk::Button, download: &gtk::Button) -> g
     row.append(cancel);
     row.append(add);
     row.append(download);
+    cancel.set_tooltip_text(Some("Close without adding anything (Esc)"));
     add.set_tooltip_text(Some("Add: put it in the queue; it starts when the queue runs"));
     download.set_tooltip_text(Some("Download: start now"));
     row
@@ -126,15 +127,19 @@ fn with_header(window: &adw::Window, body: &impl IsA<gtk::Widget>) {
 pub fn new_download(ctx: &Ctx, link: Option<String>) {
     let window = dialog_window(ctx, "New Download", 560, 420);
     let link_entry = gtk::Entry::builder().hexpand(true).placeholder_text("https://…").build();
+    crate::explain(&link_entry, "Link", "The address of the file to download");
     if let Some(l) = link {
         link_entry.set_text(&l);
     }
     let mirrors = gtk::TextView::builder().wrap_mode(gtk::WrapMode::None).build();
+    crate::explain(&mirrors, "Mirrors", "Other servers with the same file, one link per line (optional)");
     mirrors.set_tooltip_text(Some("Other servers with the same file, one link per line (optional)"));
     let mirrors_scroll = gtk::ScrolledWindow::builder().child(&mirrors).min_content_height(70).has_frame(true).build();
     let name = gtk::Entry::builder().hexpand(true).build();
+    crate::explain(&name, "Name", "The file's name, from the server; change it to save under another name");
     let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
+    crate::explain(&connections, "Connections", "Connections for this download (1–32)");
     connections.set_value(ctx.manager.settings().connections as f64);
     connections.set_tooltip_text(Some("Connections for this download (1–32)"));
     let size = gtk::Label::builder().xalign(0.0).label("").build();
@@ -268,6 +273,7 @@ impl AddLinks {
         for url in &fresh {
             let name = reqwest_name(url);
             let check = gtk::CheckButton::builder().active(true).build();
+            check.set_tooltip_text(Some("Download this link"));
             check.update_property(&[gtk::accessible::Property::Label(&format!("Download {name}"))]);
             let name_label = gtk::Label::builder().label(&name).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
             let size_label = gtk::Label::builder().label("Checking…").width_chars(14).xalign(0.0).build();
@@ -373,8 +379,11 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     }
     let window = dialog_window(ctx, &title(links.len()), 760, 460);
     let filter = gtk::SearchEntry::builder().placeholder_text("Filter").hexpand(true).build();
+    crate::explain(&filter, "Filter", "Show only links whose name or address contains this text");
     let all = gtk::Button::with_label("Check All");
+    all.set_tooltip_text(Some("Tick every link shown"));
     let none = gtk::Button::with_label("Uncheck All");
+    none.set_tooltip_text(Some("Untick every link shown"));
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     top.append(&filter);
     top.append(&all);
@@ -497,13 +506,16 @@ pub fn drop_target(ctx: &Ctx, on_links: impl Fn(Vec<String>) + 'static) -> gtk::
 pub fn batch(ctx: &Ctx) {
     let window = dialog_window(ctx, "Batch Download", 560, 220);
     let pattern = gtk::Entry::builder().hexpand(true).placeholder_text("https://example.com/img^(###1-100).jpg").build();
+    crate::explain(&pattern, "Link pattern", "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters");
     pattern.set_tooltip_text(Some("^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters"));
     let preview = gtk::Label::builder().xalign(0.0).wrap(true).build();
     preview.add_css_class("dim-label");
     let next = gtk::Button::with_label("Next");
+    next.set_tooltip_text(Some("Show these links in Add Links"));
     next.add_css_class("suggested-action");
     next.set_sensitive(false);
     let cancel = gtk::Button::with_label("Cancel");
+    cancel.set_tooltip_text(Some("Close without adding anything (Esc)"));
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row.set_halign(gtk::Align::End);
     row.append(&cancel);

@@ -43,6 +43,7 @@ final class BatchWindowController: NSWindowController, NSTextFieldDelegate {
         preview.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
 
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel(_:)))
+        cancel.toolTip = "Close without adding anything (Esc)"
         cancel.keyEquivalent = "\u{1b}"
         next.target = self
         next.action = #selector(continueToLinks(_:))

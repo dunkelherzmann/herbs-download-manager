@@ -201,7 +201,8 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             Filter::Finished => "object-select-symbolic",
             Filter::Unfinished => "document-open-recent-symbolic",
         };
-        let arrow = gtk::Button::builder().icon_name("pan-end-symbolic").tooltip_text("Show the file types").build();
+        let arrow = gtk::Button::builder().icon_name("pan-end-symbolic").build();
+        crate::explain(&arrow, &format!("{} file types", filter.title()), "Show or hide the file types under this filter");
         arrow.add_css_class("flat");
         arrow.add_css_class("circular");
         let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);

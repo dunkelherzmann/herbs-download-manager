@@ -3,6 +3,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
+mod a11y;
+#[cfg(windows)]
 mod add;
 #[cfg(windows)]
 mod app;

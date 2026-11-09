@@ -65,12 +65,15 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         folderLabel.url = folder
         folderLabel.pathStyle = .popUp
         folderLabel.isEditable = false
+        folderLabel.toolTip = "The folder the file is saved to; Choose… picks another"
+        folderLabel.setAccessibilityLabel("Save to")
         let choose = NSButton(title: "Choose…", target: self, action: #selector(chooseFolder(_:)))
         choose.toolTip = "Choose the folder to save to"
         let folderRow = NSStackView(views: [folderLabel, choose])
         folderRow.spacing = 8
 
         for n in connectionChoices() { connections.addItem(withTitle: "\(n)") }
+        connections.setAccessibilityLabel("Connections")
         connections.selectItem(withTitle: "\(AppModel.shared.settings.connections)")
         connections.setAccessibilityIdentifier("connections")
         connections.toolTip = "Connections: how many parts of the file download at once (1–32)"
@@ -94,6 +97,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         grid.cell(for: mirrorScroll)?.yPlacement = .top
 
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel(_:)))
+        cancel.toolTip = "Close without adding anything (Esc)"
         cancel.keyEquivalent = "\u{1b}"
         let add = NSButton(title: "Add", target: self, action: #selector(addToQueue(_:)))
         add.toolTip = "Add: put it in the queue without starting it"

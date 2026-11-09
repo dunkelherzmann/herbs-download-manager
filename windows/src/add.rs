@@ -208,6 +208,17 @@ pub fn links_in_files(paths: &[PathBuf]) -> Option<Vec<String>> {
     (!texts.is_empty()).then(|| hd_core::links::find(&texts.join("\n")))
 }
 
+/// Names (where a control's text isn't one) and hover texts for a form's controls.
+fn explain_ids(hwnd: HWND, items: &[(u16, &str, &str)]) {
+    with_form(hwnd, |f| {
+        for &(id, name, help) in items {
+            if let Some(&c) = f.controls.get(&id) {
+                if name.is_empty() { crate::a11y::tip(c, help) } else { crate::a11y::explain(c, name, help) }
+            }
+        }
+    });
+}
+
 // --- Dialog windows ---------------------------------------------------------------------------------------------
 
 /// What every dialog needs from the main window.
@@ -345,6 +356,16 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (ID_ADD, w!("BUTTON"), "Add", BUTTON, 362, 290, 85, 30),
         (ID_DOWNLOAD, w!("BUTTON"), "Download", DEFAULT, 455, 290, 85, 30),
     ]);
+    explain_ids(hwnd, &[
+        (ID_LINK, "", "The address of the file to download"),
+        (20, "", "Other servers with the same file, one link per line (optional)"),
+        (21, "", "The file's name, from the server; change it to save under another name"),
+        (ID_CHOOSE, "", "Choose the folder the file is saved to"),
+        (23, "", "Connections for this download (1–32)"),
+        (ID_CANCEL, "", "Close without adding anything (Esc)"),
+        (ID_ADD, "", "Add: put it in the queue; it starts when the queue runs"),
+        (ID_DOWNLOAD, "", "Download: start now (Enter)"),
+    ]);
     with_form(hwnd, |f| {
         if let Some(l) = link {
             set_text(f.controls[&ID_LINK], &l);
@@ -391,6 +412,17 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 SendMessageW(f.controls[&ID_FILTER], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("Filter").0 as isize)));
                 DragAcceptFiles(h, true);
             });
+            explain_ids(h, &[
+                (ID_FILTER, "Filter", "Show only links whose name or address contains this text"),
+                (ID_CHECK_ALL, "", "Tick every link shown"),
+                (ID_UNCHECK_ALL, "", "Untick every link shown"),
+                (ID_LIST, "Links", "The links found: untick the ones not to download"),
+                (ID_MIRRORS, "", "Add the checked links as one download, each a source of the same file"),
+                (ID_CHOOSE, "", "Choose the folder the files are saved to"),
+                (ID_CANCEL, "", "Close without adding anything (Esc)"),
+                (ID_ADD, "", "Add: put them in the queue; they start when the queue runs"),
+                (ID_DOWNLOAD, "", "Download: start now (Enter)"),
+            ]);
             OPEN_LINKS.with(|o| *o.borrow_mut() = Some(h));
             h
         }
@@ -479,6 +511,11 @@ pub fn batch(ctx: &Ctx) {
         (26, w!("STATIC"), "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters.", 0, 12, 50, 536, 40),
         (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 370, 112, 85, 30),
         (ID_NEXT, w!("BUTTON"), "Next", DEFAULT, 463, 112, 85, 30),
+    ]);
+    explain_ids(hwnd, &[
+        (ID_PATTERN, "Link pattern", "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters"),
+        (ID_CANCEL, "", "Close without adding anything (Esc)"),
+        (ID_NEXT, "", "Show these links in Add Links (Enter)"),
     ]);
     with_form(hwnd, |f| unsafe {
         SendMessageW(f.controls[&ID_PATTERN], EM_SETCUEBANNER, Some(WPARAM(1)),

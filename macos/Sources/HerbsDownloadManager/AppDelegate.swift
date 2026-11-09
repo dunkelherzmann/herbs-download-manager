@@ -44,6 +44,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let opened = mainWindow?.openDownloadWindow(row.id)
             if let tab { opened?.showTab(tab) }
         }
+        // Test hook: --a11y-report FILE opens every window and lists controls without hover text or a VoiceOver name.
+        if let i = args.firstIndex(of: "--a11y-report"), i + 1 < args.count, let main = mainWindow {
+            let path = args[i + 1]
+            SettingsWindowController.shared.show()
+            main.newDownload(nil)
+            main.openLinks(["http://127.0.0.1:9/a.bin", "http://127.0.0.1:9/b.bin"])
+            main.batchDownload(nil)
+            if let row = AppModel.shared.rows.first { _ = main.openDownloadWindow(row.id) }
+            main.focusSearch(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let checked = NSApp.windows.filter(\.isVisible).map(\.title).sorted().joined(separator: ", ")
+                let lines = ["# checked: \(checked)"] + A11yAudit.problems(in: NSApp.windows)
+                try? (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+                exit(0)
+            }
+        }
         // Test hook: --capture FILE saves the frontmost window (with its title bar) as PNG after 2.5 s, then quits.
         if let i = args.firstIndex(of: "--capture"), i + 1 < args.count {
             let path = args[i + 1]
