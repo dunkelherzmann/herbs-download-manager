@@ -249,10 +249,11 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         let connections = defaultSettings().connections
         if mirrorsBox.state == .on {
             AppModel.shared.add(url: chosen[0].url, mirrors: chosen.dropFirst().map(\.url), folder: folder,
-                                name: nil, connections: connections, start: start)
+                                name: nil, size: chosen.compactMap(\.size).first, connections: connections,
+                                start: start)
         } else {
             for item in chosen {
-                AppModel.shared.add(url: item.url, mirrors: [], folder: folder, name: nil,
+                AppModel.shared.add(url: item.url, mirrors: [], folder: folder, name: nil, size: item.size,
                                     connections: connections, start: start)
             }
         }

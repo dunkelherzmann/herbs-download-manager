@@ -31,6 +31,8 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     var kind: FileKind? { didSet { reload() } }
     var search = "" { didSet { reload() } }
     var onSelectionChange: (() -> Void)?
+    /// Links dropped on the list but not on an unfinished download: they open Add Links.
+    var onLinks: (([String]) -> Void)?
     private(set) var shown: [DownloadRow] = []
     private let empty = NSTextField(labelWithString: "No downloads yet")
     private let contextMenu = NSMenu(title: "Download")
@@ -73,6 +75,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         table.autosaveTableColumns = true
         table.setAccessibilityIdentifier("downloads")
         table.setAccessibilityLabel("Downloads")
+        table.registerForDraggedTypes([.string, .URL, .fileURL, .html])
         let headerMenu = NSMenu()
         headerMenu.delegate = self
         table.headerView?.menu = headerMenu
@@ -161,6 +164,32 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { shown.count }
+
+    // MARK: dropping links
+
+    /// Links dropped on an unfinished download become its mirrors (§7.1); anywhere else on the list they open Add
+    /// Links. The row or the whole list is highlighted to show which.
+    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
+                   proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+        guard !DropView.links(from: info.draggingPasteboard).isEmpty else { return [] }
+        if dropOperation == .on, row >= 0, row < shown.count, !shown[row].status.isFinished {
+            return .copy
+        }
+        tableView.setDropRow(-1, dropOperation: .on)
+        return .copy
+    }
+
+    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
+                   dropOperation: NSTableView.DropOperation) -> Bool {
+        let links = DropView.links(from: info.draggingPasteboard)
+        guard !links.isEmpty else { return false }
+        if row >= 0, row < shown.count, !shown[row].status.isFinished {
+            AppModel.shared.addMirrors(shown[row].id, links)
+        } else {
+            DispatchQueue.main.async { self.onLinks?(links) }
+        }
+        return true
+    }
 
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
         shown = []

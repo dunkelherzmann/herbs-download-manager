@@ -48,15 +48,19 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors.
-  - [ ] Mac
+- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21.
+  - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **A link that matches a download already in the list is added as its mirror,** not as a separate download. *Requested 2026-11-09.*
-  - [ ] Mac
+- [ ] **A link that matches a download already in the list is added as its mirror,** not as a separate download. *Requested 2026-11-09.* Done for the Mac in #21.
+  - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Show when a finished download is being put together** instead of looking stuck at 99%. *Requested 2026-11-09.*
+- [ ] **Show when a finished download is being put together** instead of looking stuck at 99%. *Requested 2026-11-09.* Done for the Mac in #21.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Import links from a file.** *Requested 2026-11-09.* File ▸ Import Links… reads any text-based file: no extension, `.txt`, `.md`, `.rtf`, `.html`, `.csv` and the like. The links found are added with those for the same file grouped into one download and its mirrors. Everywhere a download is added, a file of the same name that isn't the same file asks whether to skip, replace, or keep both, the new one named "<name> - kept.<extension>".
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows

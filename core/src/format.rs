@@ -96,7 +96,7 @@ impl Filter {
     }
 }
 
-/// L2: Waiting, Connecting, Downloading 47%, Paused 47%, Finished, Failed (reason).
+/// L2: Waiting, Connecting, Downloading 47%, Finishing…, Paused 47%, Finished, Failed (reason).
 pub fn status_text(status: &Status, fraction: Option<f64>) -> String {
     let pct = |word: &str| match fraction {
         Some(f) => format!("{word} {}%", (f * 100.0).floor() as u32),
@@ -106,6 +106,7 @@ pub fn status_text(status: &Status, fraction: Option<f64>) -> String {
         Status::Waiting => "Waiting".into(),
         Status::Connecting => "Connecting".into(),
         Status::Downloading => pct("Downloading"),
+        Status::Finishing => "Finishing…".into(),
         Status::Paused => pct("Paused"),
         Status::Finished => "Finished".into(),
         Status::Failed(reason) => format!("Failed ({reason})"),
@@ -193,6 +194,8 @@ mod tests {
     #[test]
     fn writes_status() {
         assert_eq!(status_text(&Status::Downloading, Some(0.479)), "Downloading 47%");
+        assert_eq!(status_text(&Status::Finishing, Some(1.0)), "Finishing…");
+        assert!(Filter::Downloading.matches(&Status::Finishing));
         assert_eq!(status_text(&Status::Paused, None), "Paused");
         assert_eq!(status_text(&Status::Failed("404 Not Found".into()), None), "Failed (404 Not Found)");
         assert!(Filter::Paused.matches(&Status::Waiting));

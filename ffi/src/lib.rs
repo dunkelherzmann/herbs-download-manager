@@ -118,11 +118,20 @@ impl From<Filter> for CoreFilter {
     }
 }
 
+/// What adding a link did: a new download, or a mirror of the download with this id.
+#[derive(uniffi::Record)]
+pub struct AddResult {
+    pub id: u64,
+    pub as_mirror: bool,
+}
+
 #[derive(uniffi::Enum, Clone, PartialEq, Eq)]
 pub enum DownloadStatus {
     Waiting,
     Connecting,
     Downloading,
+    /// Every byte is in; the file is being flushed to disk and given its name.
+    Finishing,
     Paused,
     Finished,
     Failed { reason: String },
@@ -134,6 +143,7 @@ impl From<manager::Status> for DownloadStatus {
             manager::Status::Waiting => DownloadStatus::Waiting,
             manager::Status::Connecting => DownloadStatus::Connecting,
             manager::Status::Downloading => DownloadStatus::Downloading,
+            manager::Status::Finishing => DownloadStatus::Finishing,
             manager::Status::Paused => DownloadStatus::Paused,
             manager::Status::Finished => DownloadStatus::Finished,
             manager::Status::Failed(reason) => DownloadStatus::Failed { reason },
@@ -238,10 +248,21 @@ impl DownloadManager {
             .map_err(|e| CoreError::Io { message: e.to_string() })
     }
 
-    /// Adds a link and returns its id; `start` runs it at once, otherwise it waits in the queue.
-    pub fn add(&self, url: String, mirrors: Vec<String>, folder: String, name: Option<String>, connections: u32, start: bool) -> u64 {
+    /// Adds a link; `start` runs it at once, otherwise it waits in the queue. A link to the same file as an
+    /// unfinished download (same name, and same size when both are known) becomes that download's mirror.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add(
+        &self,
+        url: String,
+        mirrors: Vec<String>,
+        folder: String,
+        name: Option<String>,
+        size: Option<u64>,
+        connections: u32,
+        start: bool,
+    ) -> AddResult {
         let s = settings::Settings::default();
-        self.inner.add(manager::NewDownload {
+        let added = self.inner.add_or_mirror(manager::NewDownload {
             url,
             mirrors,
             folder: folder.into(),
@@ -250,7 +271,9 @@ impl DownloadManager {
             connections_per_server: s.connections_per_server,
             retries: s.retries,
             start,
-        })
+            size,
+        });
+        AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }
 
     pub fn resume(&self, ids: Vec<u64>) {
@@ -389,6 +412,7 @@ pub fn filter_matches(filter: Filter, status: DownloadStatus) -> bool {
         DownloadStatus::Waiting => manager::Status::Waiting,
         DownloadStatus::Connecting => manager::Status::Connecting,
         DownloadStatus::Downloading => manager::Status::Downloading,
+        DownloadStatus::Finishing => manager::Status::Finishing,
         DownloadStatus::Paused => manager::Status::Paused,
         DownloadStatus::Finished => manager::Status::Finished,
         DownloadStatus::Failed { reason } => manager::Status::Failed(reason),

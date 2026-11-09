@@ -160,6 +160,8 @@ pub struct Progress {
     pub connections: Mutex<Vec<ConnInfo>>,
     pub name: Mutex<Option<String>>,
     pub sources: Mutex<Vec<SourceInfo>>,
+    /// Every byte is in: the file is being flushed to disk and given its name.
+    pub finishing: AtomicBool,
 }
 
 /// A connection as the Connections tab shows it (§6).
@@ -679,6 +681,7 @@ async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns
         job.save();
         return Outcome::Failed("The download stopped before every byte was in".into());
     }
+    job.progress.finishing.store(true, Ordering::SeqCst);
     let size = job.state.size;
     if job.sequential {
         let got = job.progress.downloaded.load(Ordering::SeqCst);

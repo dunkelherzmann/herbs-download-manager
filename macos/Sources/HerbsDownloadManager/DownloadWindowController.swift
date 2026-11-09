@@ -424,7 +424,7 @@ enum AddMirrorSheet {
                 guard response == .alertFirstButtonReturn else { return }
                 let links = findLinks(text: text.string)
                 guard !links.isEmpty else { return }
-                _ = AppModel.shared.manager.addMirrors(id: id, urls: links)
+                AppModel.shared.addMirrors(id, links)
                 AppModel.shared.refresh()
             }
         }

@@ -9,6 +9,9 @@ final class AppModel {
     let manager: DownloadManager
     private(set) var rows: [DownloadRow] = []
     private var observers: [() -> Void] = []
+    /// A short message for the main window's footer ("Added as a mirror of …"), shown for a few seconds.
+    private(set) var notice: String?
+    private var noticeTask: Task<Void, Never>?
     private var timer: Timer?
 
     /// The list lives in ~/Library/Application Support/Herb's Download Manager, or in $HD_DATA_DIR (tests use a private
@@ -66,13 +69,42 @@ final class AppModel {
             connections: defaultSettings().connections, start: start)
     }
 
-    /// Adds a download; `start` runs it now (Download), otherwise it waits in the queue (Add).
+    /// Adds a download; `start` runs it now (Download), otherwise it waits in the queue (Add). A link to a file
+    /// that an unfinished download already fetches (same name, and same size when both are known) becomes its
+    /// mirror instead, and the footer says so.
     @discardableResult
-    func add(url: String, mirrors: [String], folder: URL, name: String?, connections: UInt32, start: Bool) -> UInt64 {
-        let id = manager.add(url: url, mirrors: mirrors, folder: folder.path, name: name,
-                             connections: connections, start: start)
+    func add(url: String, mirrors: [String], folder: URL, name: String?, size: UInt64? = nil, connections: UInt32,
+             start: Bool) -> UInt64 {
+        let result = manager.add(url: url, mirrors: mirrors, folder: folder.path, name: name, size: size,
+                                 connections: connections, start: start)
         refresh()
-        return id
+        if result.asMirror, let row = rows.first(where: { $0.id == result.id }) {
+            tell("Added as a mirror of “\(row.name)”")
+        }
+        return result.id
+    }
+
+    /// Adds links as mirrors of one download (Add Mirror…, or links dropped on it) and says how many were new.
+    @discardableResult
+    func addMirrors(_ id: UInt64, _ links: [String]) -> Int {
+        let added = Int(manager.addMirrors(id: id, urls: links))
+        refresh()
+        let name = rows.first(where: { $0.id == id })?.name ?? "the download"
+        tell(added == 0 ? "“\(name)” already uses \(links.count == 1 ? "that link" : "those links")"
+                        : "Added \(added) mirror\(added == 1 ? "" : "s") to “\(name)”")
+        return added
+    }
+
+    func tell(_ text: String) {
+        notice = text
+        observers.forEach { $0() }
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled, let self else { return }
+            self.notice = nil
+            self.observers.forEach { $0() }
+        }
     }
 
     func resume(_ ids: [UInt64]) { manager.resume(ids: ids); refresh() }
@@ -89,7 +121,7 @@ final class AppModel {
 extension DownloadStatus {
     var isRunning: Bool {
         switch self {
-        case .connecting, .downloading: true
+        case .connecting, .downloading, .finishing: true
         default: false
         }
     }

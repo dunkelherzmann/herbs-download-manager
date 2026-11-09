@@ -14,6 +14,8 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     private var folder = AppModel.downloadsFolder
     /// The user typed a name: the server's no longer replaces it.
     private var nameEdited = false
+    /// The size the server gave for the link, used to match it with a download already in the list.
+    private var probedSize: UInt64?
     private var probeTask: Task<Void, Never>?
     private var onClose: (() -> Void)?
 
@@ -142,6 +144,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     /// Asks the server about the link half a second after typing stops: its name and size (A3, A6).
     private func linkChanged() {
         probeTask?.cancel()
+        probedSize = nil
         let url = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else { size.stringValue = ""; return }
         size.stringValue = "Checking…"
@@ -153,6 +156,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
             guard !Task.isCancelled, let self else { return }
             switch result {
             case .success(let info):
+                self.probedSize = info.size
                 if !self.nameEdited { self.name.stringValue = info.name }
                 let total = info.size.map { bytesText(bytes: $0) }
                 self.size.stringValue = switch (total, info.resumable) {
@@ -204,7 +208,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         let count = UInt32(connections.titleOfSelectedItem ?? "") ?? defaultSettings().connections
         let finish = { (finalName: String?) in
             AppModel.shared.add(url: url, mirrors: mirrorLinks, folder: self.folder, name: finalName,
-                                connections: count, start: start)
+                                size: self.probedSize, connections: count, start: start)
             self.close()
         }
         guard !chosen.isEmpty else { return finish(nil) }

@@ -18,6 +18,8 @@ pub enum Status {
     Waiting,
     Connecting,
     Downloading,
+    /// Every byte is in; the file is being flushed to disk and given its name (instead of sitting at 99%).
+    Finishing,
     Paused,
     Finished,
     Failed(String),
@@ -25,7 +27,7 @@ pub enum Status {
 
 impl Status {
     pub fn is_running(&self) -> bool {
-        matches!(self, Status::Connecting | Status::Downloading)
+        matches!(self, Status::Connecting | Status::Downloading | Status::Finishing)
     }
 }
 
@@ -99,6 +101,25 @@ pub struct NewDownload {
     pub retries: u32,
     /// Start now; otherwise it waits in the queue.
     pub start: bool,
+    /// The size the server gave when the link was checked, if it was.
+    pub size: Option<u64>,
+}
+
+/// What `add_or_mirror` did with a link.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Added {
+    /// A new download with this id.
+    New(u64),
+    /// The link names the same file as this unfinished download, so it became one of its mirrors.
+    MirrorOf(u64),
+}
+
+impl Added {
+    pub fn id(self) -> u64 {
+        match self {
+            Added::New(id) | Added::MirrorOf(id) => id,
+        }
+    }
 }
 
 struct Running {
@@ -251,7 +272,34 @@ impl Manager {
         }
     }
 
-    /// Adds a download at the top of the list and returns its id.
+    /// Adds a link: as a mirror of an unfinished download of the same file (same file name, and the same size when
+    /// both are known), otherwise as a new download. Mirrors are checked before use, so a link that turns out to be
+    /// another file is dropped as "Different file" without harming the download.
+    pub fn add_or_mirror(&self, new: NewDownload) -> Added {
+        let wanted = new.name.clone().unwrap_or_else(|| name_from_url(&new.url));
+        let same = {
+            let slots = self.inner.slots.lock().unwrap();
+            slots
+                .iter()
+                .filter(|s| s.entry.status != Status::Finished && !transfer::same_link(&s.entry.url, &new.url))
+                .find(|s| {
+                    let e = &s.entry;
+                    let name = e.name.clone().unwrap_or_else(|| name_from_url(&e.url));
+                    name == wanted && !matches!((e.size, new.size), (Some(a), Some(b)) if a != b)
+                })
+                .map(|s| s.entry.id)
+        };
+        let Some(id) = same else { return Added::New(self.add(new)) };
+        let mut urls = vec![new.url.clone()];
+        urls.extend(new.mirrors.iter().cloned());
+        self.add_mirrors(id, &urls);
+        if new.start {
+            self.resume(&[id]);
+        }
+        Added::MirrorOf(id)
+    }
+
+    /// Adds a new download at the top of the list and returns its id.
     pub fn add(&self, new: NewDownload) -> u64 {
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();
@@ -264,7 +312,7 @@ impl Manager {
                     folder: new.folder,
                     name: new.name,
                     dest: None,
-                    size: None,
+                    size: new.size,
                     downloaded: 0,
                     status: Status::Waiting,
                     connections: new.connections.clamp(1, 32),
@@ -610,6 +658,9 @@ fn row(slot: &Slot) -> Row {
         if active > 0 || downloaded > e.downloaded {
             status = Status::Downloading;
             resumable = p.resumable.load(Ordering::SeqCst);
+        }
+        if p.finishing.load(Ordering::SeqCst) || size.is_some_and(|s| s > 0 && downloaded >= s) {
+            status = Status::Finishing;
         }
         speed = r.meter.lock().unwrap().sample(downloaded);
     }

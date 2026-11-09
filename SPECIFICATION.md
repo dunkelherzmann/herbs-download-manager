@@ -48,7 +48,9 @@ The layout, top to bottom:
 5. **Footer**: number of selected downloads, number of active downloads, total download speed.
 
 Dropping links, text or `.txt`/`.html` files on the window adds every link found (§5.4); while dragging, the
-window dims and shows "Drop links here".
+window dims and shows "Drop links here". Dropped on an unfinished download in the list (the row is highlighted),
+they become its mirrors instead (§7.1). The footer also shows a short note for a few seconds after a link becomes a
+mirror ("Added as a mirror of “file.zip”").
 
 ### 2.1 Sidebar filters
 
@@ -70,7 +72,7 @@ Columns, all sortable, every column but Name can be hidden from the header's con
 | Id | Column | Content |
 |---|---|---|
 | L1 | Name | file icon by type, file name, thin progress bar under the name while unfinished |
-| L2 | Status | Waiting, Connecting, Downloading 47%, Paused 47%, Finished, Failed (reason) |
+| L2 | Status | Waiting, Connecting, Downloading 47%, Finishing… (every byte is in; the file is being written out and named), Paused 47%, Finished, Failed (reason) |
 | L3 | Size | downloaded / total ("1.2 GB / 4.0 GB"; total "Unknown" when the server sends none) |
 | L4 | Speed | current speed |
 | L5 | Time Left | estimated time left |
@@ -207,7 +209,11 @@ Mirrors can be added at every stage:
 | M2 | During | Add Mirror… (⌥⌘M, context menu, Mirrors tab) on a running download: the mirror is checked at once and new or freed connections start using it without a pause |
 | M3 | After | Add Mirror… on a paused, waiting, failed or finished download: the mirror is saved with the download and used when it resumes or restarts |
 
-Add Mirror… takes one address per line. A mirror equal to an existing source is ignored.
+| M4 | Any | links dropped on an unfinished download in the list (§2) |
+| M5 | Adding | a link added in any way (New Download, Add Links, clipboard, drop, Batch) that names the same file as an unfinished download — the same file name, and the same size when both are known — becomes that download's mirror instead of a second download; Download also resumes it |
+
+Add Mirror… takes one address per line. A mirror equal to an existing source is ignored. A mirror that turns out
+to be another file is checked and dropped as "Different file" (§7.2), so a wrong match never harms the download.
 
 ### 7.2 Checking a mirror
 

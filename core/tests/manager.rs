@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use hd_core::manager::{Manager, NewDownload, Status};
+use hd_core::manager::{Added, Manager, NewDownload, Status};
 use hd_mock::{MockFile, MockServer, pattern};
 
 const MIB: usize = 1024 * 1024;
@@ -373,4 +373,32 @@ fn stop_all_stops_the_queue_and_a_running_queue_is_remembered() {
     assert!(!m.queue_running());
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(running(&m), 0, "Stop All starts nothing from the queue");
+}
+
+#[test]
+fn a_link_to_a_file_already_in_the_list_becomes_its_mirror() {
+    let data = pattern(4 * MIB, 11);
+    let (_rt, a) = server(&data, None);
+    let (_rt2, b) = server(&data, None);
+    let dir = folder("match");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(a.url("/f.bin"), &dir, false));
+
+    // Same file name on another server: a mirror, not a second download.
+    assert_eq!(m.add_or_mirror(new(b.url("/f.bin"), &dir, false)), Added::MirrorOf(id));
+    let rows = m.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].sources_known, 2);
+
+    // Another name, or the same name with another size, is a download of its own.
+    assert!(matches!(m.add_or_mirror(new(b.url("/other.bin"), &dir, false)), Added::New(_)));
+    m.resume(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    let sized = NewDownload { size: Some(1), ..new(b.url("/x/f.bin"), &dir, false) };
+    assert!(matches!(m.add_or_mirror(sized), Added::New(_)), "a finished download takes no mirrors");
+    let late = m.rows().into_iter().find(|r| r.url.ends_with("/x/f.bin")).unwrap().id;
+    let other_size = NewDownload { size: Some(2), ..new(a.url("/y/f.bin"), &dir, false) };
+    assert!(matches!(m.add_or_mirror(other_size), Added::New(_)), "sizes differ");
+    let unknown = NewDownload { size: None, ..new(a.url("/z/f.bin"), &dir, false) };
+    assert_eq!(m.add_or_mirror(unknown), Added::MirrorOf(late), "an unknown size matches by name, oldest first");
 }

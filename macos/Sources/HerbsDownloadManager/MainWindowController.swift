@@ -110,6 +110,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             self?.list.kind = kind
         }
         list.onSelectionChange = { [weak self] in self?.update() }
+        list.onLinks = { [weak self] links in self?.openLinks(links) }
         AppModel.shared.observe { [weak self] in self?.update() }
         update()
     }
@@ -131,6 +132,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         } else if waiting > 0 {
             parts.append("Queue stopped, \(waiting) waiting")
         }
+        if let notice = AppModel.shared.notice { parts.append(notice) }
         footer.stringValue = parts.joined(separator: "  ·  ")
         window?.toolbar?.validateVisibleItems()
     }
