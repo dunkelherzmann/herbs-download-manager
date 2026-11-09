@@ -109,3 +109,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **All menus in one Main Menu (☰) button, as in Herb's Terminal,** instead of a menu bar beside the window controls, which looked odd. *Requested 2026-11-09.* On the Mac it sits at the right end of the toolbar, after Search; on Linux and Windows in the left corner, as Herb's Terminal does. Also, a finished download's name sits level with the other columns instead of high in its row. Done for the Mac in #26.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows

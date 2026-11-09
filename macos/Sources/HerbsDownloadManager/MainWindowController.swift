@@ -46,7 +46,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     /// Separators group T2–T3, T4–T5, T6, T7 and T8 (§3).
     private static let layout: [String] = [
         "newDownload", "sep", "resume", "pause", "sep", "startQueue", "stopQueue", "sep", "stopAll", "sep",
-        "delete", "sep", "settings", NSToolbarItem.Identifier.flexibleSpace.rawValue, "search",
+        "delete", "sep", "settings", NSToolbarItem.Identifier.flexibleSpace.rawValue, "search", "mainMenu",
     ]
 
     init() {
@@ -170,6 +170,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             searchItem = item
             return item
         }
+        if id.rawValue == "mainMenu" { return InWindowMenu.toolbarItem(id) }
         guard let b = Self.buttons.first(where: { $0.id == id.rawValue }) else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
         item.label = b.label

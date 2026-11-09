@@ -2,11 +2,11 @@
 
 Herb's Download Manager (Herb's DM for short, where space is tight, such as the macOS menu bar) is a download manager for macOS, Linux and Windows. It downloads one file over many connections
 at once, from one server or from several mirrors of the same file, and stops and resumes without losing what it has.
-Its main inspiration is Progressive Downloader (threads and mirrors per task). Its window, menu bar, toolbar and
-icons follow AB Download Manager's layout. There are no tags.
+Its main inspiration is Progressive Downloader (threads and mirrors per task). Its window, toolbar and
+icons follow AB Download Manager's layout; its menus are in one Main Menu (☰), as in Herb's Terminal. There are no tags.
 
 The macOS version is the reference. The Linux and Windows versions look and work 1:1 like it, except the window
-controls: minimize, maximize and close sit on the right, and the main menu takes the left corner of the title bar.
+controls: minimize, maximize and close sit on the right, and the Main Menu (☰) takes the left corner of the title bar.
 
 **App icon** (`icon/icon.svg`, its own design): a frosted-white drive, its lid narrower at the top, with a gray
 download arrow coming in from above and a blue light on the right of its base, on a blue macOS-style rounded square
@@ -39,9 +39,9 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 
 The layout, top to bottom:
 
-1. **Title bar**: the menu bar sits at the left of the title bar, after the window controls on macOS, on every
-   platform, so on a wide screen no command needs a trip to the top of the screen. The title "Herb's Download
-   Manager" is centered, and the **search field** is at the right.
+1. **Title bar**: the window controls, the title "Herb's Download Manager", the toolbar (§3), the **search field**
+   and, at the right end on macOS, the **Main Menu** (☰, §4). Every menu is in the window, so on a wide screen no
+   command needs a trip to the top of the screen.
 2. **Toolbar** (§3).
 3. **Sidebar** on the left, resizable by dragging its edge: the status filters (§2.1).
 4. **Download list** (§2.2) to the right of the sidebar.
@@ -99,6 +99,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T6 | Stop All | "Stop All: stop the queue and pause every running download" | ⌥⌘. / Ctrl+Alt+. |
 | T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
+| T9 | Main Menu (☰, after the search field on macOS; the left corner on Linux and Windows) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
 
 Separators group T2–T3, T4–T5, T6, T7 and T8, as in AB Download Manager.
 
@@ -114,24 +115,26 @@ Icons use each platform's own monochrome symbols, never another app's artwork:
 | Stop All | `stop.fill` | `process-stop-symbolic` | Stop (filled) |
 | Delete | `trash` | `user-trash-symbolic` | Delete |
 | Settings | `gearshape` | `emblem-system-symbolic` | Settings |
+| Main Menu | `line.3.horizontal` | `open-menu-symbolic` | GlobalNavigationButton |
 
 ## 4. Menus
 
-The menu bar in the title bar (§2) follows AB Download Manager's File / Tasks / Tools / Help, fitted to each
-platform's conventions (on macOS, About, Settings and Quit live in the app menu, and Edit and Window are the standard
-menus). Each menu title opens its menu below it; hover text "<name> menu", and screen readers get a menu bar with its
-items. On macOS the system menu bar keeps only the app menu (Herb's DM), which macOS always shows there; every
-shortcut works from any window, Cut, Copy and Paste in text fields included.
+Every menu is in the **Main Menu** (☰, T9), as in Herb's Terminal: one submenu per menu below, following AB Download
+Manager's File / Tasks / Tools / Help fitted to each platform's conventions (Edit and Window are the standard menus),
+then Settings…, About Herb's Download Manager, Hide Herb's DM (macOS) and Quit Herb's DM. On macOS the system menu bar
+keeps only the app menu (Herb's DM), which macOS always shows there; every shortcut works from any window, Cut, Copy
+and Paste in text fields included.
 
 | Menu | Items |
 |---|---|
-| Herb's DM (macOS) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
+| Herb's DM (macOS menu bar only) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
 | File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (focuses the search field) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Columns ▸ · Show Download Window ⌘O |
 | Window | standard (macOS) |
-| Help | Herb's Download Manager on GitHub · About (Linux, Windows) |
+| Help | Herb's Download Manager on GitHub |
+| (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS) · Quit Herb's DM ⌘Q |
 
 ### 4.1 Download context menu
 

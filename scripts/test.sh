@@ -30,9 +30,9 @@ if [ "$(uname)" = Darwin ]; then
     i=0; while kill -0 "$PID" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.5; i=$((i + 1)); done
     if kill -0 "$PID" 2>/dev/null; then kill "$PID"; echo "Menus: ⌘Q through the in-window menu didn't quit the app" >&2; exit 1; fi
     grep -qx "menu bar: Herb's DM" "$WORK/menus.txt" || { echo "Menus: the macOS menu bar holds more than the app menu" >&2; exit 1; }
-    grep -qx "title bar menus: Herb's DM, File, Edit, Tasks, View, Window, Help" "$WORK/menus.txt" \
-        || { echo "Menus: the title bar's menu bar is incomplete" >&2; cat "$WORK/menus.txt" >&2; exit 1; }
+    grep -qx "main menu: File, Edit, Tasks, View, Window, Help, Settings…, About Herb's Download Manager, Hide Herb's DM, Quit Herb's DM" "$WORK/menus.txt" \
+        || { echo "Menus: the Main Menu (☰) is incomplete" >&2; cat "$WORK/menus.txt" >&2; exit 1; }
     mkdir -p "$ROOT/.build/test" && cp "$WORK/menus.txt.png" "$ROOT/.build/test/macos-window.png"
-    echo "menus in the title bar; ⌘Q reached the in-window menu"
+    echo "menus in the Main Menu (☰); ⌘Q reached it"
 fi
 printf 'All tests passed\n'

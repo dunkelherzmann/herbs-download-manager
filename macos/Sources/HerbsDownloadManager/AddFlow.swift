@@ -35,7 +35,7 @@ extension AppModel {
             let key = "\(link.name ?? URL(string: link.url)?.lastPathComponent ?? link.url)\u{0}\(link.size.map(String.init) ?? "")"
             if let earlier = decided[key] {
                 if let id = earlier {
-                    manager.addMirrors(id: id, urls: [link.url] + link.mirrors)
+                    _ = manager.addMirrors(id: id, urls: [link.url] + link.mirrors)
                     mirrored += 1
                 } else {
                     skipped += 1

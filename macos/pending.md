@@ -9,6 +9,7 @@ releases.
 ## Next (top priority)
 
 - [x] **Every menu in the window, none in the macOS menu bar.** (#19) The menu bar (File, Tasks, Tools, Help and their submenus) moves into the left of the window's title bar, as on Linux and Windows, so nothing needs a trip to the top of a wide screen. The macOS menu bar keeps only the app menu macOS always shows. Every shortcut keeps working, Undo, Cut, Copy, Paste and Select All in text fields included, and every item keeps its hover text and VoiceOver label. Describe the new menu in `SPECIFICATION.md` in the same PR. (§2, §4, enhancements.md) *Asked 2026-11-09.*
+- [x] **One Main Menu (☰) button instead of the menu bar in the title bar,** as in Herb's Terminal, at the right end of the toolbar. (#26) (§2, §3 T9, §4, enhancements.md) *Asked 2026-11-09.*
 
 ## Bugs to fix
 

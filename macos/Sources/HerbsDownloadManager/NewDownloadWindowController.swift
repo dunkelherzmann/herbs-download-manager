@@ -198,7 +198,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     /// (§5.6), and a link to a file already downloading becomes its mirror.
     private func submit(start: Bool) {
         let url = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !findLinks(text: url).isEmpty, let window else {
+        guard !findLinks(text: url).isEmpty, window != nil else {
             NSSound.beep()
             size.stringValue = "Enter a web link (http, https or ftp)"
             window?.makeFirstResponder(link)

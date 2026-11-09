@@ -363,6 +363,10 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 final class NameCell: NSTableCellView {
     static let id = NSUserInterfaceItemIdentifier("NameCell")
     private let bar = NSProgressIndicator()
+    /// The name sits a little high when the progress bar shows under it, and in the middle of the row otherwise,
+    /// level with the other columns.
+    private var nameAboveBar: NSLayoutConstraint!
+    private var nameCentered: NSLayoutConstraint!
 
     init() {
         super.init(frame: .zero)
@@ -387,12 +391,14 @@ final class NameCell: NSTableCellView {
             image.heightAnchor.constraint(equalToConstant: 20),
             title.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 6),
             title.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
-            title.topAnchor.constraint(equalTo: topAnchor, constant: 3),
             bar.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: title.trailingAnchor),
             bar.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 1),
             bar.heightAnchor.constraint(equalToConstant: 6),
         ])
+        nameAboveBar = title.topAnchor.constraint(equalTo: topAnchor, constant: 3)
+        nameCentered = title.centerYAnchor.constraint(equalTo: centerYAnchor)
+        nameCentered.isActive = true
     }
 
     @available(*, unavailable)
@@ -405,6 +411,10 @@ final class NameCell: NSTableCellView {
         imageView?.image = NSWorkspace.shared.icon(for: .init(filenameExtension: ext) ?? .data)
         // Shown while unfinished: the fraction when the size is known, moving stripes while running without one.
         bar.isHidden = row.status.isFinished || (row.fraction == nil && !row.status.isRunning)
+        // Turn one off before the other on, so the two never hold at once.
+        let (on, off) = bar.isHidden ? (nameCentered!, nameAboveBar!) : (nameAboveBar!, nameCentered!)
+        off.isActive = false
+        on.isActive = true
         bar.isIndeterminate = row.fraction == nil
         if let f = row.fraction { bar.doubleValue = f } else if !bar.isHidden { bar.startAnimation(nil) }
         setAccessibilityLabel("\(row.name), \(row.statusText)")

@@ -8,8 +8,6 @@ enum MainMenu {
     static func build() -> NSMenu {
         let bar = NSMenu()
 
-        bar.addItem(withTitle: "Herb's DM", action: nil, keyEquivalent: "").submenu = appMenu()
-
         let file = submenu(bar, "File")
         file.addItem(withTitle: "New Download…", action: #selector(MainWindowController.newDownload(_:)), keyEquivalent: "n")
         item(file, "Import Links…", #selector(MainWindowController.importLinks(_:)), "o", [.command, .shift])
@@ -68,6 +66,13 @@ enum MainMenu {
         let help = submenu(bar, "Help")
         help.addItem(withTitle: "Herb's Download Manager on GitHub", action: #selector(AppDelegate.openGitHub(_:)), keyEquivalent: "")
 
+        // The app menu's commands close the Main Menu, as in Herb's Terminal.
+        bar.addItem(.separator())
+        bar.addItem(withTitle: "Settings…", action: #selector(MainWindowController.showSettings(_:)), keyEquivalent: ",")
+        bar.addItem(withTitle: "About Herb's Download Manager", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+        bar.addItem(.separator())
+        bar.addItem(withTitle: "Hide Herb's DM", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        bar.addItem(withTitle: "Quit Herb's DM", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return bar
     }
 
