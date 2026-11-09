@@ -68,7 +68,7 @@ const TIMER_REFRESH: usize = 1;
 const TIMER_CAPTURE: usize = 2;
 
 /// Commands that arrive with their own windows later in `windows\pending.md`; their items show, disabled.
-const LATER: [u16; 4] = [C_ADD_MIRROR, C_PROPERTIES, C_SETTINGS, C_DOWNLOAD_WINDOW];
+const LATER: [u16; 0] = [];
 
 /// L1–L10: title, width; Date Finished and Location start hidden, as on the Mac.
 const COLUMNS: [(&str, i32, bool); 10] = [
@@ -131,6 +131,9 @@ struct State {
     capture: Option<std::path::PathBuf>,
     notice: Option<(String, std::time::Instant)>,
     font: HFONT,
+    /// Downloads finished at the last refresh, so a newly finished one can be announced (S9).
+    finished_ids: Option<std::collections::HashSet<u64>>,
+    tray_icon: bool,
 }
 
 thread_local! {
@@ -151,7 +154,7 @@ fn keep_on_top_file() -> std::path::PathBuf {
 }
 
 /// "Today at 10:48", "Yesterday at 09:02", or "2026-11-03 17:20".
-fn date_text(seconds: Option<u64>) -> String {
+pub(crate) fn date_text(seconds: Option<u64>) -> String {
     let Some(s) = seconds else { return String::new() };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let local = |t: u64| -> (u64, u32, u32) {
@@ -261,7 +264,7 @@ pub fn run() {
                 let s = manager.settings();
                 manager.add(hd_core::manager::NewDownload {
                     url: url.clone(),
-                    folder: crate::downloads_folder(),
+                    folder: crate::save_folder(&manager),
                     connections: s.connections,
                     connections_per_server: s.connections_per_server,
                     retries: s.retries,
@@ -439,6 +442,8 @@ pub fn run() {
                 capture: capture.clone(),
                 notice: None,
                 font: text_font,
+                finished_ids: None,
+                tray_icon: false,
             })
         });
         set_keep_on_top(keep_on_top);
@@ -460,6 +465,13 @@ pub fn run() {
                 Some("new-download") => crate::add::new_download(&ctx, links.into_iter().next()),
                 Some("add-links") => crate::add::add_links(&ctx, links),
                 Some("batch") => crate::add::batch(&ctx),
+                Some("settings") => crate::detail::settings(&ctx),
+                Some("download-window") => {
+                    if let Some(r) = ctx.manager.rows().first() {
+                        let tab = links.first().and_then(|t| ["info", "connections", "mirrors", "options"].iter().position(|n| n == t));
+                        crate::detail::open(&ctx, r.id, tab);
+                    }
+                }
                 _ => {}
             }
         }
@@ -506,7 +518,9 @@ unsafe fn insert_tree(tree: HWND, parent: HTREEITEM, text: &str, data: isize) ->
 /// The Mac's shortcuts with Ctrl (§3, §4).
 unsafe fn accelerator_table() -> HACCEL {
     let ctrl = FCONTROL | FVIRTKEY;
-    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 17] = [
+    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 19] = [
+        (ctrl, b'O' as u16, C_DOWNLOAD_WINDOW),
+        (ctrl | FALT, b'M' as u16, C_ADD_MIRROR),
         (ctrl, b'N' as u16, C_NEW),
         (ctrl | FSHIFT, b'O' as u16, C_IMPORT),
         (ctrl | FSHIFT, b'V' as u16, C_CLIPBOARD),
@@ -647,6 +661,16 @@ fn refresh() {
             }
         }
         s.rows = rows;
+        // S9: a notification for each download that finished since the last refresh.
+        let finished: std::collections::HashSet<u64> = s.rows.iter().filter(|r| r.status == Status::Finished).map(|r| r.id).collect();
+        if let Some(before) = &s.finished_ids
+            && s.manager.settings().notify_when_finished
+        {
+            for r in s.rows.iter().filter(|r| finished.contains(&r.id) && !before.contains(&r.id)) {
+                notify(s.window, &mut s.tray_icon, &r.name);
+            }
+        }
+        s.finished_ids = Some(finished);
 
         let active: Vec<&Row> = s.rows.iter().filter(|r| r.status.is_running()).collect();
         let mut parts = vec![format!("{} selected", selection.len()), format!("{} active", active.len())];
@@ -693,6 +717,8 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
         C_DELETE_FINISHED => rows.iter().any(|r| r.status == Status::Finished),
         C_DELETE_UNFINISHED => rows.iter().any(|r| r.status != Status::Finished),
         C_DELETE_ALL => !rows.is_empty(),
+        C_ADD_MIRROR => selected.len() == 1,
+        C_PROPERTIES | C_DOWNLOAD_WINDOW => !selected.is_empty(),
         _ => true,
     }
 }
@@ -790,6 +816,30 @@ unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
         let menu = popup(&items, &sel, &rows, &checks);
         let _ = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN, x, y, None, hwnd, None);
         let _ = DestroyMenu(menu);
+    }
+}
+
+/// "Download finished" as a notification (the notification area's balloon, which Windows 11 shows as a toast).
+fn notify(hwnd: HWND, added: &mut bool, name: &str) {
+    unsafe {
+        let mut data = NOTIFYICONDATAW {
+            cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: hwnd,
+            uID: 1,
+            uFlags: NIF_ICON | NIF_TIP | NIF_INFO,
+            hIcon: LoadIconW(None, IDI_APPLICATION).unwrap_or_default(),
+            dwInfoFlags: NIIF_INFO,
+            ..Default::default()
+        };
+        let put = |dst: &mut [u16], text: &str| {
+            let t: Vec<u16> = text.encode_utf16().take(dst.len() - 1).collect();
+            dst[..t.len()].copy_from_slice(&t);
+        };
+        put(&mut data.szTip, "Herb's Download Manager");
+        put(&mut data.szInfoTitle, "Download finished");
+        put(&mut data.szInfo, name);
+        let _ = Shell_NotifyIconW(if *added { NIM_MODIFY } else { NIM_ADD }, &data);
+        *added = true;
     }
 }
 
@@ -975,6 +1025,23 @@ fn command(hwnd: HWND, id: u16) {
                     }
                 }
             }
+            C_ADD_MIRROR => {
+                if let (Some(ctx), [r]) = (add_ctx(), sel.as_slice()) {
+                    crate::detail::ask_mirrors(&ctx, r.id);
+                }
+            }
+            C_PROPERTIES | C_DOWNLOAD_WINDOW => {
+                if let Some(ctx) = add_ctx() {
+                    for r in &sel {
+                        crate::detail::open(&ctx, r.id, (id == C_PROPERTIES).then_some(0));
+                    }
+                }
+            }
+            C_SETTINGS => {
+                if let Some(ctx) = add_ctx() {
+                    crate::detail::settings(&ctx);
+                }
+            }
             C_RESUME => drop(with(|s| s.manager.resume(&ids))),
             C_PAUSE => drop(with(|s| s.manager.pause(&ids))),
             C_RESTART => drop(with(|s| s.manager.restart(&ids))),
@@ -1104,7 +1171,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             WM_TIMER if wparam.0 == TIMER_CAPTURE => {
                 let _ = KillTimer(Some(hwnd), TIMER_CAPTURE);
                 // An add window the test opened, else the main window.
-                let target = FindWindowW(w!("HerbsDMForm"), PCWSTR::null()).ok().filter(|h| !h.is_invalid()).unwrap_or(hwnd);
+                let target = [w!("HerbsDMDetail"), w!("HerbsDMForm")]
+                    .iter()
+                    .find_map(|c| FindWindowW(*c, PCWSTR::null()).ok().filter(|h| !h.is_invalid()))
+                    .unwrap_or(hwnd);
                 if let Some(path) = with(|s| s.capture.clone()).flatten()
                     && let Err(e) = capture(target, &path)
                 {
@@ -1152,12 +1222,16 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                         refresh();
                     }
                     (ID_LIST, NM_DBLCLK) => {
-                        // §2.2: a finished download opens its file; an unfinished one its Download window (later).
-                        if let Some(r) = selected().into_iter().next()
-                            && r.status == Status::Finished
-                            && let Some(p) = r.path
-                        {
-                            open_path(&p, false);
+                        // §2.2: a finished download opens its file; an unfinished one its Download window.
+                        if let Some(r) = selected().into_iter().next() {
+                            match (&r.status, &r.path) {
+                                (Status::Finished, Some(p)) => open_path(p, false),
+                                _ => {
+                                    if let Some(ctx) = add_ctx() {
+                                        crate::detail::open(&ctx, r.id, None);
+                                    }
+                                }
+                            }
                         }
                     }
                     (ID_LIST, LVN_ITEMCHANGED) => refresh(),
@@ -1190,6 +1264,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 LRESULT(0)
             }
             WM_DESTROY => {
+                if with(|s| s.tray_icon).unwrap_or(false) {
+                    let data = NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: 1, ..Default::default() };
+                    let _ = Shell_NotifyIconW(NIM_DELETE, &data);
+                }
                 if let Some(state) = STATE.with(|s| s.borrow_mut().take()) {
                     state.manager.quit(std::time::Duration::from_secs(5));
                 }

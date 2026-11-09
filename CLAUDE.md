@@ -37,6 +37,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Win32 controls notify synchronously (setting a ListView checkbox sends LVN_ITEMCHANGED before the call returns),
   so per-window state in a `RefCell` must be borrowed with `try_borrow_mut` in notification handlers; a second
   `borrow_mut` panics, and a `windows_subsystem` app then just vanishes with no message.
+  Don't let sibling controls overlap (a tab control's body under its pages): WM_PRINT paints siblings in its own
+  order, so the pictures showed empty pages. Make the tab control just the strip and put the pages below it.
 
 ## Writing tests (learned the hard way)
 

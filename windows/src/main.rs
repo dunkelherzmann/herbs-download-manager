@@ -6,6 +6,8 @@
 mod add;
 #[cfg(windows)]
 mod app;
+#[cfg(windows)]
+mod detail;
 
 use std::path::PathBuf;
 
@@ -24,6 +26,11 @@ pub fn downloads_folder() -> PathBuf {
         Some(dir) if !dir.is_empty() => PathBuf::from(dir),
         _ => PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default()).join("Downloads"),
     }
+}
+
+/// Where new downloads go: S1, or when it's unset or its folder is gone, the Downloads folder.
+pub fn save_folder(manager: &hd_core::manager::Manager) -> PathBuf {
+    manager.settings().save_to.map(PathBuf::from).filter(|p| p.is_dir()).unwrap_or_else(downloads_folder)
 }
 
 fn main() {

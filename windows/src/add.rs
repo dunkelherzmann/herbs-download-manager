@@ -41,11 +41,11 @@ const ID_LIST: u16 = 10;
 const ID_PATTERN: u16 = 11;
 const ID_NEXT: u16 = ID_DOWNLOAD;
 
-fn wide(s: &str) -> Vec<u16> {
+pub(crate) fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-fn text_of(h: HWND) -> String {
+pub(crate) fn text_of(h: HWND) -> String {
     unsafe {
         let n = GetWindowTextLengthW(h).max(0) as usize;
         let mut buffer = vec![0u16; n + 1];
@@ -54,7 +54,7 @@ fn text_of(h: HWND) -> String {
     }
 }
 
-fn set_text(h: HWND, text: &str) {
+pub(crate) fn set_text(h: HWND, text: &str) {
     let t = wide(text);
     unsafe {
         let _ = SetWindowTextW(h, PCWSTR(t.as_ptr()));
@@ -130,7 +130,7 @@ fn probe_in_background(window: HWND, manager: Manager, urls: Vec<String>) {
 }
 
 /// Chooses a folder (the shell's folder browser).
-fn choose_folder(owner: HWND, title: &str) -> Option<PathBuf> {
+pub(crate) fn choose_folder(owner: HWND, title: &str) -> Option<PathBuf> {
     unsafe {
         let title = wide(title);
         let info = BROWSEINFOW {
@@ -308,7 +308,7 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 ctx: ctx.clone(),
                 kind,
                 controls: map,
-                folder: crate::downloads_folder(),
+                folder: crate::save_folder(&ctx.manager),
                 probed_size: None,
                 items: Vec::new(),
                 shown: Vec::new(),
@@ -319,10 +319,10 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
     }
 }
 
-const LABEL: u32 = 0x2; // SS_RIGHT
-const EDIT: u32 = ES_AUTOHSCROLL as u32;
-const BUTTON: u32 = BS_PUSHBUTTON as u32;
-const DEFAULT: u32 = BS_DEFPUSHBUTTON as u32;
+pub(crate) const LABEL: u32 = 0x2; // SS_RIGHT
+pub(crate) const EDIT: u32 = ES_AUTOHSCROLL as u32;
+pub(crate) const BUTTON: u32 = BS_PUSHBUTTON as u32;
+pub(crate) const DEFAULT: u32 = BS_DEFPUSHBUTTON as u32;
 
 /// New Download (§5.1).
 pub fn new_download(ctx: &Ctx, link: Option<String>) {
@@ -335,7 +335,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (0, w!("STATIC"), "Name:", LABEL, 12, 132, 90, 20),
         (21, w!("EDIT"), "", EDIT, 110, 128, 430, 24),
         (0, w!("STATIC"), "Save to:", LABEL, 12, 168, 90, 20),
-        (22, w!("STATIC"), &crate::downloads_folder().display().to_string(), 0x4000 /* SS_PATHELLIPSIS */, 110, 168, 330, 20),
+        (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000 /* SS_PATHELLIPSIS */, 110, 168, 330, 20),
         (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 450, 162, 90, 28),
         (0, w!("STATIC"), "Connections:", LABEL, 12, 206, 90, 20),
         (23, w!("EDIT"), &ctx.manager.settings().connections.to_string(), EDIT | ES_NUMBER as u32, 110, 202, 60, 24),
@@ -372,7 +372,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_LIST, WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 12, 46, 736, 280),
                 (ID_MIRRORS, w!("BUTTON"), "Treat as mirrors of one file", BS_AUTOCHECKBOX as u32, 12, 334, 300, 24),
                 (0, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
-                (22, w!("STATIC"), &crate::downloads_folder().display().to_string(), 0x4000, 76, 370, 560, 20),
+                (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000, 76, 370, 560, 20),
                 (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 648, 364, 100, 28),
                 (25, w!("STATIC"), "", 0, 12, 418, 380, 20),
                 (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 470, 412, 85, 30),

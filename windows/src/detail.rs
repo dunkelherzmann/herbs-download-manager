@@ -1,0 +1,648 @@
+//! The Download window (§6), Add Mirror… (§7.1) and Settings (§9) on Windows.
+//!
+//! The Download window: the file's segments (an owner-drawn bar), its numbers, Pause/Resume and Close, and the Info,
+//! Connections, Mirrors and Options tabs (a tab control whose pages show and hide their own controls). One window per
+//! download; it refreshes twice a second and closing it never stops the download. Settings apply as they change.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use hd_core::format;
+use hd_core::manager::{Detail, Status};
+use hd_core::settings::{Settings, WhenFileExists};
+use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::*;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::{PCWSTR, PWSTR, w};
+
+use crate::add::{BUTTON, Ctx, DEFAULT, EDIT, LABEL, choose_folder, set_text, text_of, wide};
+
+const TIMER_REFRESH: usize = 1;
+// Download window controls.
+const D_BAR: u16 = 10;
+const D_PERCENT: u16 = 11;
+const D_NUMBERS: u16 = 12;
+const D_TOGGLE: u16 = 13;
+const D_CLOSE: u16 = 2; // IDCANCEL: Esc closes
+const D_TABS: u16 = 15;
+const D_INFO: u16 = 20; // + row, values at D_INFO + 10 + row
+const D_CONNS: u16 = 40;
+const D_PLUS: u16 = 41;
+const D_MINUS: u16 = 42;
+const D_SOURCES: u16 = 43;
+const D_ADD_MIRROR: u16 = 44;
+const D_REMOVE: u16 = 45;
+const D_CONN_LABEL: u16 = 46;
+const D_CONN_COUNT: u16 = 47;
+const D_LIMIT_ON: u16 = 48;
+const D_LIMIT: u16 = 49;
+const D_UNIT: u16 = 50;
+// Add Mirror.
+const M_TEXT: u16 = 60;
+const M_ADD: u16 = 1; // IDOK
+const M_CANCEL: u16 = 2;
+// Settings.
+const S_FOLDER: u16 = 70;
+const S_CHOOSE: u16 = 71;
+const S_RESET: u16 = 72;
+const S_AT_ONCE: u16 = 73;
+const S_LIMIT_ON: u16 = 74;
+const S_LIMIT: u16 = 75;
+const S_UNIT: u16 = 76;
+const S_CONNECTIONS: u16 = 77;
+const S_PER_SERVER: u16 = 78;
+const S_RETRIES: u16 = 79;
+const S_EXISTS: u16 = 80;
+const S_NOTIFY: u16 = 81;
+const S_CLOSE: u16 = 2;
+
+const INFO_KEYS: [&str; 6] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:"];
+/// Which controls each tab shows.
+const PAGES: [&[u16]; 4] = [
+    &[D_INFO, D_INFO + 1, D_INFO + 2, D_INFO + 3, D_INFO + 4, D_INFO + 5, D_INFO + 10, D_INFO + 11, D_INFO + 12, D_INFO + 13, D_INFO + 14, D_INFO + 15],
+    &[D_CONNS, D_PLUS, D_MINUS],
+    &[D_SOURCES, D_ADD_MIRROR, D_REMOVE],
+    &[D_CONN_LABEL, D_CONN_COUNT, D_LIMIT_ON, D_LIMIT, D_UNIT],
+];
+
+enum Kind {
+    Download { id: u64, detail: Option<Detail> },
+    Mirror { id: u64 },
+    Settings,
+}
+
+struct Win {
+    ctx: Ctx,
+    kind: Kind,
+    controls: HashMap<u16, HWND>,
+}
+
+thread_local! {
+    static WINDOWS: RefCell<HashMap<isize, Win>> = RefCell::new(HashMap::new());
+    static OPEN: RefCell<HashMap<u64, HWND>> = RefCell::new(HashMap::new());
+    static SETTINGS: RefCell<Option<HWND>> = const { RefCell::new(None) };
+}
+
+/// The window's state; skipped when a control notifies while it's being changed (see CLAUDE.md).
+fn with_win<R>(hwnd: HWND, f: impl FnOnce(&mut Win) -> R) -> Option<R> {
+    WINDOWS.with(|w| w.try_borrow_mut().ok()?.get_mut(&(hwnd.0 as isize)).map(f))
+}
+
+type Spec<'a> = (u16, PCWSTR, &'a str, u32, i32, i32, i32, i32);
+
+fn create(ctx: &Ctx, kind: Kind, title: &str, size: (i32, i32), controls: &[Spec]) -> HWND {
+    unsafe {
+        let instance = GetModuleHandleW(None).unwrap_or_default();
+        let class = WNDCLASSW {
+            lpfnWndProc: Some(proc_),
+            hInstance: instance.into(),
+            lpszClassName: w!("HerbsDMDetail"),
+            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+            hbrBackground: GetSysColorBrush(COLOR_BTNFACE),
+            ..Default::default()
+        };
+        RegisterClassW(&class);
+        let scale = GetDpiForWindow(ctx.owner).max(96) as i32;
+        let px = |v: i32| v * scale / 96;
+        let mut rect = RECT { left: 0, top: 0, right: px(size.0), bottom: px(size.1) };
+        let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU, false, WINDOW_EX_STYLE::default());
+        let t = wide(title);
+        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
+                                   CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, Some(ctx.owner), None,
+                                   Some(instance.into()), None)
+            .unwrap_or_default();
+        let mut map = HashMap::new();
+        for &(id, class, text, style, x, y, w, h) in controls {
+            let text = wide(text);
+            let ex = if class == WC_LISTVIEWW || class == w!("EDIT") { WS_EX_CLIENTEDGE } else { WINDOW_EX_STYLE::default() };
+            let c = CreateWindowExW(ex, class, PCWSTR(text.as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | WINDOW_STYLE(style),
+                                    px(x), px(y), px(w), px(h), Some(hwnd), Some(HMENU(id as usize as *mut _)), Some(instance.into()), None)
+                .unwrap_or_default();
+            SendMessageW(c, WM_SETFONT, Some(WPARAM(ctx.font.0 as usize)), Some(LPARAM(1)));
+            map.insert(id, c);
+        }
+        WINDOWS.with(|w| w.borrow_mut().insert(hwnd.0 as isize, Win { ctx: ctx.clone(), kind, controls: map }));
+        hwnd
+    }
+}
+
+fn columns(list: HWND, names: &[(&str, i32)], checkboxes: bool) {
+    unsafe {
+        let mut style = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER;
+        if checkboxes {
+            style |= LVS_EX_CHECKBOXES;
+        }
+        SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, Some(WPARAM(0)), Some(LPARAM(style as isize)));
+        for (i, (name, width)) in names.iter().enumerate() {
+            let text = wide(name);
+            let c = LVCOLUMNW { mask: LVCF_TEXT | LVCF_WIDTH, cx: *width, pszText: PWSTR(text.as_ptr() as *mut _), ..Default::default() };
+            SendMessageW(list, LVM_INSERTCOLUMNW, Some(WPARAM(i)), Some(LPARAM(&c as *const _ as isize)));
+        }
+    }
+}
+
+/// Rewrites a ListView's rows (adding or removing rows only when their number changes).
+fn fill(list: HWND, rows: &[Vec<String>]) {
+    unsafe {
+        let have = SendMessageW(list, LVM_GETITEMCOUNT, None, None).0 as usize;
+        if have != rows.len() {
+            SendMessageW(list, LVM_DELETEALLITEMS, None, None);
+        }
+        for (i, cells) in rows.iter().enumerate() {
+            for (col, text) in cells.iter().enumerate() {
+                let text = wide(text);
+                let item = LVITEMW { mask: LVIF_TEXT, iItem: i as i32, iSubItem: col as i32, pszText: PWSTR(text.as_ptr() as *mut _), ..Default::default() };
+                let msg = if col == 0 && have != rows.len() { LVM_INSERTITEMW } else { LVM_SETITEMW };
+                SendMessageW(list, msg, None, Some(LPARAM(&item as *const _ as isize)));
+            }
+        }
+    }
+}
+
+fn combo(h: HWND, items: &[&str], selected: usize) {
+    unsafe {
+        for it in items {
+            let t = wide(it);
+            SendMessageW(h, CB_ADDSTRING, None, Some(LPARAM(t.as_ptr() as isize)));
+        }
+        SendMessageW(h, CB_SETCURSEL, Some(WPARAM(selected)), None);
+    }
+}
+
+fn checked(h: HWND) -> bool {
+    unsafe { SendMessageW(h, BM_GETCHECK, None, None).0 == 1 }
+}
+
+fn set_checked(h: HWND, on: bool) {
+    unsafe {
+        SendMessageW(h, BM_SETCHECK, Some(WPARAM(on as usize)), None);
+    }
+}
+
+fn selection(h: HWND) -> usize {
+    unsafe { SendMessageW(h, CB_GETCURSEL, None, None).0.max(0) as usize }
+}
+
+/// Opens (or brings forward) a download's window, on tab 0 Info, 1 Connections, 2 Mirrors or 3 Options.
+pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
+    if let Some(h) = OPEN.with(|o| o.borrow().get(&id).copied())
+        && unsafe { IsWindow(Some(h)).as_bool() }
+    {
+        if let Some(tab) = tab {
+            show_tab(h, tab);
+        }
+        unsafe {
+            let _ = SetForegroundWindow(h);
+        }
+        return;
+    }
+    let Some(d) = ctx.manager.detail(id) else { return };
+    let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
+    let mut specs: Vec<Spec> = vec![
+        (D_BAR, w!("STATIC"), "", 0xD /* SS_OWNERDRAW */, 12, 12, 656, 18),
+        (D_PERCENT, w!("STATIC"), "", 0, 12, 40, 60, 22),
+        (D_NUMBERS, w!("STATIC"), "", 0, 76, 42, 400, 22),
+        (D_TOGGLE, w!("BUTTON"), "Pause", BUTTON, 490, 36, 85, 30),
+        (D_CLOSE, w!("BUTTON"), "Close", BUTTON, 583, 36, 85, 30),
+        // Just the strip of tabs: the pages sit below it, so nothing overlaps (WM_PRINT pictures and the screen agree).
+        (D_TABS, WC_TABCONTROLW, "", 0, 12, 76, 656, 28),
+        (D_CONNS, WC_LISTVIEWW, "", LVS_REPORT | LVS_NOSORTHEADER, 22, 110, 636, 290),
+        (D_PLUS, w!("BUTTON"), "+", BUTTON, 22, 408, 36, 28),
+        (D_MINUS, w!("BUTTON"), "−", BUTTON, 62, 408, 36, 28),
+        (D_SOURCES, WC_LISTVIEWW, "", LVS_REPORT | LVS_NOSORTHEADER | LVS_SINGLESEL | LVS_SHOWSELALWAYS, 22, 110, 636, 290),
+        (D_ADD_MIRROR, w!("BUTTON"), "Add Mirror…", BUTTON, 22, 408, 110, 28),
+        (D_REMOVE, w!("BUTTON"), "Remove", BUTTON, 140, 408, 90, 28),
+        (D_CONN_LABEL, w!("STATIC"), "Connections:", LABEL, 22, 124, 110, 20),
+        (D_CONN_COUNT, w!("EDIT"), "", EDIT | ES_NUMBER as u32, 140, 120, 60, 24),
+        (D_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 22, 160, 110, 24),
+        (D_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 140, 160, 90, 24),
+        (D_UNIT, w!("COMBOBOX"), "", combo_style, 238, 160, 80, 120),
+    ];
+    let info_labels: Vec<String> = INFO_KEYS.iter().map(|k| k.to_string()).collect();
+    for (i, k) in info_labels.iter().enumerate() {
+        specs.push((D_INFO + i as u16, w!("STATIC"), k, LABEL, 22, 116 + 30 * i as i32, 110, 22));
+        specs.push((D_INFO + 10 + i as u16, w!("EDIT"), "", (ES_READONLY | ES_AUTOHSCROLL) as u32, 140, 113 + 30 * i as i32, 510, 24));
+    }
+    let hwnd = create(ctx, Kind::Download { id, detail: None }, &d.row.name, (680, 458), &specs);
+    with_win(hwnd, |w| unsafe {
+        for (i, name) in ["Info", "Connections", "Mirrors", "Options"].iter().enumerate() {
+            let t = wide(name);
+            let item = TCITEMW { mask: TCIF_TEXT, pszText: PWSTR(t.as_ptr() as *mut _), ..Default::default() };
+            SendMessageW(w.controls[&D_TABS], TCM_INSERTITEMW, Some(WPARAM(i)), Some(LPARAM(&item as *const _ as isize)));
+        }
+        columns(w.controls[&D_CONNS], &[("Source", 150), ("Range", 170), ("Downloaded", 90), ("Speed", 90), ("State", 120)], false);
+        columns(w.controls[&D_SOURCES], &[("Source", 300), ("State", 110), ("Active", 60), ("Speed", 80), ("Served", 80)], true);
+        combo(w.controls[&D_UNIT], &["KB/s", "MB/s"], 0);
+        if let Some(l) = d.speed_limit {
+            let mb = l >= 1_000_000 && l % 100_000 == 0;
+            set_checked(w.controls[&D_LIMIT_ON], true);
+            SendMessageW(w.controls[&D_UNIT], CB_SETCURSEL, Some(WPARAM(mb as usize)), None);
+            set_text(w.controls[&D_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
+        }
+        set_text(w.controls[&D_CONN_COUNT], &d.row.allowed_connections.to_string());
+    });
+    show_tab(hwnd, tab.unwrap_or(0));
+    refresh(hwnd);
+    unsafe {
+        SetTimer(Some(hwnd), TIMER_REFRESH, 500, None);
+        let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
+    }
+    OPEN.with(|o| o.borrow_mut().insert(id, hwnd));
+}
+
+fn show_tab(hwnd: HWND, tab: usize) {
+    with_win(hwnd, |w| unsafe {
+        SendMessageW(w.controls[&D_TABS], TCM_SETCURSEL, Some(WPARAM(tab)), None);
+        for (i, page) in PAGES.iter().enumerate() {
+            for id in page.iter() {
+                if let Some(c) = w.controls.get(id) {
+                    let _ = ShowWindow(*c, if i == tab { SW_SHOW } else { SW_HIDE });
+                }
+            }
+        }
+    });
+}
+
+fn refresh(hwnd: HWND) {
+    let Some((manager, id)) = with_win(hwnd, |w| match w.kind {
+        Kind::Download { id, .. } => Some((w.ctx.manager.clone(), id)),
+        _ => None,
+    })
+    .flatten() else { return };
+    let Some(d) = manager.detail(id) else {
+        unsafe {
+            let _ = DestroyWindow(hwnd);
+        }
+        return;
+    };
+    with_win(hwnd, |w| unsafe {
+        let r = &d.row;
+        set_text(hwnd, &r.name);
+        let finished = r.status == Status::Finished;
+        set_text(w.controls[&D_PERCENT], &match r.fraction {
+            Some(f) => format!("{}%", (f * 100.0).floor() as u32),
+            None if finished => "100%".into(),
+            None => String::new(),
+        });
+        let left = format::time_left_text(r.time_left);
+        let numbers: Vec<String> = [format::size_text(r.downloaded, r.size, finished), format::speed_text(r.speed),
+                                    if left.is_empty() { String::new() } else { format!("{left} left") }, r.status_text.clone()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
+        set_text(w.controls[&D_NUMBERS], &numbers.join("  ·  "));
+        set_text(w.controls[&D_TOGGLE], if r.status.is_running() { "Pause" } else { "Resume" });
+        let _ = EnableWindow(w.controls[&D_TOGGLE], r.status.is_running() || matches!(r.status, Status::Waiting | Status::Paused | Status::Failed(_)));
+        let values = [
+            r.url.clone(),
+            r.folder.display().to_string(),
+            r.size.map(format::bytes).unwrap_or_else(|| "Unknown".into()),
+            if r.resumable { "Yes".into() } else { "No: pausing starts it over".into() },
+            crate::app::date_text(Some(r.added)),
+            r.finished.map(|f| crate::app::date_text(Some(f))).unwrap_or_else(|| "—".into()),
+        ];
+        for (i, v) in values.iter().enumerate() {
+            let c = w.controls[&(D_INFO + 10 + i as u16)];
+            if text_of(c) != *v {
+                set_text(c, v);
+            }
+        }
+        let _ = EnableWindow(w.controls[&D_PLUS], !finished && r.allowed_connections < 32);
+        let _ = EnableWindow(w.controls[&D_MINUS], !finished && r.allowed_connections > 1);
+        let count = w.controls[&D_CONN_COUNT];
+        if windows::Win32::UI::Input::KeyboardAndMouse::GetFocus() != count && text_of(count) != r.allowed_connections.to_string() {
+            set_text(count, &r.allowed_connections.to_string());
+        }
+        let host = |u: &str| u.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or(u).to_string();
+        let conns: Vec<Vec<String>> = d
+            .connections
+            .iter()
+            .map(|c| {
+                let range = if c.end == 0 { String::new() } else { format!("{}–{}", format::bytes(c.start), format::bytes(c.end)) };
+                vec![host(&c.source), range, if c.bytes > 0 { format::bytes(c.bytes) } else { String::new() }, format::speed_text(c.speed), c.state.clone()]
+            })
+            .collect();
+        fill(w.controls[&D_CONNS], &conns);
+        let sources: Vec<Vec<String>> = d
+            .sources
+            .iter()
+            .map(|s| {
+                let original = if s.url == r.url { " (original)" } else { "" };
+                vec![format!("{}{original}", s.url), s.status.text(), s.active.to_string(), format::speed_text(s.speed),
+                     if s.bytes > 0 { format::bytes(s.bytes) } else { String::new() }]
+            })
+            .collect();
+        let list = w.controls[&D_SOURCES];
+        fill(list, &sources);
+        for (i, s) in d.sources.iter().enumerate() {
+            let state = LVITEMW {
+                stateMask: LVIS_STATEIMAGEMASK,
+                state: LIST_VIEW_ITEM_STATE_FLAGS(((if s.enabled { 2 } else { 1 }) << 12) as u32),
+                ..Default::default()
+            };
+            SendMessageW(list, LVM_SETITEMSTATE, Some(WPARAM(i)), Some(LPARAM(&state as *const _ as isize)));
+        }
+        let _ = InvalidateRect(Some(w.controls[&D_BAR]), None, false);
+        if let Kind::Download { detail, .. } = &mut w.kind {
+            *detail = Some(d);
+        }
+    });
+}
+
+/// The header's bar: each segment's downloaded part filled (green while a connection works on it), the gaps still to
+/// fetch left grey.
+fn draw_bar(item: &DRAWITEMSTRUCT, d: &Detail) {
+    unsafe {
+        let r = item.rcItem;
+        let brush = |rgb: (u8, u8, u8)| CreateSolidBrush(COLORREF(rgb.0 as u32 | (rgb.1 as u32) << 8 | (rgb.2 as u32) << 16));
+        let (grey, blue, green) = (brush((220, 220, 220)), brush((61, 133, 227)), brush((77, 179, 102)));
+        FillRect(item.hDC, &r, grey);
+        let w = (r.right - r.left) as f64;
+        let size = d.row.size.unwrap_or(0);
+        if d.row.status == Status::Finished {
+            FillRect(item.hDC, &r, blue);
+        } else if size > 0 {
+            for s in &d.segments {
+                let x0 = r.left + (s.start as f64 / size as f64 * w) as i32;
+                let x1 = r.left + (s.pos as f64 / size as f64 * w) as i32;
+                if x1 > x0 {
+                    let part = RECT { left: x0, top: r.top, right: x1, bottom: r.bottom };
+                    FillRect(item.hDC, &part, if s.owner.is_some() { green } else { blue });
+                }
+            }
+        }
+        for b in [grey, blue, green] {
+            let _ = DeleteObject(b.into());
+        }
+    }
+}
+
+/// Add Mirror… (§7.1 M2, M3): one link per line.
+pub fn ask_mirrors(ctx: &Ctx, id: u64) {
+    let Some(d) = ctx.manager.detail(id) else { return };
+    let multi = (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN) as u32 | WS_VSCROLL.0;
+    let note = format!("Other links to “{}”, one per line. Each is checked before it's used.", d.row.name);
+    let hwnd = create(ctx, Kind::Mirror { id }, "Add Mirror", (480, 220), &[
+        (0, w!("STATIC"), &note, 0, 12, 12, 456, 36),
+        (M_TEXT, w!("EDIT"), "", multi, 12, 52, 456, 110),
+        (M_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 290, 176, 85, 30),
+        (M_ADD, w!("BUTTON"), "Add", DEFAULT, 383, 176, 85, 30),
+    ]);
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
+        if let Some(t) = with_win(hwnd, |w| w.controls[&M_TEXT]) {
+            let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(t));
+        }
+    }
+}
+
+const EXISTS: [(&str, WhenFileExists); 4] = [
+    ("Ask", WhenFileExists::Ask),
+    ("Keep both", WhenFileExists::KeepBoth),
+    ("Skip the new link", WhenFileExists::Skip),
+    ("Replace the existing file", WhenFileExists::Replace),
+];
+
+/// Settings (§9, Ctrl+,).
+pub fn settings(ctx: &Ctx) {
+    if let Some(h) = SETTINGS.with(|s| *s.borrow())
+        && unsafe { IsWindow(Some(h)).as_bool() }
+    {
+        unsafe {
+            let _ = SetForegroundWindow(h);
+        }
+        return;
+    }
+    let s = ctx.manager.settings();
+    let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
+    let folder = crate::save_folder(&ctx.manager).display().to_string();
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 400), &[
+        (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
+        (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
+        (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
+        (S_RESET, w!("BUTTON"), "Use Downloads", BUTTON, 298, 44, 130, 28),
+        (0, w!("STATIC"), "Downloads at once:", LABEL, 12, 92, 170, 20),
+        (S_AT_ONCE, w!("EDIT"), &s.downloads_at_once.to_string(), EDIT | ES_NUMBER as u32, 190, 88, 60, 24),
+        (0, w!("STATIC"), "Speed limit (all):", LABEL, 12, 126, 170, 20),
+        (S_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 190, 124, 90, 24),
+        (S_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 284, 122, 90, 24),
+        (S_UNIT, w!("COMBOBOX"), "", combo_style, 382, 122, 80, 120),
+        (0, w!("STATIC"), "Connections per download:", LABEL, 12, 166, 170, 20),
+        (S_CONNECTIONS, w!("EDIT"), &s.connections.to_string(), EDIT | ES_NUMBER as u32, 190, 162, 60, 24),
+        (0, w!("STATIC"), "Connections per server:", LABEL, 12, 200, 170, 20),
+        (S_PER_SERVER, w!("EDIT"), &s.connections_per_server.to_string(), EDIT | ES_NUMBER as u32, 190, 196, 60, 24),
+        (0, w!("STATIC"), "Retries per source:", LABEL, 12, 234, 170, 20),
+        (S_RETRIES, w!("EDIT"), &s.retries.to_string(), EDIT | ES_NUMBER as u32, 190, 230, 60, 24),
+        (0, w!("STATIC"), "When a file exists:", LABEL, 12, 270, 170, 20),
+        (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 266, 230, 160),
+        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 306, 340, 24),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 354, 85, 30),
+    ]);
+    with_win(hwnd, |w| {
+        combo(w.controls[&S_UNIT], &["KB/s", "MB/s"], 0);
+        combo(w.controls[&S_EXISTS], &EXISTS.map(|e| e.0), EXISTS.iter().position(|e| e.1 == s.when_file_exists).unwrap_or(0));
+        if let Some(l) = s.speed_limit {
+            let mb = l >= 1_000_000 && l % 100_000 == 0;
+            set_checked(w.controls[&S_LIMIT_ON], true);
+            unsafe {
+                SendMessageW(w.controls[&S_UNIT], CB_SETCURSEL, Some(WPARAM(mb as usize)), None);
+            }
+            set_text(w.controls[&S_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
+        }
+        set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
+    });
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
+    }
+    SETTINGS.with(|st| *st.borrow_mut() = Some(hwnd));
+}
+
+/// Reads the Settings window into the saved settings (numbers out of range are brought into it by the core).
+fn save_settings(hwnd: HWND) {
+    with_win(hwnd, |w| {
+        let number = |id: u16, fallback: u32| text_of(w.controls[&id]).trim().parse::<u32>().unwrap_or(fallback);
+        let current = w.ctx.manager.settings();
+        let limit = checked(w.controls[&S_LIMIT_ON]).then(|| {
+            number(S_LIMIT, 500) as u64 * if selection(w.controls[&S_UNIT]) == 1 { 1_000_000 } else { 1_000 }
+        });
+        let s = Settings {
+            downloads_at_once: number(S_AT_ONCE, current.downloads_at_once),
+            speed_limit: limit,
+            connections: number(S_CONNECTIONS, current.connections),
+            connections_per_server: number(S_PER_SERVER, current.connections_per_server),
+            retries: number(S_RETRIES, current.retries),
+            when_file_exists: EXISTS[selection(w.controls[&S_EXISTS]).min(3)].1,
+            notify_when_finished: checked(w.controls[&S_NOTIFY]),
+            ..current
+        };
+        w.ctx.manager.set_settings(s);
+    });
+}
+
+fn apply_limit(hwnd: HWND, id: u64) {
+    with_win(hwnd, |w| {
+        let n = text_of(w.controls[&D_LIMIT]).trim().parse::<u64>().unwrap_or(500);
+        let limit = checked(w.controls[&D_LIMIT_ON]).then(|| n * if selection(w.controls[&D_UNIT]) == 1 { 1_000_000 } else { 1_000 });
+        w.ctx.manager.set_speed_limit(id, limit);
+    });
+}
+
+extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe {
+        match msg {
+            WM_TIMER if wparam.0 == TIMER_REFRESH => {
+                refresh(hwnd);
+                LRESULT(0)
+            }
+            WM_DRAWITEM => {
+                let item = &*(lparam.0 as *const DRAWITEMSTRUCT);
+                if item.CtlID as u16 == D_BAR {
+                    let d = with_win(hwnd, |w| match &w.kind {
+                        Kind::Download { detail, .. } => detail.clone(),
+                        _ => None,
+                    })
+                    .flatten();
+                    if let Some(d) = d {
+                        draw_bar(item, &d);
+                    }
+                }
+                LRESULT(1)
+            }
+            WM_NOTIFY => {
+                let header = &*(lparam.0 as *const NMHDR);
+                if header.idFrom as u16 == D_TABS && header.code == TCN_SELCHANGE {
+                    let tab = with_win(hwnd, |w| SendMessageW(w.controls[&D_TABS], TCM_GETCURSEL, None, None).0 as usize).unwrap_or(0);
+                    show_tab(hwnd, tab);
+                } else if header.idFrom as u16 == D_SOURCES && header.code == LVN_ITEMCHANGED {
+                    // §7.3: a source's checkbox turns it on or off.
+                    let change = &*(lparam.0 as *const NMLISTVIEW);
+                    if (change.uNewState ^ change.uOldState) & LVIS_STATEIMAGEMASK.0 != 0 && change.uOldState & LVIS_STATEIMAGEMASK.0 != 0 {
+                        let on = (change.uNewState & LVIS_STATEIMAGEMASK.0) >> 12 == 2;
+                        with_win(hwnd, |w| {
+                            if let Kind::Download { id, detail: Some(d), .. } = &w.kind
+                                && let Some(s) = d.sources.get(change.iItem as usize)
+                                && s.enabled != on
+                            {
+                                w.ctx.manager.set_source_enabled(*id, &s.url, on);
+                            }
+                        });
+                    }
+                }
+                LRESULT(0)
+            }
+            WM_COMMAND => {
+                let id = (wparam.0 & 0xffff) as u16;
+                let code = ((wparam.0 >> 16) & 0xffff) as u32;
+                let kind = with_win(hwnd, |w| match w.kind {
+                    Kind::Download { id, .. } => (0, id),
+                    Kind::Mirror { id } => (1, id),
+                    Kind::Settings => (2, 0),
+                });
+                match kind {
+                    Some((0, did)) => match id {
+                        D_CLOSE => drop(DestroyWindow(hwnd)),
+                        D_TOGGLE => drop(with_win(hwnd, |w| {
+                            let running = matches!(&w.kind, Kind::Download { detail: Some(d), .. } if d.row.status.is_running());
+                            if running { w.ctx.manager.pause(&[did]) } else { w.ctx.manager.resume(&[did]) }
+                        })),
+                        D_PLUS | D_MINUS => drop(with_win(hwnd, |w| {
+                            if let Kind::Download { detail: Some(d), .. } = &w.kind {
+                                let n = d.row.allowed_connections;
+                                w.ctx.manager.set_connections(did, if id == D_PLUS { (n + 1).min(32) } else { n.saturating_sub(1).max(1) });
+                            }
+                        })),
+                        D_CONN_COUNT if code == EN_KILLFOCUS => drop(with_win(hwnd, |w| {
+                            if let Ok(n) = text_of(w.controls[&D_CONN_COUNT]).trim().parse::<u32>() {
+                                w.ctx.manager.set_connections(did, n.clamp(1, 32));
+                            }
+                        })),
+                        D_LIMIT_ON => apply_limit(hwnd, did),
+                        D_LIMIT if code == EN_CHANGE => apply_limit(hwnd, did),
+                        D_UNIT if code == CBN_SELCHANGE => apply_limit(hwnd, did),
+                        D_ADD_MIRROR => {
+                            if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
+                                ask_mirrors(&ctx, did);
+                            }
+                        }
+                        D_REMOVE => drop(with_win(hwnd, |w| {
+                            let row = SendMessageW(w.controls[&D_SOURCES], LVM_GETNEXTITEM, Some(WPARAM(usize::MAX)), Some(LPARAM(LVNI_SELECTED as isize))).0;
+                            if let Kind::Download { detail: Some(d), .. } = &w.kind
+                                && row >= 0
+                                && let Some(s) = d.sources.get(row as usize)
+                                && s.url != d.row.url
+                            {
+                                w.ctx.manager.remove_source(did, &s.url);
+                            }
+                        })),
+                        _ => {}
+                    },
+                    Some((1, mid)) => match id {
+                        M_CANCEL => drop(DestroyWindow(hwnd)),
+                        M_ADD => {
+                            let Some((ctx, text)) = with_win(hwnd, |w| (w.ctx.clone(), text_of(w.controls[&M_TEXT]))) else { return LRESULT(0) };
+                            let links = hd_core::links::find(&text);
+                            if links.is_empty() {
+                                return LRESULT(0);
+                            }
+                            let name = ctx.manager.detail(mid).map(|d| d.row.name).unwrap_or_default();
+                            let added = ctx.manager.add_mirrors(mid, &links);
+                            let _ = DestroyWindow(hwnd);
+                            (ctx.done)(Some(if added == 0 {
+                                format!("“{name}” already uses {}", if links.len() == 1 { "that link" } else { "those links" })
+                            } else {
+                                format!("Added {added} mirror{} to “{name}”", if added == 1 { "" } else { "s" })
+                            }));
+                        }
+                        _ => {}
+                    },
+                    Some((2, _)) => match id {
+                        S_CLOSE => drop(DestroyWindow(hwnd)),
+                        S_CHOOSE => {
+                            if let Some(dir) = choose_folder(hwnd, "Save downloads to") {
+                                with_win(hwnd, |w| {
+                                    w.ctx.manager.set_settings(Settings { save_to: Some(dir.display().to_string()), ..w.ctx.manager.settings() });
+                                    set_text(w.controls[&S_FOLDER], &dir.display().to_string());
+                                });
+                            }
+                        }
+                        S_RESET => drop(with_win(hwnd, |w| {
+                            w.ctx.manager.set_settings(Settings { save_to: None, ..w.ctx.manager.settings() });
+                            set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
+                        })),
+                        S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == EN_KILLFOCUS => save_settings(hwnd),
+                        S_LIMIT_ON | S_NOTIFY => save_settings(hwnd),
+                        S_UNIT | S_EXISTS if code == CBN_SELCHANGE => save_settings(hwnd),
+                        _ => {}
+                    },
+                    _ => {}
+                }
+                LRESULT(0)
+            }
+            WM_CLOSE => {
+                // Settings typed but not yet left are saved too.
+                if with_win(hwnd, |w| matches!(w.kind, Kind::Settings)).unwrap_or(false) {
+                    save_settings(hwnd);
+                }
+                let _ = DestroyWindow(hwnd);
+                LRESULT(0)
+            }
+            WM_DESTROY => {
+                if let Some(Kind::Download { id, .. }) = WINDOWS.with(|w| w.borrow_mut().remove(&(hwnd.0 as isize))).map(|w| w.kind) {
+                    OPEN.with(|o| o.borrow_mut().remove(&id));
+                }
+                SETTINGS.with(|s| {
+                    if *s.borrow() == Some(hwnd) {
+                        *s.borrow_mut() = None;
+                    }
+                });
+                LRESULT(0)
+            }
+            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        }
+    }
+}
+
