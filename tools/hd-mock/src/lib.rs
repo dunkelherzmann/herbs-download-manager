@@ -145,7 +145,12 @@ impl MockServer {
         self.state.files.lock().unwrap().insert(path.to_string(), file);
     }
 
-    /// Replaces a file's contents and gives it a new ETag.
+    /// Stops serving a file: responses under way are cut and later requests get 404.
+    pub fn remove(&self, path: &str) {
+        self.state.files.lock().unwrap().remove(path);
+    }
+
+    /// Replaces a file's contents and gives it a new ETag; responses under way are cut.
     pub fn change(&self, path: &str, data: Vec<u8>) {
         let generation = self.state.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let mut files = self.state.files.lock().unwrap();
@@ -260,7 +265,7 @@ async fn serve(mut stream: TcpStream, state: Arc<State>, mut stop: watch::Receiv
     if file.stall_first > 0 && number > file.stall_first {
         file.stall_after = None;
     }
-    let result = send_file(&mut stream, &req, &file, &stats, &mut stop).await;
+    let result = send_file(&mut stream, &req, &file, &stats, &state, &mut stop).await;
     stats.active.fetch_sub(1, Ordering::SeqCst);
     result
 }
@@ -270,6 +275,7 @@ async fn send_file(
     req: &Request,
     file: &MockFile,
     stats: &Stats,
+    state: &State,
     stop: &mut watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let len = file.data.len() as u64;
@@ -313,6 +319,11 @@ async fn send_file(
     };
     let mut sent: u64 = 0;
     for piece in body.chunks(chunk) {
+        // A file removed or replaced while it is being sent cuts the responses already under way.
+        let same = state.files.lock().unwrap().get(&req.path).is_some_and(|f| f.etag == file.etag);
+        if !same {
+            return Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "the file went away"));
+        }
         let piece = match file.stall_after {
             Some(limit) if sent + piece.len() as u64 > limit => &piece[..(limit - sent) as usize],
             _ => piece,

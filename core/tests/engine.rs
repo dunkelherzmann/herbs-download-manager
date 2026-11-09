@@ -17,7 +17,7 @@ fn folder(name: &str) -> PathBuf {
 }
 
 fn request(url: String, dir: &std::path::Path, connections: u32) -> Request {
-    Request { url, folder: dir.to_path_buf(), name: None, connections, connections_per_server: 32, retries: 5, state_file: None }
+    Request { url, folder: dir.to_path_buf(), name: None, connections, connections_per_server: 32, retries: 5, ..Request::default() }
 }
 
 fn fast() -> Tuning {
@@ -31,10 +31,10 @@ fn fast() -> Tuning {
 
 async fn run(req: Request, tuning: Tuning) -> (Outcome, std::sync::Arc<Progress>) {
     let progress = Progress::new();
-    let (_control, stop) = transfer::control();
+    let control = transfer::control();
     let outcome = tokio::time::timeout(
         Duration::from_secs(60),
-        transfer::download(&hd_core::http::client(), req, tuning, progress.clone(), stop),
+        transfer::download(&hd_core::http::client(), req, tuning, progress.clone(), control.clone()),
     )
     .await
     .expect("the download should end");
@@ -164,11 +164,12 @@ async fn a_file_that_changes_on_the_server_fails_the_download() {
     let dir = folder("changing");
     let req = request(server.url("/changing.bin"), &dir, 1);
     let progress = Progress::new();
-    let (_c, stop) = transfer::control();
+    let control = transfer::control();
     let client = hd_core::http::client();
     let task = tokio::spawn({
         let progress = progress.clone();
-        async move { transfer::download(&client, req, fast(), progress, stop).await }
+        let control = control.clone();
+        async move { transfer::download(&client, req, fast(), progress, control).await }
     });
     while progress.downloaded.load(Ordering::SeqCst) < 512 * 1024 {
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -198,11 +199,12 @@ async fn pausing_stops_every_connection() {
     let dir = folder("pause");
     let req = request(server.url("/pause.bin"), &dir, 8);
     let progress = Progress::new();
-    let (control, stop) = transfer::control();
+    let control = transfer::control();
     let client = hd_core::http::client();
     let task = tokio::spawn({
         let progress = progress.clone();
-        async move { transfer::download(&client, req, fast(), progress, stop).await }
+        let control = control.clone();
+        async move { transfer::download(&client, req, fast(), progress, control).await }
     });
     while progress.downloaded.load(Ordering::SeqCst) < 256 * 1024 {
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -226,11 +228,12 @@ fn taken_names_get_a_number() {
 /// Starts a download in the background; returns its pause control, live progress and task.
 fn spawn(req: Request, tuning: Tuning) -> (transfer::Control, std::sync::Arc<Progress>, tokio::task::JoinHandle<Outcome>) {
     let progress = Progress::new();
-    let (control, stop) = transfer::control();
+    let control = transfer::control();
     let client = hd_core::http::client();
     let task = tokio::spawn({
         let progress = progress.clone();
-        async move { transfer::download(&client, req, tuning, progress, stop).await }
+        let control = control.clone();
+        async move { transfer::download(&client, req, tuning, progress, control).await }
     });
     (control, progress, task)
 }
@@ -290,7 +293,7 @@ async fn state_is_saved_while_downloading() {
     let state = transfer::ResumeState::load(&dir.join("state.json")).unwrap();
     let saved: u64 = state.segments.iter().map(|s| s.pos - s.start).sum();
     assert!(saved >= MIB as u64, "{saved}");
-    assert!(state.resumable && state.validator.is_some());
+    assert!(state.resumable && state.sources[0].validator.is_some());
     assert_eq!(state.dest, dir.join("s.bin"));
     control.pause();
     task.await.unwrap();

@@ -9,11 +9,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Mirror support:** one file from several sources, with connections spread over them. *Requested 2026-11-08.* Mac, Linux and Windows. (§7)
+- [ ] **Mirror support:** one file from several sources, with connections spread over them. *Requested 2026-11-08.* Mac, Linux and Windows. (§7) The shared engine does it (#7); each app still needs its controls.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Add mirrors before, during and after adding a download.** *Requested 2026-11-08.* Mac, Linux and Windows. (§7.1)
+- [ ] **Add mirrors before, during and after adding a download.** *Requested 2026-11-08.* Mac, Linux and Windows. (§7.1) The shared engine does it (#7); each app still needs its controls.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
@@ -32,4 +32,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5, pause and resume in #6.
+- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5, pause and resume in #6, mirrors in #7.

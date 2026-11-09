@@ -21,9 +21,13 @@ No open bugs in `bugs.md`.
 - [x] **Pause and resume in the engine**: resume state (link, file, size, validator, ranges) saved on pause, every
   5 s and on failure, after flushing the data to disk; a new run continues from it, fetching only the remaining
   ranges; starts over when the `.hdpart` file is gone or the server can't resume. (§10) #6
-- [ ] **Mirrors**: sources per download, handing a slow connection's range to a faster source, mirror check (size, ranges, per-source validator), spreading connections,
-  retries and failover, sources list. (§7)
-- [ ] **Add mirrors before, during and after** (M1–M3). (§7.1)
+- [x] **Mirrors in the engine**: sources per download, mirror check (size, ranges, per-source validator), spreading
+  connections by host, retries and failover, refused hosts, slow connections handing their ranges to a faster
+  source, turning sources on and off, a mirror rescuing a link without ranges. (§7) #7
+- [x] **Add mirrors before, during and after in the engine** (M1–M3), including an expired link finished by a
+  mirror added while paused. (§7.1, §10) #7
+- [ ] **Mirrors in the app**: the Mirrors field, Add Mirror… (⌥⌘M), the Mirrors tab with its sources list. (§5.1,
+  §7.1, §7.3)
 - [ ] **Main window**: title bar, toolbar, sidebar filters, download list with columns, footer, search. (§2, §3)
 - [ ] **Menus and context menu** with shortcuts. (§4)
 - [ ] **Pause and resume in the app**: running downloads come back Paused at launch, the can't-resume question, the

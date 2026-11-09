@@ -1,28 +1,32 @@
-//! Downloads one file from one source over up to N connections (SPECIFICATION.md §7.4, §8).
+//! Downloads one file from one or more sources over up to 32 connections (SPECIFICATION.md §7, §8, §10).
 //!
-//! The first connection asks for the whole file (`Range: bytes=0-`); its answer gives the size, whether ranges
-//! work and the validator. When ranges work, the other connections open and each takes the second half of the
-//! largest remaining range (see `segments`). Data goes to `<name>.hdpart`, written in place at its offset, and
-//! the file gets its final name once every byte is in.
+//! A download has sources: the link it was added with and any mirrors serving the same file. The first answer
+//! (`Range: bytes=0-`) gives the size, whether ranges work and that source's validator; every other source is checked
+//! (`Range: bytes=0-0`) before it gets connections. Connections go to the working source with the fewest
+//! connections on its host, and each takes the second half of the largest remaining range (see `segments`). Data
+//! goes to `<name>.hdpart`, written in place at its offset, and the file gets its final name once every byte is in.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use reqwest::StatusCode;
 use reqwest::header::{ACCEPT_ENCODING, IF_RANGE, RANGE};
-use tokio::sync::watch;
+use serde::{Deserialize, Serialize};
+use tokio::sync::{Notify, watch};
 
 use crate::http;
 use crate::segments::{Segment, Segments};
-use serde::{Deserialize, Serialize};
 
 /// What to download and how.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Request {
     pub url: String,
+    /// Other links to the same file (M1).
+    pub mirrors: Vec<String>,
     pub folder: PathBuf,
     /// The file name; `None` takes it from the server.
     pub name: Option<String>,
@@ -30,7 +34,7 @@ pub struct Request {
     pub connections: u32,
     /// Connections to any one server (1–32).
     pub connections_per_server: u32,
-    /// Consecutive failures before the source counts as failed.
+    /// Consecutive failures before a source counts as failed.
     pub retries: u32,
     /// Where the resume state is kept (`None`: not saved).
     pub state_file: Option<PathBuf>,
@@ -51,6 +55,10 @@ pub struct Tuning {
     pub write_buffer: usize,
     /// How often the resume state is saved while downloading.
     pub save_interval: Duration,
+    /// How often speeds are measured, mirrors added and slow connections looked for.
+    pub tick: Duration,
+    /// A connection under a quarter of the average speed for this long hands its range to a faster source.
+    pub slow_after: Duration,
 }
 
 impl Default for Tuning {
@@ -62,6 +70,8 @@ impl Default for Tuning {
             refusal_wait: Duration::from_secs(60),
             write_buffer: 256 * 1024,
             save_interval: Duration::from_secs(5),
+            tick: Duration::from_secs(1),
+            slow_after: Duration::from_secs(15),
         }
     }
 }
@@ -71,6 +81,64 @@ pub enum Outcome {
     Finished(PathBuf),
     Paused,
     Failed(String),
+}
+
+/// A source's state, as the Mirrors tab shows it (§7.3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceStatus {
+    Checking,
+    Working,
+    Idle,
+    Slow,
+    Failed(String),
+    DifferentFile,
+    FileChanged,
+    NoResumeSupport,
+}
+
+impl SourceStatus {
+    /// Never used again in this run.
+    fn is_dead(&self) -> bool {
+        matches!(
+            self,
+            SourceStatus::Failed(_) | SourceStatus::DifferentFile | SourceStatus::FileChanged | SourceStatus::NoResumeSupport
+        )
+    }
+
+    pub fn text(&self) -> String {
+        match self {
+            SourceStatus::Checking => "Checking".into(),
+            SourceStatus::Working => "Working".into(),
+            SourceStatus::Idle => "Idle".into(),
+            SourceStatus::Slow => "Slow".into(),
+            SourceStatus::Failed(reason) => reason.clone(),
+            SourceStatus::DifferentFile => "Different file".into(),
+            SourceStatus::FileChanged => "File changed on the server".into(),
+            SourceStatus::NoResumeSupport => "No resume support".into(),
+        }
+    }
+}
+
+/// One source in the resume state.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSource {
+    pub url: String,
+    /// This server's own ETag or Last-Modified, sent back as `If-Range`.
+    pub validator: Option<String>,
+    pub enabled: bool,
+    pub status: SourceStatus,
+}
+
+/// One source, live, for the Mirrors tab.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceInfo {
+    pub url: String,
+    pub status: SourceStatus,
+    pub enabled: bool,
+    pub active: usize,
+    /// Bytes per second.
+    pub speed: u64,
+    pub bytes: u64,
 }
 
 /// Live numbers for the UI; read them at any time.
@@ -85,6 +153,7 @@ pub struct Progress {
     pub peak: AtomicUsize,
     pub resumable: AtomicBool,
     pub name: Mutex<Option<String>>,
+    pub sources: Mutex<Vec<SourceInfo>>,
 }
 
 impl Progress {
@@ -97,11 +166,23 @@ impl Progress {
     pub fn size(&self) -> Option<u64> {
         Some(self.size.load(Ordering::SeqCst)).filter(|&s| s != u64::MAX)
     }
+
+    pub fn sources(&self) -> Vec<SourceInfo> {
+        self.sources.lock().unwrap().clone()
+    }
 }
 
-/// Pauses a running download from another task or thread.
+enum Command {
+    AddMirrors(Vec<String>),
+    Enable(String, bool),
+}
+
+/// Steers a running download from another task or thread: pause it, add mirrors (M2), turn sources on or off.
 #[derive(Clone)]
-pub struct Control(Arc<watch::Sender<u8>>);
+pub struct Control {
+    stop: Arc<watch::Sender<u8>>,
+    inbox: Arc<Mutex<Vec<Command>>>,
+}
 
 const RUN: u8 = 0;
 const PAUSE: u8 = 1;
@@ -109,60 +190,37 @@ const ABORT: u8 = 2;
 
 impl Control {
     pub fn pause(&self) {
-        let _ = self.0.send(PAUSE);
+        let _ = self.stop.send(PAUSE);
+    }
+
+    /// Adds mirrors to the running download; each is checked at once and then gets connections.
+    pub fn add_mirrors(&self, urls: Vec<String>) {
+        self.inbox.lock().unwrap().push(Command::AddMirrors(urls));
+    }
+
+    /// Turns a source on or off; its connections move to the others. The last source on stays on.
+    pub fn set_source_enabled(&self, url: &str, enabled: bool) {
+        self.inbox.lock().unwrap().push(Command::Enable(url.to_string(), enabled));
     }
 }
 
-pub fn control() -> (Control, watch::Receiver<u8>) {
-    let (tx, rx) = watch::channel(RUN);
-    (Control(Arc::new(tx)), rx)
-}
-
-enum Problem {
-    /// The connection should go back to the pool and reconnect at once.
-    Stalled,
-    /// Paused or aborted.
-    Stopped,
-    /// A failure that may pass: counted against the source's retries.
-    Transient(String),
-    /// The server turned away this connection (429, 503).
-    Refused,
-    /// The file on the server isn't the one being downloaded any more.
-    FileChanged,
-    /// Retrying won't help (404, 403…).
-    Permanent(String),
-}
-
-struct Job {
-    client: reqwest::Client,
-    url: reqwest::Url,
-    tuning: Tuning,
-    retries: u32,
-    validator: Option<String>,
-    /// What gets saved; its `segments` are filled in from `segs` at each save.
-    state: ResumeState,
-    state_file: Option<PathBuf>,
-    file: File,
-    segs: Mutex<Segments>,
-    progress: Arc<Progress>,
-    failures: AtomicU32,
-    fatal: Mutex<Option<String>>,
-    stop_tx: watch::Sender<u8>,
-    stop: watch::Receiver<u8>,
-    refusal_gate: tokio::sync::Mutex<()>,
+pub fn control() -> Control {
+    let (tx, _) = watch::channel(RUN);
+    Control { stop: Arc::new(tx), inbox: Arc::new(Mutex::new(Vec::new())) }
 }
 
 /// Everything needed to continue a download after a pause, a quit, a crash or a power loss, saved as JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResumeState {
+    /// The link the download was added with; it identifies the download.
     pub url: String,
     /// The final file; the data is in `<dest>.hdpart` until it is complete.
     pub dest: PathBuf,
     pub size: Option<u64>,
-    pub validator: Option<String>,
-    /// False when the server has no ranges or no size: such a download starts over.
+    /// False when no source has ranges or the size is unknown: such a download starts over.
     pub resumable: bool,
     pub segments: Vec<Segment>,
+    pub sources: Vec<SavedSource>,
 }
 
 impl ResumeState {
@@ -181,12 +239,151 @@ impl ResumeState {
     }
 }
 
-/// Where a download starts from.
-enum Start {
-    /// A new download: the first response is already open.
-    Fresh(reqwest::Response),
-    /// Continuing saved ranges: no first response; every connection opens its own.
-    Resume,
+/// Adds mirrors to a paused, waiting or failed download (M3); they are checked when it resumes. Mirrors equal to
+/// an existing source are ignored. Returns how many were added.
+pub fn add_mirrors_to_state(state_file: &Path, urls: &[String]) -> std::io::Result<usize> {
+    let mut state = ResumeState::load(state_file)?;
+    let mut added = 0;
+    for url in urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
+        if reqwest::Url::parse(url).is_ok() && !state.sources.iter().any(|s| same_link(&s.url, url)) {
+            state.sources.push(SavedSource { url: url.to_string(), validator: None, enabled: true, status: SourceStatus::Checking });
+            added += 1;
+        }
+    }
+    state.save(state_file)?;
+    Ok(added)
+}
+
+fn same_link(a: &str, b: &str) -> bool {
+    match (reqwest::Url::parse(a), reqwest::Url::parse(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+enum Problem {
+    /// The connection should go back to the pool and reconnect at once.
+    Stalled,
+    /// Far slower than the others: its range goes to a faster source.
+    Slow,
+    /// Its source was turned off.
+    Moved,
+    /// Paused or aborted.
+    Stopped,
+    /// A failure that may pass: counted against the source's retries.
+    Transient(String),
+    /// The server turned away this connection (429, 503).
+    Refused,
+    /// The file on this server isn't the one being downloaded any more.
+    FileChanged,
+    /// Retrying won't help (404, 403…).
+    Permanent(String),
+}
+
+struct Source {
+    url: reqwest::Url,
+    text: String,
+    host: String,
+    validator: Mutex<Option<String>>,
+    status: Mutex<SourceStatus>,
+    enabled: AtomicBool,
+    active: AtomicUsize,
+    failures: AtomicU32,
+    retry_at: Mutex<Option<Instant>>,
+    /// When it was last marked Slow; the mark stays at least `slow_after`, so it doesn't flicker.
+    slow_since: Mutex<Option<Instant>>,
+    bytes: AtomicU64,
+    last_bytes: AtomicU64,
+    speed: AtomicU64,
+}
+
+impl Source {
+    fn new(saved: SavedSource) -> Option<Arc<Source>> {
+        let url = reqwest::Url::parse(&saved.url).ok()?;
+        let host = format!("{}:{}", url.host_str().unwrap_or(""), url.port_or_known_default().unwrap_or(0));
+        Some(Arc::new(Source {
+            url,
+            text: saved.url,
+            host,
+            validator: Mutex::new(saved.validator),
+            status: Mutex::new(saved.status),
+            enabled: AtomicBool::new(saved.enabled),
+            active: AtomicUsize::new(0),
+            failures: AtomicU32::new(0),
+            retry_at: Mutex::new(None),
+            slow_since: Mutex::new(None),
+            bytes: AtomicU64::new(0),
+            last_bytes: AtomicU64::new(0),
+            speed: AtomicU64::new(0),
+        }))
+    }
+
+    fn status(&self) -> SourceStatus {
+        self.status.lock().unwrap().clone()
+    }
+
+    fn set_status(&self, status: SourceStatus) {
+        *self.status.lock().unwrap() = status;
+    }
+
+    fn saved(&self) -> SavedSource {
+        SavedSource {
+            url: self.text.clone(),
+            validator: self.validator.lock().unwrap().clone(),
+            enabled: self.enabled.load(Ordering::SeqCst),
+            status: self.status(),
+        }
+    }
+}
+
+/// After a server turns connections away: at most `cap` to that host until `until`, then one more.
+struct HostLimit {
+    cap: usize,
+    until: Instant,
+}
+
+/// A connection's numbers, for finding slow ones.
+#[derive(Default)]
+struct ConnStat {
+    /// The source it is using, or `usize::MAX`.
+    source: AtomicUsize,
+    bytes: AtomicU64,
+    last_bytes: AtomicU64,
+    slow_ticks: AtomicU32,
+    handoff: AtomicBool,
+    /// Asked to reconnect, so its range moves to a source with fewer connections.
+    moving: AtomicBool,
+}
+
+enum Pick {
+    Use(usize),
+    Wait,
+    NoneLeft,
+}
+
+struct Job {
+    client: reqwest::Client,
+    tuning: Tuning,
+    retries: u32,
+    per_server: usize,
+    sequential: bool,
+    /// What gets saved; `segments` and `sources` are filled in at each save.
+    state: ResumeState,
+    state_file: Option<PathBuf>,
+    file: File,
+    segs: Mutex<Segments>,
+    sources: RwLock<Vec<Arc<Source>>>,
+    hosts: Mutex<HashMap<String, HostLimit>>,
+    pick_lock: Mutex<()>,
+    refusal_gate: tokio::sync::Mutex<()>,
+    conns: Vec<ConnStat>,
+    progress: Arc<Progress>,
+    changed: Notify,
+    inbox: Arc<Mutex<Vec<Command>>>,
+    last_reason: Mutex<Option<String>>,
+    fatal: Mutex<Option<String>>,
+    stop_tx: watch::Sender<u8>,
+    stop: watch::Receiver<u8>,
 }
 
 /// Runs a download to the end, a pause or a failure.
@@ -194,18 +391,29 @@ enum Start {
 /// With `req.state_file`, the resume state is saved there every `save_interval` while downloading, on pause and on
 /// failure, and removed when the download finishes; if the file already holds a state for this link, the download
 /// continues from it (or starts over when it can't resume, or when the `.hdpart` file no longer matches).
-pub async fn download(
-    client: &reqwest::Client,
-    req: Request,
-    tuning: Tuning,
-    progress: Arc<Progress>,
-    stop: watch::Receiver<u8>,
-) -> Outcome {
-    let Ok(url) = reqwest::Url::parse(&req.url) else {
+pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, progress: Arc<Progress>, control: Control) -> Outcome {
+    control.stop.send_replace(RUN);
+    let stop = control.stop.subscribe();
+    if reqwest::Url::parse(&req.url).is_err() {
         return Outcome::Failed("Not a valid link".into());
-    };
-    let max_conns = req.connections.clamp(1, 32).min(req.connections_per_server.clamp(1, 32)) as usize;
+    }
+    let max_conns = req.connections.clamp(1, 32) as usize;
     let saved = req.state_file.as_deref().and_then(|p| ResumeState::load(p).ok()).filter(|s| s.url == req.url);
+
+    // The sources: saved ones first (with their validators and states), then the link and mirrors from the request.
+    let mut sources: Vec<SavedSource> = saved.as_ref().map(|s| s.sources.clone()).unwrap_or_default();
+    for url in std::iter::once(&req.url).chain(req.mirrors.iter()) {
+        let url = url.trim();
+        if reqwest::Url::parse(url).is_ok() && !sources.iter().any(|s| same_link(&s.url, url)) {
+            sources.push(SavedSource { url: url.to_string(), validator: None, enabled: true, status: SourceStatus::Checking });
+        }
+    }
+
+    // The app shows the sources from the start, while the first answer is awaited.
+    *progress.sources.lock().unwrap() = sources
+        .iter()
+        .map(|s| SourceInfo { url: s.url.clone(), status: s.status.clone(), enabled: s.enabled, active: 0, speed: 0, bytes: 0 })
+        .collect();
 
     // Continue saved ranges when the .hdpart file is still the one they describe.
     if let Some(state) = &saved
@@ -218,32 +426,67 @@ pub async fn download(
         if let Ok(file) = file
             && file.metadata().is_ok_and(|m| m.len() == size)
         {
+            // A source that failed gets another chance; one with a validator was already checked.
+            for s in &mut sources {
+                s.status = match &s.status {
+                    st if st.is_dead() && !matches!(st, SourceStatus::Failed(_)) => st.clone(),
+                    _ if s.validator.is_some() => SourceStatus::Working,
+                    _ => SourceStatus::Checking,
+                };
+            }
             let segs = Segments::from_saved(state.segments.clone(), tuning.min_split);
             progress.downloaded.store(segs.downloaded(), Ordering::SeqCst);
-            let job = Job::new(client, url, &req, tuning, state.clone(), file, segs, progress, &stop);
-            return run(job, Start::Resume, max_conns, false, stop).await;
+            let job = Job::new(client, &req, tuning, state.clone(), sources, file, segs, progress, &control, false, max_conns);
+            return run(job, None, max_conns, stop).await;
         }
     }
 
-    // The first connection: the whole file, which also tells the size, range support and validator.
-    let mut attempt = 0;
-    let first = loop {
-        let sent = client.get(url.clone()).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
-        let result = tokio::select! {
-            r = sent => r,
-            _ = stopped(stop.clone()) => return outcome_for_stop(&stop),
-        };
-        let problem = match result {
-            Ok(r) if r.status().is_success() => break r,
-            Ok(r) => status_problem(r.status()),
-            Err(e) => Problem::Transient(error_text(&e)),
-        };
-        match problem {
-            Problem::Permanent(msg) => return Outcome::Failed(msg),
-            Problem::Transient(msg) if attempt >= req.retries => return Outcome::Failed(msg),
-            _ => {}
+    // A fresh start: ask the sources in turn for the whole file until one answers. One with ranges and a size is
+    // preferred, so a mirror can save a download whose link has no ranges.
+    let mut attempt = 0usize;
+    let (first_idx, first) = loop {
+        let mut plain: Option<(usize, reqwest::Response)> = None;
+        let mut reason = None;
+        for (i, s) in sources.iter_mut().enumerate() {
+            if !s.enabled || s.status.is_dead() {
+                continue;
+            }
+            let Ok(url) = reqwest::Url::parse(&s.url) else { continue };
+            let sent = client.get(url).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
+            let result = tokio::select! {
+                r = sent => r,
+                _ = stopped(stop.clone()) => return outcome_for_stop(&stop),
+            };
+            match result {
+                Ok(r) if r.status() == StatusCode::PARTIAL_CONTENT && http::content_range_total(r.headers()).is_some() => {
+                    plain = Some((i, r));
+                    break;
+                }
+                Ok(r) if r.status().is_success() => {
+                    if plain.is_none() {
+                        plain = Some((i, r));
+                    }
+                }
+                Ok(r) => match status_problem(r.status()) {
+                    Problem::Permanent(msg) => {
+                        s.status = SourceStatus::Failed(msg.clone());
+                        reason = Some(msg);
+                    }
+                    Problem::Transient(msg) => reason = Some(msg),
+                    _ => reason = Some(format!("{} {}", r.status().as_u16(), r.status().canonical_reason().unwrap_or(""))),
+                },
+                Err(e) => reason = Some(error_text(&e)),
+            }
         }
-        if !sleep_unless_stopped(retry_delay(&tuning, attempt as usize), &stop).await {
+        if let Some(found) = plain {
+            break found;
+        }
+        let reason = reason.unwrap_or_else(|| "No source to download from".into());
+        let alive = sources.iter().any(|s| s.enabled && !s.status.is_dead());
+        if !alive || attempt >= req.retries as usize {
+            return Outcome::Failed(failure_text(sources.len(), &reason));
+        }
+        if !sleep_unless_stopped(retry_delay(&tuning, attempt), &stop).await {
             return outcome_for_stop(&stop);
         }
         attempt += 1;
@@ -252,6 +495,15 @@ pub async fn download(
     let ranges = first.status() == StatusCode::PARTIAL_CONTENT;
     let size = if ranges { http::content_range_total(first.headers()) } else { first.content_length() };
     let resumable = ranges && size.is_some();
+    sources[first_idx].validator = http::validator(first.headers());
+    sources[first_idx].status = SourceStatus::Working;
+    // The other sources are checked before they get connections.
+    for (i, s) in sources.iter_mut().enumerate() {
+        if i != first_idx && !s.status.is_dead() {
+            s.status = SourceStatus::Checking;
+            s.validator = None;
+        }
+    }
     // Starting over keeps the name the download already had.
     let dest = match &saved {
         Some(state) => state.dest.clone(),
@@ -271,25 +523,18 @@ pub async fn download(
         return Outcome::Failed(format!("Can't make room for the file: {e}"));
     }
     // Ranged downloads are split over connections; without ranges or a size, one connection reads to the end.
-    let segs = if resumable {
-        Segments::new(size.unwrap_or(0), tuning.min_split)
-    } else {
-        Segments::new(u64::MAX, u64::MAX)
-    };
+    let segs = if resumable { Segments::new(size.unwrap_or(0), tuning.min_split) } else { Segments::new(u64::MAX, u64::MAX) };
     progress.downloaded.store(0, Ordering::SeqCst);
-    let state = ResumeState {
-        url: req.url.clone(),
-        dest,
-        size,
-        validator: http::validator(first.headers()),
-        resumable,
-        segments: Vec::new(),
-    };
-    let job = Job::new(client, url, &req, tuning, state, file, segs, progress, &stop);
-    run(job, Start::Fresh(first), max_conns, !resumable, stop).await
+    let state = ResumeState { url: req.url.clone(), dest, size, resumable, segments: Vec::new(), sources: Vec::new() };
+    let job = Job::new(client, &req, tuning, state, sources, file, segs, progress, &control, !resumable, max_conns);
+    run(job, Some((first_idx, first)), max_conns, stop).await
 }
 
-async fn run(job: Arc<Job>, start: Start, max_conns: usize, sequential: bool, stop: watch::Receiver<u8>) -> Outcome {
+fn failure_text(sources: usize, reason: &str) -> String {
+    if sources > 1 { format!("All sources failed: {reason}") } else { reason.to_string() }
+}
+
+async fn run(job: Arc<Job>, first: Option<(usize, reqwest::Response)>, max_conns: usize, stop: watch::Receiver<u8>) -> Outcome {
     {
         let p = &job.progress;
         *p.name.lock().unwrap() = job.state.dest.file_name().map(|n| n.to_string_lossy().into_owned());
@@ -297,29 +542,47 @@ async fn run(job: Arc<Job>, start: Start, max_conns: usize, sequential: bool, st
         p.resumable.store(job.state.resumable, Ordering::SeqCst);
     }
     job.save();
+    job.publish_sources();
+    let count = job.sources.read().unwrap().len();
+    for i in 0..count {
+        job.spawn_check_if_needed(i);
+    }
 
     let mut tasks = Vec::new();
-    let mut first_id = 0;
-    if let Start::Fresh(first) = start {
-        let idx = job.segs.lock().unwrap().take(0).expect("a new download has one free segment");
-        tasks.push(tokio::spawn(connection(job.clone(), 0, Some((idx, first)), sequential)));
-        first_id = 1;
+    let mut next_id = 0;
+    if let Some((src, response)) = first {
+        job.sources.read().unwrap()[src].active.fetch_add(1, Ordering::SeqCst);
+        job.segs.lock().unwrap().take(0).expect("a new download has one free segment");
+        tasks.push(tokio::spawn(connection(job.clone(), 0, Some((src, response)))));
+        next_id = 1;
     }
-    if !sequential {
-        for id in first_id..max_conns {
-            tasks.push(tokio::spawn(connection(job.clone(), id, None, false)));
-        }
+    let conns = if job.sequential { 1 } else { max_conns };
+    for id in next_id..conns {
+        tasks.push(tokio::spawn(connection(job.clone(), id, None)));
     }
 
-    // Saves the resume state every few seconds until the connections are done.
-    let (done_tx, mut done_rx) = watch::channel(false);
+    // Saves the resume state, measures speeds and handles commands until the connections are done.
+    let (done_tx, done_rx) = watch::channel(false);
     let saver = tokio::spawn({
         let job = job.clone();
+        let mut done = done_rx.clone();
         async move {
             loop {
                 tokio::select! {
                     _ = tokio::time::sleep(job.tuning.save_interval) => job.save(),
-                    _ = done_rx.changed() => break,
+                    _ = done.changed() => break,
+                }
+            }
+        }
+    });
+    let monitor = tokio::spawn({
+        let job = job.clone();
+        let mut done = done_rx;
+        async move {
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(job.tuning.tick) => job.tick(),
+                    _ = done.changed() => break,
                 }
             }
         }
@@ -329,6 +592,8 @@ async fn run(job: Arc<Job>, start: Start, max_conns: usize, sequential: bool, st
     }
     let _ = done_tx.send(true);
     let _ = saver.await;
+    let _ = monitor.await;
+    job.publish_sources();
 
     if let Some(msg) = job.fatal.lock().unwrap().clone() {
         job.save();
@@ -338,13 +603,13 @@ async fn run(job: Arc<Job>, start: Start, max_conns: usize, sequential: bool, st
         job.save();
         return Outcome::Paused;
     }
-    let complete = sequential || job.segs.lock().unwrap().is_complete();
+    let complete = job.sequential || job.segs.lock().unwrap().is_complete();
     if !complete {
         job.save();
         return Outcome::Failed("The download stopped before every byte was in".into());
     }
     let size = job.state.size;
-    if sequential {
+    if job.sequential {
         let got = job.progress.downloaded.load(Ordering::SeqCst);
         if size.is_some_and(|s| s != got) {
             return Outcome::Failed(format!("The server sent {got} of {} bytes", size.unwrap_or(0)));
@@ -366,23 +631,36 @@ async fn run(job: Arc<Job>, start: Start, max_conns: usize, sequential: bool, st
     }
 }
 
-/// One connection: works on a range until it is done, then takes another, until nothing is left to take.
-async fn connection(job: Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Response)>, sequential: bool) {
-    let mut attempt = 0;
+/// One connection: picks a source, works on a range until it is done, then takes another, until nothing is left.
+async fn connection(job: Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Response)>) {
+    let mut avoid: Option<usize> = None;
     loop {
         if job.is_stopped() {
             break;
         }
-        let response = match first.take() {
-            Some((_, r)) => r,
+        let (src, response) = match first.take() {
+            Some(found) => found,
             None => {
                 if job.segs.lock().unwrap().owned_by(id).is_none() && job.segs.lock().unwrap().take(id).is_none() {
                     break;
                 }
-                match job.open(id, sequential).await {
-                    Ok(r) => r,
+                let src = match job.pick(avoid) {
+                    Pick::Use(src) => src,
+                    Pick::Wait => {
+                        job.release(id);
+                        job.wait_for_change().await;
+                        continue;
+                    }
+                    Pick::NoneLeft => {
+                        job.fail_no_sources();
+                        break;
+                    }
+                };
+                match job.open(id, src).await {
+                    Ok(r) => (src, r),
                     Err(p) => {
-                        if !job.handle(id, p, &mut attempt).await {
+                        job.unuse(src);
+                        if !job.handle(id, src, p, &mut avoid).await {
                             break;
                         }
                         continue;
@@ -390,58 +668,84 @@ async fn connection(job: Arc<Job>, id: usize, mut first: Option<(usize, reqwest:
                 }
             }
         };
+        let stat = &job.conns[id];
+        stat.source.store(src, Ordering::SeqCst);
+        stat.handoff.store(false, Ordering::SeqCst);
+        stat.moving.store(false, Ordering::SeqCst);
+        stat.slow_ticks.store(0, Ordering::SeqCst);
         job.progress.active.fetch_add(1, Ordering::SeqCst);
         job.progress.peak.fetch_max(job.progress.active.load(Ordering::SeqCst), Ordering::SeqCst);
-        let result = job.stream(id, response, sequential).await;
+        let result = job.stream(id, src, response).await;
         job.progress.active.fetch_sub(1, Ordering::SeqCst);
+        stat.source.store(usize::MAX, Ordering::SeqCst);
+        job.unuse(src);
         match result {
             Ok(()) => {
-                attempt = 0;
-                if sequential {
+                avoid = None;
+                let source = job.source(src);
+                let settled = source.slow_since.lock().unwrap().is_none_or(|t| t.elapsed() >= job.tuning.slow_after);
+                if source.status() == SourceStatus::Slow && settled {
+                    source.set_status(SourceStatus::Working);
+                }
+                if job.sequential {
                     break;
                 }
             }
             Err(p) => {
-                if !job.handle(id, p, &mut attempt).await {
+                if !job.handle(id, src, p, &mut avoid).await {
                     break;
                 }
             }
         }
     }
     job.release(id);
+    job.changed.notify_waiters();
 }
 
 impl Job {
     #[allow(clippy::too_many_arguments)]
     fn new(
         client: &reqwest::Client,
-        url: reqwest::Url,
         req: &Request,
         tuning: Tuning,
         state: ResumeState,
+        sources: Vec<SavedSource>,
         file: File,
         segs: Segments,
         progress: Arc<Progress>,
-        stop: &watch::Receiver<u8>,
+        control: &Control,
+        sequential: bool,
+        max_conns: usize,
     ) -> Arc<Job> {
         let (stop_tx, _) = watch::channel(RUN);
+        let stop = merged_stop(control.stop.subscribe(), &stop_tx);
         Arc::new(Job {
             client: client.clone(),
-            url,
             tuning,
             retries: req.retries,
-            validator: state.validator.clone(),
+            per_server: req.connections_per_server.clamp(1, 32) as usize,
+            sequential,
             state,
             state_file: req.state_file.clone(),
             file,
             segs: Mutex::new(segs),
-            progress,
-            failures: AtomicU32::new(0),
-            fatal: Mutex::new(None),
-            stop: merged_stop(stop.clone(), &stop_tx),
-            stop_tx,
+            sources: RwLock::new(sources.into_iter().filter_map(Source::new).collect()),
+            hosts: Mutex::new(HashMap::new()),
+            pick_lock: Mutex::new(()),
             refusal_gate: tokio::sync::Mutex::new(()),
+            conns: (0..max_conns.max(1)).map(|_| ConnStat { source: AtomicUsize::new(usize::MAX), ..Default::default() }).collect(),
+            progress,
+            changed: Notify::new(),
+            inbox: control.inbox.clone(),
+            last_reason: Mutex::new(None),
+            fatal: Mutex::new(None),
+            stop,
+            stop_tx,
         })
+    }
+
+    fn source(&self, idx: usize) -> Arc<Source> {
+        self.sources.read().unwrap()[idx].clone()
     }
 
     /// Saves the resume state, after making sure every byte it counts is on disk.
@@ -451,6 +755,7 @@ impl Job {
         let _ = self.file.sync_data();
         let mut state = self.state.clone();
         state.segments = if state.resumable { segments } else { Vec::new() };
+        state.sources = self.sources.read().unwrap().iter().map(|s| s.saved()).collect();
         let _ = state.save(path);
     }
 
@@ -465,52 +770,168 @@ impl Job {
         }
     }
 
+    fn unuse(&self, src: usize) {
+        self.source(src).active.fetch_sub(1, Ordering::SeqCst);
+        self.changed.notify_waiters();
+    }
+
     fn fail(&self, msg: String) {
         self.fatal.lock().unwrap().get_or_insert(msg);
         let _ = self.stop_tx.send(ABORT);
     }
 
+    fn fail_no_sources(&self) {
+        let count = self.sources.read().unwrap().len();
+        let reason = self.last_reason.lock().unwrap().clone().unwrap_or_else(|| "No source is working".into());
+        self.fail(failure_text(count, &reason));
+    }
+
+    /// Marks a source as never to be used again in this run, remembering why.
+    fn kill(&self, src: usize, status: SourceStatus) {
+        *self.last_reason.lock().unwrap() = Some(status.text());
+        self.source(src).set_status(status);
+        self.changed.notify_waiters();
+    }
+
+    /// Chooses a source for a new connection: a working, enabled one whose host has room, with the fewest
+    /// connections on its host, then the best speed. Slow sources and `avoid` come last.
+    fn pick(&self, avoid: Option<usize>) -> Pick {
+        let _guard = self.pick_lock.lock().unwrap();
+        let sources = self.sources.read().unwrap();
+        let now = Instant::now();
+        let mut per_host: HashMap<&str, usize> = HashMap::new();
+        for s in sources.iter() {
+            *per_host.entry(s.host.as_str()).or_default() += s.active.load(Ordering::SeqCst);
+        }
+        // While mirrors are still being checked, no source takes more than its fair share, so the connections
+        // left over go to the mirrors once they are confirmed instead of all piling onto the first link.
+        let live = sources.iter().filter(|s| s.enabled.load(Ordering::SeqCst) && !s.status().is_dead()).count();
+        let checking = sources.iter().any(|s| s.enabled.load(Ordering::SeqCst) && s.status() == SourceStatus::Checking);
+        let share = if checking && !self.sequential { self.conns.len().div_ceil(live.max(1)) } else { usize::MAX };
+        let mut hosts = self.hosts.lock().unwrap();
+        let mut alive = false;
+        type Key = (bool, usize, std::cmp::Reverse<u64>);
+        let mut best: Option<(usize, Key)> = None;
+        for (i, s) in sources.iter().enumerate() {
+            let status = s.status();
+            if !s.enabled.load(Ordering::SeqCst) || status.is_dead() {
+                continue;
+            }
+            alive = true;
+            if status == SourceStatus::Checking || s.retry_at.lock().unwrap().is_some_and(|t| t > now) {
+                continue;
+            }
+            let on_host = per_host[s.host.as_str()];
+            if on_host >= self.per_server || s.active.load(Ordering::SeqCst) >= share {
+                continue;
+            }
+            if let Some(limit) = hosts.get(&s.host)
+                && on_host >= limit.cap
+                && now < limit.until
+            {
+                continue;
+            }
+            let key = (status == SourceStatus::Slow || Some(i) == avoid, on_host, std::cmp::Reverse(s.speed.load(Ordering::SeqCst)));
+            if best.as_ref().is_none_or(|(_, k)| key < *k) {
+                best = Some((i, key));
+            }
+        }
+        match best {
+            Some((i, _)) => {
+                let s = &sources[i];
+                // Past a refusal's wait, this connection is the one more that gets tried.
+                if let Some(limit) = hosts.get_mut(&s.host)
+                    && per_host[s.host.as_str()] >= limit.cap
+                {
+                    limit.cap += 1;
+                    limit.until = now + self.tuning.refusal_wait;
+                }
+                s.active.fetch_add(1, Ordering::SeqCst);
+                Pick::Use(i)
+            }
+            None if alive => Pick::Wait,
+            None => Pick::NoneLeft,
+        }
+    }
+
+    /// After a refusal: no more connections to the host than are receiving data now, until the wait is over.
+    fn limit_host(&self, host: &str) {
+        let sources = self.sources.read().unwrap();
+        let accepted = self
+            .conns
+            .iter()
+            .filter_map(|c| sources.get(c.source.load(Ordering::SeqCst)))
+            .filter(|s| s.host == host)
+            .count()
+            .max(1);
+        let now = Instant::now();
+        let mut hosts = self.hosts.lock().unwrap();
+        let cap = match hosts.get(host) {
+            Some(limit) if limit.until > now => limit.cap.min(accepted),
+            _ => accepted,
+        };
+        hosts.insert(host.to_string(), HostLimit { cap, until: now + self.tuning.refusal_wait });
+    }
+
+    async fn wait_for_change(&self) {
+        let mut stop = self.stop.clone();
+        tokio::select! {
+            _ = self.changed.notified() => {}
+            _ = tokio::time::sleep(self.tuning.tick) => {}
+            _ = stopped_ref(&mut stop) => {}
+        }
+    }
+
     /// Deals with a problem; returns whether the connection should keep going.
-    async fn handle(&self, id: usize, problem: Problem, attempt: &mut usize) -> bool {
+    async fn handle(&self, id: usize, src: usize, problem: Problem, avoid: &mut Option<usize>) -> bool {
+        let source = self.source(src);
+        if !matches!(problem, Problem::Stopped) {
+            self.release(id);
+        }
         match problem {
             Problem::Stopped => false,
-            Problem::Stalled => {
-                // The range goes back to the pool; this connection reconnects and takes the largest free range.
-                self.release(id);
+            Problem::Stalled | Problem::Moved => true,
+            Problem::Slow => {
+                source.set_status(SourceStatus::Slow);
+                *source.slow_since.lock().unwrap() = Some(Instant::now());
+                self.publish_sources();
+                *avoid = Some(src);
                 true
             }
             Problem::Refused => {
-                self.release(id);
-                // One connection at a time waits and tries again; the others queue behind it.
+                // Keep the connections the host accepted (those receiving data now); one more is tried after the wait.
+                self.limit_host(&source.host);
+                // A refused connection waits its turn, so a busy server sees at most one new try per wait.
                 let _gate = self.refusal_gate.lock().await;
                 sleep_unless_stopped(self.tuning.refusal_wait, &self.stop).await
             }
             Problem::FileChanged => {
-                self.fail("File changed on the server".into());
-                false
+                self.kill(src, SourceStatus::FileChanged);
+                true
             }
             Problem::Permanent(msg) => {
-                self.fail(msg);
-                false
+                self.kill(src, SourceStatus::Failed(msg));
+                true
             }
             Problem::Transient(msg) => {
-                self.release(id);
-                let failures = self.failures.fetch_add(1, Ordering::SeqCst) + 1;
+                let failures = source.failures.fetch_add(1, Ordering::SeqCst) + 1;
                 if failures > self.retries {
-                    self.fail(msg);
-                    return false;
+                    self.kill(src, SourceStatus::Failed(msg));
+                } else {
+                    *self.last_reason.lock().unwrap() = Some(msg);
+                    let delay = retry_delay(&self.tuning, failures as usize - 1);
+                    *source.retry_at.lock().unwrap() = Some(Instant::now() + delay);
                 }
-                let delay = retry_delay(&self.tuning, *attempt);
-                *attempt += 1;
-                sleep_unless_stopped(delay, &self.stop).await
+                true
             }
         }
     }
 
-    /// Opens a request for the rest of the range this connection owns.
-    async fn open(&self, id: usize, sequential: bool) -> Result<reqwest::Response, Problem> {
-        let mut req = self.client.get(self.url.clone()).header(ACCEPT_ENCODING, "identity");
-        let (start, end) = if sequential {
+    /// Opens a request on `src` for the rest of the range this connection owns.
+    async fn open(&self, id: usize, src: usize) -> Result<reqwest::Response, Problem> {
+        let source = self.source(src);
+        let mut req = self.client.get(source.url.clone()).header(ACCEPT_ENCODING, "identity");
+        let (start, end) = if self.sequential {
             // Without ranges a failed download starts over.
             let mut segs = self.segs.lock().unwrap();
             *segs = Segments::new(u64::MAX, u64::MAX);
@@ -522,9 +943,9 @@ impl Job {
             let s = segs.get(segs.owned_by(id).ok_or(Problem::Stopped)?);
             (s.pos, s.end)
         };
-        if !sequential {
+        if !self.sequential {
             req = req.header(RANGE, format!("bytes={start}-{}", end - 1));
-            if let Some(v) = &self.validator {
+            if let Some(v) = source.validator.lock().unwrap().as_ref() {
                 req = req.header(IF_RANGE, v);
             }
         }
@@ -534,7 +955,7 @@ impl Job {
             _ = stopped_ref(&mut stop) => return Err(Problem::Stopped),
         };
         let status = response.status();
-        if sequential {
+        if self.sequential {
             return if status.is_success() { Ok(response) } else { Err(status_problem(status)) };
         }
         match status {
@@ -547,29 +968,31 @@ impl Job {
     }
 
     /// Reads a response into the file until the connection's range is done.
-    async fn stream(&self, id: usize, mut response: reqwest::Response, sequential: bool) -> Result<(), Problem> {
+    async fn stream(&self, id: usize, src: usize, mut response: reqwest::Response) -> Result<(), Problem> {
+        let source = self.source(src);
+        let stat = &self.conns[id];
         let mut buf: Vec<u8> = Vec::with_capacity(self.tuning.write_buffer);
         let mut stop = self.stop.clone();
         loop {
             let next = tokio::select! {
                 r = tokio::time::timeout(self.tuning.stall_timeout, response.chunk()) => r,
                 _ = stopped_ref(&mut stop) => {
-                    self.flush(id, &mut buf)?;
+                    self.flush(id, &source, &mut buf)?;
                     return Err(Problem::Stopped);
                 }
             };
             match next {
                 Err(_) => {
-                    self.flush(id, &mut buf)?;
+                    self.flush(id, &source, &mut buf)?;
                     return Err(Problem::Stalled);
                 }
                 Ok(Err(e)) => {
-                    self.flush(id, &mut buf)?;
+                    self.flush(id, &source, &mut buf)?;
                     return Err(Problem::Transient(error_text(&e)));
                 }
                 Ok(Ok(None)) => {
-                    let done = self.flush(id, &mut buf)?;
-                    return if done || sequential {
+                    let done = self.flush(id, &source, &mut buf)?;
+                    return if done || self.sequential {
                         Ok(())
                     } else {
                         Err(Problem::Transient("The server closed the connection early".into()))
@@ -579,9 +1002,20 @@ impl Job {
                     buf.extend_from_slice(&bytes);
                     let (pos, end) = self.position(id).ok_or(Problem::Stopped)?;
                     if (buf.len() >= self.tuning.write_buffer || pos + buf.len() as u64 >= end)
-                        && self.flush(id, &mut buf)? {
-                            return Ok(());
+                        && self.flush(id, &source, &mut buf)?
+                    {
+                        return Ok(());
+                    }
+                    if !self.sequential {
+                        if stat.handoff.load(Ordering::SeqCst) {
+                            self.flush(id, &source, &mut buf)?;
+                            return Err(Problem::Slow);
                         }
+                        if !source.enabled.load(Ordering::SeqCst) || stat.moving.load(Ordering::SeqCst) {
+                            self.flush(id, &source, &mut buf)?;
+                            return Err(Problem::Moved);
+                        }
+                    }
                 }
             }
         }
@@ -595,7 +1029,7 @@ impl Job {
 
     /// Writes the buffer at the connection's position, never past its range's end (which another connection may
     /// have moved), and returns whether the range is done.
-    fn flush(&self, id: usize, buf: &mut Vec<u8>) -> Result<bool, Problem> {
+    fn flush(&self, id: usize, source: &Source, buf: &mut Vec<u8>) -> Result<bool, Problem> {
         let mut segs = self.segs.lock().unwrap();
         let Some(idx) = segs.owned_by(id) else {
             buf.clear();
@@ -607,7 +1041,9 @@ impl Job {
             write_at(&self.file, &buf[..n], s.pos).map_err(|e| Problem::Permanent(format!("Can't write the file: {e}")))?;
             segs.advance(idx, n as u64);
             self.progress.downloaded.fetch_add(n as u64, Ordering::SeqCst);
-            self.failures.store(0, Ordering::SeqCst);
+            source.bytes.fetch_add(n as u64, Ordering::SeqCst);
+            source.failures.store(0, Ordering::SeqCst);
+            self.conns[id].bytes.fetch_add(n as u64, Ordering::SeqCst);
         }
         buf.clear();
         let done = segs.get(idx).remaining() == 0;
@@ -615,6 +1051,214 @@ impl Job {
             segs.release(idx);
         }
         Ok(done)
+    }
+
+    /// Checks a source before it gets connections (§7.2), unless it is already checked or dead.
+    fn spawn_check_if_needed(self: &Arc<Self>, idx: usize) {
+        let source = self.source(idx);
+        if source.status() != SourceStatus::Checking || !source.enabled.load(Ordering::SeqCst) {
+            return;
+        }
+        let job = self.clone();
+        tokio::spawn(async move { job.check(idx).await });
+    }
+
+    async fn check(&self, idx: usize) {
+        let source = self.source(idx);
+        let mut attempt = 0usize;
+        loop {
+            let req = self.client.get(source.url.clone()).header(RANGE, "bytes=0-0").header(ACCEPT_ENCODING, "identity");
+            let mut stop = self.stop.clone();
+            let result = tokio::select! {
+                r = req.send() => r,
+                _ = stopped_ref(&mut stop) => return,
+            };
+            let problem = match result {
+                Ok(r) if r.status() == StatusCode::PARTIAL_CONTENT || (r.status().is_success() && self.sequential) => {
+                    let total = if r.status() == StatusCode::PARTIAL_CONTENT {
+                        http::content_range_total(r.headers())
+                    } else {
+                        r.content_length()
+                    };
+                    if self.state.size.is_some() && total != self.state.size {
+                        self.kill(idx, SourceStatus::DifferentFile);
+                    } else {
+                        *source.validator.lock().unwrap() = http::validator(r.headers());
+                        source.set_status(SourceStatus::Working);
+                        self.changed.notify_waiters();
+                    }
+                    return;
+                }
+                Ok(r) if r.status().is_success() => {
+                    self.kill(idx, SourceStatus::NoResumeSupport);
+                    return;
+                }
+                Ok(r) => status_problem(r.status()),
+                Err(e) => Problem::Transient(error_text(&e)),
+            };
+            match problem {
+                Problem::Transient(msg) | Problem::Permanent(msg) if attempt >= self.retries as usize => {
+                    self.kill(idx, SourceStatus::Failed(msg));
+                    return;
+                }
+                Problem::Permanent(msg) => {
+                    self.kill(idx, SourceStatus::Failed(msg));
+                    return;
+                }
+                _ => {}
+            }
+            if !sleep_unless_stopped(retry_delay(&self.tuning, attempt), &self.stop).await {
+                return;
+            }
+            attempt += 1;
+        }
+    }
+
+    /// Runs every `tick`: handles commands, measures speeds, hands slow connections' ranges to faster sources.
+    fn tick(self: &Arc<Self>) {
+        let commands: Vec<Command> = std::mem::take(&mut *self.inbox.lock().unwrap());
+        for command in commands {
+            match command {
+                Command::AddMirrors(urls) => {
+                    for url in urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
+                        let idx = {
+                            let mut sources = self.sources.write().unwrap();
+                            if sources.iter().any(|s| same_link(&s.text, url)) {
+                                continue;
+                            }
+                            let saved = SavedSource { url: url.to_string(), validator: None, enabled: true, status: SourceStatus::Checking };
+                            let Some(source) = Source::new(saved) else { continue };
+                            sources.push(source);
+                            sources.len() - 1
+                        };
+                        self.spawn_check_if_needed(idx);
+                    }
+                }
+                Command::Enable(url, on) => {
+                    let sources = self.sources.read().unwrap();
+                    let others_on = sources.iter().filter(|s| !same_link(&s.text, &url) && s.enabled.load(Ordering::SeqCst)).count();
+                    if let Some(s) = sources.iter().find(|s| same_link(&s.text, &url))
+                        && (on || others_on > 0)
+                    {
+                        s.enabled.store(on, Ordering::SeqCst);
+                        if on && matches!(s.status(), SourceStatus::Failed(_)) {
+                            s.failures.store(0, Ordering::SeqCst);
+                            s.set_status(SourceStatus::Working);
+                        }
+                    }
+                    drop(sources);
+                    let count = self.sources.read().unwrap().len();
+                    for i in 0..count {
+                        self.spawn_check_if_needed(i);
+                    }
+                }
+            }
+        }
+
+        let secs = self.tuning.tick.as_secs_f64().max(0.001);
+        for s in self.sources.read().unwrap().iter() {
+            let now = s.bytes.load(Ordering::SeqCst);
+            let delta = now - s.last_bytes.swap(now, Ordering::SeqCst);
+            let rate = (delta as f64 / secs) as u64;
+            let old = s.speed.load(Ordering::SeqCst);
+            s.speed.store(if old == 0 { rate } else { (old + rate) / 2 }, Ordering::SeqCst);
+        }
+
+        // Slow connections: under a quarter of the average for `slow_after`, when another source could take over.
+        let mut rates = Vec::new();
+        for (id, c) in self.conns.iter().enumerate() {
+            let now = c.bytes.load(Ordering::SeqCst);
+            let delta = now - c.last_bytes.swap(now, Ordering::SeqCst);
+            let src = c.source.load(Ordering::SeqCst);
+            if src != usize::MAX {
+                rates.push((id, src, delta));
+            }
+        }
+        let usable = self
+            .sources
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|s| s.enabled.load(Ordering::SeqCst) && matches!(s.status(), SourceStatus::Working | SourceStatus::Idle))
+            .count();
+        if rates.len() >= 2 && usable >= 2 && !self.sequential {
+            let average = rates.iter().map(|r| r.2).sum::<u64>() / rates.len() as u64;
+            let needed = (self.tuning.slow_after.as_secs_f64() / secs).ceil() as u32;
+            for (id, src, delta) in rates {
+                let c = &self.conns[id];
+                if delta * 4 < average {
+                    let ticks = c.slow_ticks.fetch_add(1, Ordering::SeqCst) + 1;
+                    let elsewhere = self.sources.read().unwrap().iter().enumerate().any(|(i, s)| {
+                        i != src && s.enabled.load(Ordering::SeqCst) && s.status() == SourceStatus::Working
+                    });
+                    if ticks >= needed && elsewhere {
+                        c.handoff.store(true, Ordering::SeqCst);
+                    }
+                } else {
+                    c.slow_ticks.store(0, Ordering::SeqCst);
+                }
+            }
+        }
+        self.rebalance();
+        self.publish_sources();
+        self.changed.notify_waiters();
+    }
+
+    /// Moves one connection a tick from the busiest working source to the least busy one when they differ by two or
+    /// more, so a mirror that joins mid-download (or comes back) gets its share.
+    fn rebalance(&self) {
+        if self.sequential {
+            return;
+        }
+        let sources = self.sources.read().unwrap();
+        let now = Instant::now();
+        let hosts = self.hosts.lock().unwrap();
+        let open = |s: &Source| {
+            s.enabled.load(Ordering::SeqCst)
+                && s.status() == SourceStatus::Working
+                && s.retry_at.lock().unwrap().is_none_or(|t| t <= now)
+                && hosts.get(&s.host).is_none_or(|l| l.until <= now)
+        };
+        let usable: Vec<usize> = (0..sources.len()).filter(|&i| open(&sources[i])).collect();
+        let active = |i: usize| sources[i].active.load(Ordering::SeqCst);
+        let (Some(&low), Some(&high)) = (usable.iter().min_by_key(|&&i| active(i)), usable.iter().max_by_key(|&&i| active(i)))
+        else {
+            return;
+        };
+        if active(high) < active(low) + 2 || active(low) >= self.per_server {
+            return;
+        }
+        if self.conns.iter().any(|c| c.moving.load(Ordering::SeqCst)) {
+            return;
+        }
+        if let Some(c) = self.conns.iter().find(|c| c.source.load(Ordering::SeqCst) == high) {
+            c.moving.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn publish_sources(&self) {
+        let infos = self
+            .sources
+            .read()
+            .unwrap()
+            .iter()
+            .map(|s| {
+                let active = s.active.load(Ordering::SeqCst);
+                let status = match s.status() {
+                    SourceStatus::Working if active == 0 => SourceStatus::Idle,
+                    other => other,
+                };
+                SourceInfo {
+                    url: s.text.clone(),
+                    status,
+                    enabled: s.enabled.load(Ordering::SeqCst),
+                    active,
+                    speed: s.speed.load(Ordering::SeqCst),
+                    bytes: s.bytes.load(Ordering::SeqCst),
+                }
+            })
+            .collect();
+        *self.progress.sources.lock().unwrap() = infos;
     }
 }
 
