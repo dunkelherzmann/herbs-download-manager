@@ -19,7 +19,7 @@ The Windows version is ported once the Mac version has each feature, item by ite
 ([`macos/pending.md`](../macos/pending.md)). Everything is still to build.
 
 - [x] **Project skeleton**: Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe`, `windows\scripts\build.ps1`, copied to the desktop on every build. (§1) #36
-- [ ] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Windows). (§7, §8, §10)
+- [x] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Windows: `scripts/check.sh` runs every core test there on each pull request, #27). (§7, §8, §10)
 - [ ] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
   menu in the title bar's left corner. (§2–§4)
 - [ ] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11)

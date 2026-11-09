@@ -17,6 +17,19 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   test copy's pid (`CGWindowListCopyWindowInfo`), or with computer-use when his copy isn't running. `build.sh
   --install` leaves his running copy alone; the new build loads at his next launch.
 
+## Building the Linux and Windows apps
+
+- Each is its own Cargo workspace (`linux/`, `windows/`), excluded from the root one, so `scripts/check.sh` never
+  builds GTK or Win32; build each on its machine in a throwaway worktree of the pushed branch
+  (`~/Projects/wt-hdm-linux`, `%USERPROFILE%\Projects\wt-hdm-windows`), then remove it.
+- Linux: `sh linux/scripts/build.sh [--install]` runs flatpak-builder as the Flathub app `org.flatpak.Builder` (there
+  is no `flatpak-builder` command on linux); Rust comes from the `rust-stable//25.08` SDK extension. See the
+  window with `--capture FILE` inside `kwin_wayland --virtual --socket <name> --exit-with-session "flatpak run
+  --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (set `XDG_RUNTIME_DIR` over ssh), never the desktop.
+- Windows: `powershell -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). `--capture
+  FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
+  comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
+
 ## Writing tests (learned the hard way)
 
 - `hd-mock` servers that fake a dying or changed file must also cut responses already under way; otherwise "source
