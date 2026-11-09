@@ -16,6 +16,14 @@ pub fn data_folder() -> PathBuf {
     }
 }
 
+/// S1 when unset: the Downloads folder (%HD_DOWNLOADS_DIR% in tests).
+pub fn downloads_folder() -> PathBuf {
+    match std::env::var_os("HD_DOWNLOADS_DIR") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default()).join("Downloads"),
+    }
+}
+
 fn main() {
     // `--self-check` prints what the core reports and exits without a window (the build script checks the build).
     if std::env::args().any(|a| a == "--self-check") {

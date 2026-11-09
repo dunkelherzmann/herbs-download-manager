@@ -7,7 +7,7 @@ request each, and tick an item with its PR number once it is built and its test 
 
 ## Next (top priority)
 
-- [ ] **Menus in the window, matching the Mac.** The Main Menu (☰, in the top-left corner since the Mac moved to one, #26) holds every menu and submenu with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. The skeleton has the menus' titles; their items come with the main window. (§2, §4, enhancements.md) *Asked 2026-11-09.*
+- [x] **Menus in the window, matching the Mac.** The Main Menu (☰, in the top-left corner since the Mac moved to one, #26) holds every menu and submenu with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. The skeleton has the menus' titles; their items come with the main window. (§2, §4, enhancements.md) *Asked 2026-11-09.* Done in #39.
 
 ## Bugs to fix
 
@@ -20,8 +20,8 @@ The Windows version is ported once the Mac version has each feature, item by ite
 
 - [x] **Project skeleton**: Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe`, `windows\scripts\build.ps1`, copied to the desktop on every build. (§1) #36
 - [x] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Windows: `scripts/check.sh` runs every core test there on each pull request, #27). (§7, §8, §10)
-- [ ] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
-  menu in the title bar's left corner. (§2–§4)
+- [x] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
+  menu in the title bar's left corner. (§2–§4) #39. The progress bar under a name and dropping links come later (the list shows the percentage in Status meanwhile).
 - [ ] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11)
 - [ ] **Hover text and accessibility labels on every control.** (§3, §4)
 - [ ] **Feature tests** run on Windows. (all)
