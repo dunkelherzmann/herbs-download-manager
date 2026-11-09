@@ -8,6 +8,11 @@ icons follow AB Download Manager's layout. There are no tags.
 The macOS version is the reference. The Linux and Windows versions look and work 1:1 like it, except the window
 controls: minimize, maximize and close sit on the right, and the main menu takes the left corner of the title bar.
 
+**App icon** (`icon/icon.svg`, its own design): a frosted-white drive, its lid narrower at the top, with a gray
+download arrow coming in from above and a blue light on the right of its base, on a blue macOS-style rounded square
+with a dark blue rim. `icon/make.sh` draws it for every platform: `macos/Resources/AppIcon.icns`,
+`linux/icons/hicolor/` (PNG sizes and the SVG, named after the Flatpak id) and `windows/icons/app.ico`.
+
 Section 12 summarizes the reference apps this design was drawn from, with sources.
 
 ## 1. Platforms and build

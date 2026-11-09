@@ -44,3 +44,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **An original "download" app icon in the macOS style.** *Requested 2026-11-09.* A drive with a download arrow coming in from above, in a blue rounded square with a dark blue rim, the drive frosted white and the arrow gray; first drawn as three lanes over a tray, then redesigned from two icons Herbert showed (the colors and contour of the macOS App Store icon, the layout of a drive-and-arrow icon), light on the right of the base, colors a little darker. One SVG (`icon/icon.svg`) drawn into `.icns`, Linux PNGs and `.ico` by `icon/make.sh`. Done for the Mac in #18.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows

@@ -49,7 +49,7 @@ No open bugs in `bugs.md`.
 - [ ] **Settings**. (§9)
 - [ ] **Checksum verification** and checksum-file lookup. (§6, §9 S8)
 - [ ] **Hover text, accessibility labels and menu commands on every control.** (§3, §4)
-- [ ] **App icon** in the Mac, Linux and Windows formats. (§1)
+- [x] **App icon** in the Mac, Linux and Windows formats. (§1) — PR #18 (the Linux and Windows apps use it when they are built)
 - [ ] **Feature tests** driving the app's own commands against the mock server, results per feature. (all)
 
 ## Not checked automatically

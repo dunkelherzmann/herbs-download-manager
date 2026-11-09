@@ -48,6 +48,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 BIN="$(swift build --package-path macos -c release --arch arm64 --scratch-path "$BUILD/swift" --show-bin-path)"
 cp "$BIN/HerbsDownloadManager" "$APP/Contents/MacOS/HerbsDownloadManager"
 strip -x "$APP/Contents/MacOS/HerbsDownloadManager"
+# The app icon, made from icon/icon.svg by icon/make.sh.
+cp macos/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -58,6 +60,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>$NAME</string>
     <key>CFBundleIdentifier</key><string>com.herbertcisneros.HerbsDownloadManager</string>
     <key>CFBundleExecutable</key><string>HerbsDownloadManager</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>

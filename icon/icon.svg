@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Herb's Download Manager: a drive with a download arrow coming in (SPECIFICATION.md §1).
+       macOS icon grid: an 824-pt rounded square centred on a 1024 canvas. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#66A6E8"/>
+      <stop offset="0.5" stop-color="#3A78D6"/>
+      <stop offset="1" stop-color="#2450B8"/>
+    </linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2F5FA" stop-opacity="0.97"/>
+      <stop offset="1" stop-color="#D3DDEC" stop-opacity="0.94"/>
+    </linearGradient>
+    <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C2CFE2"/>
+      <stop offset="1" stop-color="#A7B7CF"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#88919F"/>
+      <stop offset="1" stop-color="#5D6676"/>
+    </linearGradient>
+    <linearGradient id="light" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#66A6E8"/>
+      <stop offset="1" stop-color="#2450B8"/>
+    </linearGradient>
+  </defs>
+  <!-- Tile with the dark blue rim -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="106" y="106" width="812" height="812" rx="179" fill="none" stroke="#152F72" stroke-opacity="0.55" stroke-width="12"/>
+  <rect x="116" y="116" width="792" height="792" rx="170" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="3"/>
+  <!-- Base of the drive -->
+  <rect x="246" y="600" width="532" height="196" rx="56" fill="url(#base)" stroke="#FFFFFF" stroke-opacity="0.7" stroke-width="4"/>
+  <circle cx="680" cy="740" r="26" fill="url(#light)"/>
+  <!-- Lid: narrow at the top, widening to the base -->
+  <path d="M362 318 L662 318 Q712 318 720 368 L778 640 Q786 684 740 684 L284 684 Q238 684 246 640 L304 368 Q312 318 362 318 Z"
+        fill="url(#lid)" stroke="#FFFFFF" stroke-width="4"/>
+  <!-- Arrow coming in from above -->
+  <path d="M460 196 L564 196 L564 450 L660 450 L512 598 L364 450 L460 450 Z"
+        fill="url(#arrow)" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="8" stroke-linejoin="round"/>
+</svg>
