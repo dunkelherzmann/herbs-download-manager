@@ -65,6 +65,8 @@ const S_NOTIFY: u16 = 81;
 const S_CHECKSUM_FILES: u16 = 82;
 const S_LIMITS: u16 = 83;
 const S_FORGET: u16 = 84;
+const S_SIGN_INS: u16 = 85;
+const S_MANAGE: u16 = 86;
 const S_CLOSE: u16 = 2;
 
 const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
@@ -150,7 +152,7 @@ fn explain_ids(hwnd: HWND, items: &[(u16, &str, &str)]) {
     });
 }
 
-fn columns(list: HWND, names: &[(&str, i32)], checkboxes: bool) {
+pub(crate) fn columns(list: HWND, names: &[(&str, i32)], checkboxes: bool) {
     unsafe {
         let mut style = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER;
         if checkboxes {
@@ -166,7 +168,7 @@ fn columns(list: HWND, names: &[(&str, i32)], checkboxes: bool) {
 }
 
 /// Rewrites a ListView's rows (adding or removing rows only when their number changes).
-fn fill(list: HWND, rows: &[Vec<String>]) {
+pub(crate) fn fill(list: HWND, rows: &[Vec<String>]) {
     unsafe {
         let have = SendMessageW(list, LVM_GETITEMCOUNT, None, None).0 as usize;
         if have != rows.len() {
@@ -432,6 +434,15 @@ fn draw_bar(item: &DRAWITEMSTRUCT, d: &Detail) {
     }
 }
 
+/// Settings' Sign-ins line, when Settings is open.
+pub fn show_sign_ins_summary(text: &str) {
+    if let Some(h) = SETTINGS.with(|s| *s.borrow())
+        && unsafe { IsWindow(Some(h)).as_bool() }
+    {
+        with_win(h, |w| set_text(w.controls[&S_SIGN_INS], text));
+    }
+}
+
 /// Add Mirror… (§7.1 M2, M3): one link per line.
 pub fn ask_mirrors(ctx: &Ctx, id: u64) {
     let Some(d) = ctx.manager.detail(id) else { return };
@@ -472,7 +483,8 @@ pub fn settings(ctx: &Ctx) {
     let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
     let folder = crate::save_folder(&ctx.manager).display().to_string();
     let (limits_text, limits_detail) = hd_core::hosts::describe(&ctx.manager.host_limits());
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 456), &[
+    let sign_ins = crate::signins::summary(ctx);
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 490), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -496,7 +508,10 @@ pub fn settings(ctx: &Ctx) {
         (0, w!("STATIC"), "Server limits:", LABEL, 12, 366, 170, 20),
         (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 366, 250, 20),
         (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 360, 95, 28),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 410, 85, 30),
+        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 400, 170, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 400, 250, 20),
+        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 394, 95, 28),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 446, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -513,6 +528,7 @@ pub fn settings(ctx: &Ctx) {
         (S_NOTIFY, "", "Show a notification each time a download finishes"),
         (S_LIMITS, "Server limits", limits_detail.as_str()),
         (S_FORGET, "", "Forget every server's remembered limit; downloads learn them again"),
+        (S_MANAGE, "Manage sign-ins", "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"),
         (S_CLOSE, "", "Close Settings; changes are already saved"),
     ]);
     with_win(hwnd, |w| {
@@ -723,6 +739,11 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                         })),
                         S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == EN_KILLFOCUS => save_settings(hwnd),
                         S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES => save_settings(hwnd),
+                        S_MANAGE => {
+                            if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
+                                crate::signins::open(&ctx);
+                            }
+                        }
                         S_FORGET => drop(with_win(hwnd, |w| {
                             w.ctx.manager.forget_host_limits();
                             let (summary, detail) = hd_core::hosts::describe(&[]);

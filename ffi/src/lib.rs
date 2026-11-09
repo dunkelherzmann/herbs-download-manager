@@ -215,6 +215,8 @@ pub struct DownloadRow {
     pub live: Vec<String>,
     /// False when pausing it means starting over (no source can resume).
     pub resumable: bool,
+    /// A failed download's host that asks for a user name and password.
+    pub needs_login: Option<String>,
 }
 
 impl From<manager::Row> for DownloadRow {
@@ -245,6 +247,7 @@ impl From<manager::Row> for DownloadRow {
             path: r.path.map(|p| p.to_string_lossy().into_owned()),
             live: r.live,
             resumable: r.resumable,
+            needs_login: r.needs_login,
         }
     }
 }
@@ -714,4 +717,116 @@ pub fn host_limits_text(limits: Vec<HostLimitRow>) -> HostLimitsText {
     let pairs: Vec<(String, u32)> = limits.into_iter().map(|r| (r.host, r.connections)).collect();
     let (summary, detail) = hd_core::hosts::describe(&pairs);
     HostLimitsText { summary, detail }
+}
+
+// --- Sign-ins (links that need a login) ------------------------------------------------------------------------------
+
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+pub enum SignInStore {
+    /// No choice made yet: the first save asks how to protect sign-ins.
+    NotChosen,
+    Plain,
+    Locked,
+    Unlocked,
+}
+
+#[derive(uniffi::Record)]
+pub struct SignInRow {
+    pub site: String,
+    pub user: String,
+    pub referer: String,
+    /// `None` while locked.
+    pub password: Option<String>,
+    pub cookies: Option<String>,
+    pub encrypted: bool,
+}
+
+#[derive(uniffi::Record)]
+pub struct NewSignIn {
+    pub site: String,
+    pub user: String,
+    pub password: String,
+    pub cookies: String,
+    pub referer: String,
+}
+
+impl From<NewSignIn> for hd_core::vault::SignIn {
+    fn from(s: NewSignIn) -> Self {
+        hd_core::vault::SignIn { site: s.site, user: s.user, password: s.password, cookies: s.cookies, referer: s.referer }
+    }
+}
+
+fn message(r: Result<(), String>) -> Result<(), CoreError> {
+    r.map_err(|message| CoreError::Message { message })
+}
+
+#[uniffi::export]
+impl DownloadManager {
+    pub fn sign_in_store(&self) -> SignInStore {
+        match self.inner.vault().state() {
+            hd_core::vault::State::NotChosen => SignInStore::NotChosen,
+            hd_core::vault::State::Plain => SignInStore::Plain,
+            hd_core::vault::State::Locked => SignInStore::Locked,
+            hd_core::vault::State::Unlocked => SignInStore::Unlocked,
+        }
+    }
+
+    /// Creates the Administrator Password; every sign-in is encrypted with it. Takes about a second: call it off the
+    /// main thread.
+    pub fn create_admin_password(&self, password: String) -> Result<(), CoreError> {
+        message(self.inner.vault().create_password(&password))
+    }
+
+    /// Changes it (unlocked only); an empty one removes it and stores sign-ins as plain text.
+    pub fn change_admin_password(&self, password: String) -> Result<(), CoreError> {
+        message(self.inner.vault().change_password(&password))
+    }
+
+    /// The explicit, confirmed choice to store sign-ins as plain text.
+    pub fn store_sign_ins_as_plain_text(&self) -> Result<(), CoreError> {
+        message(self.inner.vault().use_plain_text())
+    }
+
+    /// False when the password is wrong. Takes about a second.
+    pub fn unlock_sign_ins(&self, password: String) -> bool {
+        self.inner.vault().unlock(&password)
+    }
+
+    pub fn lock_sign_ins(&self) {
+        self.inner.vault().lock();
+    }
+
+    pub fn sign_ins(&self) -> Vec<SignInRow> {
+        self.inner
+            .vault()
+            .list()
+            .into_iter()
+            .map(|l| SignInRow { site: l.site, user: l.user, referer: l.referer, password: l.password, cookies: l.cookies, encrypted: l.encrypted })
+            .collect()
+    }
+
+    pub fn save_sign_in(&self, sign_in: NewSignIn) -> Result<(), CoreError> {
+        message(self.inner.vault().save_sign_in(sign_in.into()))
+    }
+
+    /// Uses a sign-in until the app quits, without saving it.
+    pub fn use_sign_in_for_session(&self, sign_in: NewSignIn) {
+        self.inner.vault().remember_for_session(sign_in.into());
+    }
+
+    pub fn delete_sign_in(&self, site: String) -> Result<(), CoreError> {
+        message(self.inner.vault().delete(&site))
+    }
+
+    /// Starts again the downloads that failed for want of a sign-in to `site` ("" for every site).
+    pub fn resume_waiting_for_login(&self, site: String) {
+        let ids = self.inner.waiting_for_login(&site);
+        self.inner.resume(&ids);
+    }
+}
+
+/// The site a link or typed text belongs to ("https://www.example.com/a" → "example.com").
+#[uniffi::export]
+pub fn site_of(text: String) -> String {
+    hd_core::vault::site_of(&text)
 }

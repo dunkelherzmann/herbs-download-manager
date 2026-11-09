@@ -84,6 +84,28 @@ final class AppModel {
         }
         finishedIDs = finished
         observers.forEach { $0() }
+        askForLogins()
+    }
+
+    /// Downloads already asked about, so a cancelled prompt isn't shown again until the download runs again.
+    private var askedForLogin: Set<UInt64> = []
+    private var asking = false
+    /// Off while the feature tests run.
+    var asksForLogins = true
+
+    /// A download that failed on a server asking for a user name and password gets a prompt for one.
+    private func askForLogins() {
+        askedForLogin.formIntersection(rows.filter { $0.needsLogin != nil }.map(\.id))
+        guard asksForLogins, !asking, let row = rows.first(where: { $0.needsLogin != nil && !askedForLogin.contains($0.id) }),
+              let host = row.needsLogin else { return }
+        askedForLogin.insert(row.id)
+        asking = true
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                SignInPrompts.askForLogin(host: host)
+                AppModel.shared.asking = false
+            }
+        }
     }
 
     /// The settings (§9), saved by the core in the data folder and applied as soon as they're set.

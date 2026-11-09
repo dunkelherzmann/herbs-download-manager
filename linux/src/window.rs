@@ -441,6 +441,8 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     refresh();
     glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
         refresh();
+        // A download that met a server asking for a login gets a prompt for one.
+        crate::signins::ask_if_needed(&ctx, &ctx.manager.rows());
         glib::ControlFlow::Continue
     });
     window

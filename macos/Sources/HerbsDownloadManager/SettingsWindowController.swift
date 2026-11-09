@@ -94,6 +94,8 @@ final class SettingsWindowController: NSWindowController {
     private let speed = SpeedLimitControl(what: "all downloads together")
     private let retries = NSPopUpButton()
     private let whenExists = NSPopUpButton()
+    private let signInsText = NSTextField(labelWithString: "")
+    private let manageSignIns = NSButton(title: "Manage…", target: nil, action: nil)
     private let hostLimits = NSTextField(labelWithString: "")
     private let forgetLimits = NSButton(title: "Forget", target: nil, action: nil)
     private let checksumFiles = NSButton(checkboxWithTitle: "Look for checksum files next to the link", target: nil, action: nil)
@@ -160,6 +162,10 @@ final class SettingsWindowController: NSWindowController {
         whenExists.setAccessibilityLabel("When a file exists")
         speed.onChange = { [weak self] _ in self?.save(nil) }
         speed.box.setAccessibilityIdentifier("settings-speed-limit")
+        manageSignIns.target = self
+        manageSignIns.action = #selector(openSignIns(_:))
+        manageSignIns.toolTip = "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"
+        manageSignIns.setAccessibilityIdentifier("settings-sign-ins")
         forgetLimits.target = self
         forgetLimits.action = #selector(forgetHostLimits(_:))
         forgetLimits.toolTip = "Forget every server's remembered limit; downloads learn them again"
@@ -184,6 +190,7 @@ final class SettingsWindowController: NSWindowController {
             [label("Retries per source:"), retries],
             [label("When a file exists:"), whenExists],
             [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
+            [label("Sign-ins:"), NSStackView(views: [signInsText, manageSignIns])],
             [NSGridCell.emptyContentView, checksumFiles],
             [NSGridCell.emptyContentView, notify],
         ])
@@ -216,6 +223,7 @@ final class SettingsWindowController: NSWindowController {
         whenExists.selectItem(at: Self.existsChoices.firstIndex { $0.1 == s.whenFileExists } ?? 0)
         checksumFiles.state = s.lookForChecksumFiles ? .on : .off
         showHostLimits()
+        showSignIns()
         notify.state = s.notifyWhenFinished ? .on : .off
     }
 
@@ -241,6 +249,25 @@ final class SettingsWindowController: NSWindowController {
         hostLimits.stringValue = text.summary
         hostLimits.toolTip = text.detail
         forgetLimits.isEnabled = !limits.isEmpty
+    }
+
+    /// "3 saved, encrypted" and the like.
+    func showSignIns() {
+        let m = AppModel.shared.manager
+        let count = m.signIns().count
+        let saved = count == 0 ? "None saved" : "\(count) saved"
+        let how: String? = switch m.signInStore() {
+        case .notChosen: nil
+        case .plain: count == 0 ? nil : "as plain text"
+        case .locked: "encrypted, locked"
+        case .unlocked: "encrypted"
+        }
+        signInsText.stringValue = [saved, how].compactMap { $0 }.joined(separator: ", ")
+        signInsText.toolTip = "Sites' user names and passwords, cookies and referers, for links that need a login"
+    }
+
+    @objc private func openSignIns(_ sender: Any?) {
+        SignInsWindowController.shared.show()
     }
 
     @objc private func forgetHostLimits(_ sender: Any?) {

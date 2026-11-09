@@ -70,6 +70,8 @@ final class FeatureHost: ScenarioHost, @unchecked Sendable {
             return ScenarioVar(name: String(pair[..<eq]), value: String(pair[pair.index(after: eq)...]))
         }
         let manager = AppModel.shared.manager
+        // The scenario gives sign-ins itself; a prompt would stop the app's thread.
+        AppModel.shared.asksForLogins = false
         Thread.detachNewThread {
             let report = manager.runScenario(host: FeatureHost(), script: script, vars: vars)
             try? report.write(toFile: out, atomically: true, encoding: .utf8)

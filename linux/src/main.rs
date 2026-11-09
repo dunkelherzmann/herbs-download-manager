@@ -6,6 +6,7 @@ mod detail;
 mod features;
 mod list;
 mod settings;
+mod signins;
 mod window;
 
 use adw::prelude::*;

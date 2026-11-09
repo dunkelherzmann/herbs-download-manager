@@ -31,6 +31,7 @@ pub fn open(ctx: &Ctx) {
     page.add(&downloads);
     page.add(&connections);
     page.add(&behaviour);
+    page.add(&crate::signins::group(ctx));
 
     // S1: Save downloads to.
     let folder = adw::ActionRow::builder().title("Save downloads to").subtitle(crate::save_folder(&ctx.manager).display().to_string()).build();

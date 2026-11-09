@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--a11y-report"), i + 1 < args.count, let main = mainWindow {
             let path = args[i + 1]
             SettingsWindowController.shared.show()
+            SignInsWindowController.shared.show()
             main.newDownload(nil)
             main.openLinks(["http://127.0.0.1:9/a.bin", "http://127.0.0.1:9/b.bin"])
             main.batchDownload(nil)
@@ -63,17 +64,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Test hook: --features SCRIPT OUT NAME=VALUE… runs the feature tests (FeatureTests.swift).
         FeatureHost.runIfAsked()
         // Test hook: --capture FILE saves the frontmost window (with its title bar) as PNG after 2.5 s, then quits.
+        // The timer runs in the common modes, so an open alert (a modal run loop) is captured too.
         if let i = args.firstIndex(of: "--capture"), i + 1 < args.count {
             let path = args[i + 1]
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                let window = NSApp.orderedWindows.first { $0.isVisible } ?? NSApp.windows.first
+            let timer = Timer(timeInterval: 2.5, repeats: false) { _ in MainActor.assumeIsolated {
+                let window = NSApp.modalWindow ?? NSApp.windows.first { $0.isVisible && $0.level == .modalPanel }
+                    ?? NSApp.orderedWindows.first { $0.isVisible } ?? NSApp.windows.first
                 if let frame = window?.contentView?.superview,
                    let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
                     frame.cacheDisplay(in: frame.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                 }
                 exit(0)
-            }
+            } }
+            RunLoop.main.add(timer, forMode: .common)
         }
         NSApp.activate()
     }

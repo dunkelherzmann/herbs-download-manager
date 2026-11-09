@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use reqwest::StatusCode;
-use reqwest::header::{ACCEPT_ENCODING, IF_RANGE, RANGE};
+use reqwest::header::{ACCEPT_ENCODING, COOKIE, IF_RANGE, RANGE, REFERER};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, watch};
 
@@ -44,6 +44,8 @@ pub struct Request {
     pub look_for_checksum_files: bool,
     /// Connection limits learned from servers, shared by every download (and kept by the manager).
     pub learned: Arc<crate::hosts::Learned>,
+    /// Sign-ins for links that need a login: each request gets its host's user name, password, cookies and referer.
+    pub vault: Arc<crate::vault::Vault>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -174,6 +176,8 @@ pub struct Progress {
     pub announced: Mutex<Option<crate::checksum::Checksum>>,
     /// After a verified finish: "SHA-256 matches (f.bin.sha256)".
     pub verified: Mutex<Option<String>>,
+    /// A host that answered 401: the app asks for a sign-in (or the Administrator Password) for it.
+    pub needs_login: Mutex<Option<String>>,
 }
 
 /// A connection as the Connections tab shows it (§6).
@@ -225,6 +229,8 @@ pub struct Control {
 
 /// Connection slots per download; `allowed` says how many are in use.
 const MAX_CONNECTIONS: usize = 32;
+/// What a source that answers 401 fails with.
+pub const LOGIN_NEEDED: &str = "The server asks for a user name and password";
 /// Bytes compared again when a range continues on a server without validators.
 const OVERLAP: u64 = 32 * 1024;
 
@@ -447,6 +453,7 @@ struct Job {
     limits: Vec<Arc<crate::limit::Limiter>>,
     look_for_checksum_files: bool,
     learned: Arc<crate::hosts::Learned>,
+    vault: Arc<crate::vault::Vault>,
     sequential: bool,
     /// What gets saved; `segments` and `sources` are filled in at each save.
     state: ResumeState,
@@ -534,7 +541,8 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
                 continue;
             }
             let Ok(url) = reqwest::Url::parse(&s.url) else { continue };
-            let sent = client.get(url).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
+            let host = url.host_str().unwrap_or("").to_string();
+            let sent = signed(client.get(url.clone()), &url, &req.vault).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
             let result = tokio::select! {
                 r = sent => r,
                 _ = stopped(stop.clone()) => return outcome_for_stop(&stop),
@@ -551,6 +559,9 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
                 }
                 Ok(r) => match status_problem(r.status()) {
                     Problem::Permanent(msg) => {
+                        if r.status() == StatusCode::UNAUTHORIZED {
+                            *progress.needs_login.lock().unwrap() = Some(host);
+                        }
                         s.status = SourceStatus::Failed(msg.clone());
                         reason = Some(msg);
                     }
@@ -878,6 +889,7 @@ impl Job {
             limits: req.limits.clone(),
             look_for_checksum_files: req.look_for_checksum_files,
             learned: req.learned.clone(),
+            vault: req.vault.clone(),
             sequential,
             state,
             state_file: req.state_file.clone(),
@@ -951,6 +963,12 @@ impl Job {
     }
 
     /// Marks a source as never to be used again in this run, remembering why.
+    fn note_login(&self, url: &reqwest::Url, status: StatusCode) {
+        if status == StatusCode::UNAUTHORIZED {
+            *self.progress.needs_login.lock().unwrap() = url.host_str().map(str::to_string);
+        }
+    }
+
     fn kill(&self, src: usize, status: SourceStatus) {
         // The download's failure message gives the plain reason ("404 Not Found"), not the Mirrors tab's text.
         let reason = match &status {
@@ -1094,6 +1112,9 @@ impl Job {
                 true
             }
             Problem::Permanent(msg) => {
+                if msg == LOGIN_NEEDED {
+                    self.note_login(&self.source(src).url, StatusCode::UNAUTHORIZED);
+                }
                 self.kill(src, SourceStatus::Failed(msg));
                 true
             }
@@ -1120,7 +1141,7 @@ impl Job {
     /// Opens a request on `src` for the rest of the range this connection owns.
     async fn open(&self, id: usize, src: usize) -> Result<(reqwest::Response, Vec<u8>), Problem> {
         let source = self.source(src);
-        let mut req = self.client.get(source.url.clone()).header(ACCEPT_ENCODING, "identity");
+        let mut req = signed(self.client.get(source.url.clone()), &source.url, &self.vault).header(ACCEPT_ENCODING, "identity");
         let (start, end, written_from) = if self.sequential {
             // Without ranges a failed download starts over.
             let mut segs = self.segs.lock().unwrap();
@@ -1308,7 +1329,9 @@ impl Job {
         let source = self.source(idx);
         let mut attempt = 0usize;
         loop {
-            let req = self.client.get(source.url.clone()).header(RANGE, "bytes=0-0").header(ACCEPT_ENCODING, "identity");
+            let req = signed(self.client.get(source.url.clone()), &source.url, &self.vault)
+                .header(RANGE, "bytes=0-0")
+                .header(ACCEPT_ENCODING, "identity");
             let mut stop = self.stop.clone();
             let result = tokio::select! {
                 r = req.send() => r,
@@ -1334,7 +1357,10 @@ impl Job {
                     self.kill(idx, SourceStatus::NoResumeSupport);
                     return;
                 }
-                Ok(r) => status_problem(r.status()),
+                Ok(r) => {
+                    self.note_login(&source.url, r.status());
+                    status_problem(r.status())
+                }
                 Err(e) => Problem::Transient(error_text(&e)),
             };
             match problem {
@@ -1615,7 +1641,28 @@ fn write_at(file: &File, mut data: &[u8], mut offset: u64) -> std::io::Result<()
     Ok(())
 }
 
+/// A request with the sign-in for its link's host, if there is one (enhancements.md: links that need a login).
+/// reqwest drops the Authorization and Cookie headers when a redirect leads to another host.
+pub(crate) fn signed(rb: reqwest::RequestBuilder, url: &reqwest::Url, vault: &crate::vault::Vault) -> reqwest::RequestBuilder {
+    let Some(host) = url.host_str() else { return rb };
+    let crate::vault::Lookup::Found(s) = vault.for_host(host) else { return rb };
+    let mut rb = rb;
+    if !s.user.is_empty() || !s.password.is_empty() {
+        rb = rb.basic_auth(&s.user, Some(&s.password));
+    }
+    if !s.cookies.is_empty() {
+        rb = rb.header(COOKIE, s.cookies);
+    }
+    if !s.referer.is_empty() {
+        rb = rb.header(REFERER, s.referer);
+    }
+    rb
+}
+
 fn status_problem(status: StatusCode) -> Problem {
+    if status == StatusCode::UNAUTHORIZED {
+        return Problem::Permanent(LOGIN_NEEDED.into());
+    }
     let text = format!("{} {}", status.as_u16(), status.canonical_reason().unwrap_or("")).trim().to_string();
     match status.as_u16() {
         429 | 503 => Problem::Refused,

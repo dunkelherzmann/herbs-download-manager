@@ -316,6 +316,8 @@ as long as one source stays on.
 | S7 | When a file exists | Ask | Ask, Keep both, Skip the new link, Replace the existing file (§5.6) |
 | S8 | Look for checksum files | On | fetches `<file>.sha256` (and `.sha512`, `.sha1`, `.md5`) next to the link and verifies with it |
 | S9 | Show a notification when a download finishes | On | |
+| S10 | Server limits | | how many servers limit connections, with **Forget** (§7.4) |
+| S11 | Sign-ins | | how many are saved and how, with **Manage…** (§9.1) |
 
 Settings opens with ⌘, (Ctrl+, on Linux and Windows) as one window, and each change applies at once, with no OK
 button. They are kept in `settings.json` in the app's data folder, the same file on every platform; a missing or
@@ -326,6 +328,29 @@ running downloads. S5 is shared by all downloads together, whatever their number
 own limit (§6 Options) applies on top of it. With S7 other than Ask, the question in §5.6 isn't asked and that
 answer is used. S8 arrives with checksum verification and isn't shown until then.
 
+### 9.1 Sign-ins (links that need a login)
+
+- A sign-in belongs to a site (`example.com`, which covers its subdomains too) and holds a user name and password,
+  the cookies its links need and a referer, for servers that only allow downloads from one of their pages. Each
+  request to that site's servers sends them; a redirect to another site drops them.
+- When a server answers that it wants a user name and password, the download fails with *The server asks for a user
+  name and password*, and the app asks for them: **User name**, **Password** and **Remember for example.com** (on),
+  with **Sign In** and **Cancel**. Signing in starts the download again. Left unremembered, the sign-in lasts until
+  the app quits. A sign-in that was refused is asked for again, with its user name filled in.
+- Sign-ins are kept in `sign-ins.json` in the app's data folder, never in the system's keychain, and only the user's
+  account can read the file. As in Herb's Terminal, an **Administrator Password** encrypts passwords and cookies
+  (AES-256-GCM, with a key derived from it with PBKDF2-HMAC-SHA256, 600,000 rounds and a random salt); only the salt,
+  the round count and an encrypted check value are stored. Sites and user names stay readable.
+- The first save explains this and offers **Create Administrator Password…**, **Store as Plain Text** (with a second
+  confirmation) or **Not Now**. The password needs at least 8 characters and can't be recovered.
+- Encrypted sign-ins are locked when the app starts. The first download that needs one asks for the Administrator
+  Password, once per session.
+- **Manage…** lists the sign-ins (site, user name, a hidden password, cookies and referer, and how each is stored)
+  with **Add…**, **Edit…** (or a double-click), **Delete** (after a confirmation whose default is Cancel), **Unlock…**
+  or **Lock**, and **Create** or **Change Administrator Password…**. Changing it encrypts every sign-in again; leaving
+  the new password blank removes it, after a confirmation, and stores them as plain text. On Linux the list is a
+  group in Settings itself.
+
 ## 10. Stop and resume
 
 - **Pause** stops a download's connections and keeps every downloaded byte. The resume state (sources, validators,
@@ -335,6 +360,9 @@ answer is used. S8 arrives with checksum verification and isn't shown until then
   ranges checked against the `.hdpart` file.
 - **Can't resume**: when no source supports ranges, Pause asks "This download can't be resumed and will start over.
   Pause anyway?" with Cancel as the default.
+- **A changed file**: a resumed range is checked against the server's validator (`ETag` or `Last-Modified`); on a
+  server that gives none, the range starts 32 KB early and those bytes are compared with what was saved. A
+  difference fails the source with *File changed on the server*.
 - **Expired link**: adding a working mirror (§7.1 M3) to a failed or paused download replaces the dead source and
   continues from where it stopped.
 - **Restart** discards the downloaded data (after confirming, Cancel the default) and starts again from all sources.

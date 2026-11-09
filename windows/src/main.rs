@@ -10,6 +10,7 @@ mod add;
 mod app;
 #[cfg(windows)]
 mod detail;
+mod signins;
 #[cfg(windows)]
 mod features;
 

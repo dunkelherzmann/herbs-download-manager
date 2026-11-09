@@ -81,10 +81,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Download links that need a login.** A user name and password per site (kept in the system's keychain), and the cookies and referer a link needs. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Download links that need a login.** A user name and password per site (kept in the app's own store, encrypted with an Administrator Password, never the system's keychain), and the cookies and referer a link needs. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #52: the app asks for a sign-in when a server wants one; Settings ▸ Sign-ins manages them (SPECIFICATION.md §9.1).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **More to do with a finished download:** Open and Show in Finder on the "finished" notification, Delete Completed, Move/Rename a finished file, and optionally the file's date from the server. *Requested 2026-11-09, from studying Mister Download Manager.*
   - [ ] Mac
   - [ ] Linux

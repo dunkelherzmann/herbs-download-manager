@@ -722,3 +722,40 @@ fn a_server_s_connection_limit_is_remembered_for_the_next_download() {
     m.forget_host_limits();
     assert!(m.host_limits().is_empty());
 }
+
+#[test]
+fn a_link_that_needs_a_login_waits_for_one_then_finishes() {
+    use hd_core::vault::SignIn;
+    let data = pattern(MIB, 45);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let mut f = MockFile::new(data.clone());
+    // "herb:test-password" in Basic auth.
+    f.requires = vec![
+        ("authorization".into(), "Basic aGVyYjp0ZXN0LXBhc3N3b3Jk".into()),
+        ("cookie".into(), "s=1".into()),
+        ("referer".into(), "https://example.com/page".into()),
+    ];
+    s.put("/locked.bin", f);
+    let dir = folder("login");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/locked.bin"), &dir, true));
+    wait(&m, id, |s| matches!(s, Status::Failed(_)));
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row.needs_login.as_deref(), Some("127.0.0.1"), "{:?}", row.status);
+    assert_eq!(m.waiting_for_login("127.0.0.1"), vec![id]);
+
+    m.vault().use_plain_text().unwrap();
+    let sign_in = SignIn {
+        site: "127.0.0.1".into(),
+        user: "herb".into(),
+        password: "test-password".into(),
+        cookies: "s=1".into(),
+        referer: "https://example.com/page".into(),
+    };
+    m.vault().save_sign_in(sign_in).unwrap();
+    m.resume(&m.waiting_for_login("127.0.0.1"));
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    assert!(m.rows()[0].needs_login.is_none());
+}

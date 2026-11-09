@@ -97,6 +97,7 @@ pub fn run_if_asked(app: &adw::Application, manager: &hd_core::manager::Manager)
     };
     let vars: Vec<(String, String)> =
         args[i + 3..].iter().filter_map(|p| p.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect();
+    crate::signins::ASKS.set(false);
     let manager = manager.clone();
     let app = app.clone();
     let (tx, rx) = std::sync::mpsc::channel::<bool>();

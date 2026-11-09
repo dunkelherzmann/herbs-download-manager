@@ -13,6 +13,7 @@ pub mod scenario;
 pub mod segments;
 pub mod settings;
 pub mod transfer;
+pub mod vault;
 
 /// The core's version, shown in the app's About window.
 pub fn version() -> &'static str {

@@ -34,6 +34,8 @@ pub struct MockFile {
     pub etag: String,
     /// Send the ETag (otherwise the server gives no validator, and If-Range is ignored).
     pub validators: bool,
+    /// Header values a request must carry (name in lowercase, value), or it gets 401: a login, cookies, a referer.
+    pub requires: Vec<(String, String)>,
     /// More header lines to send ("Repr-Digest: sha-256=:…:").
     pub headers: Vec<String>,
 }
@@ -51,6 +53,7 @@ impl MockFile {
             max_connections: None,
             etag,
             validators: true,
+            requires: Vec::new(),
             headers: Vec::new(),
         }
     }
@@ -285,6 +288,10 @@ async fn send_file(
     stop: &mut watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let len = file.data.len() as u64;
+    if !file.requires.iter().all(|(name, value)| req.headers.get(name.as_str()).is_some_and(|v| v == value)) {
+        let head = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"mock\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        return stream.write_all(head.as_bytes()).await;
+    }
     // A Range with an If-Range that no longer matches gets the whole file, as RFC 9110 says.
     let if_range_ok = !file.validators || req.headers.get("if-range").is_none_or(|v| *v == file.etag);
     let range = match req.headers.get("range") {
@@ -387,6 +394,10 @@ pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServe
         server.put("/sum.bin", MockFile::new(sum.clone()));
         server.put("/sum.bin.sha256", MockFile::new(format!("{}  sum.bin\n", hex(&sum)).into_bytes()));
         server.put("/bad.bin", MockFile::new(sum.clone()));
+        // Needs the user name herb and the password test-password.
+        let mut login = MockFile::new(sum.clone());
+        login.requires = vec![("authorization".into(), "Basic aGVyYjp0ZXN0LXBhc3N3b3Jk".into())];
+        server.put("/login.bin", login);
         server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
         servers.push(server);
     }

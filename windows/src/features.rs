@@ -79,6 +79,8 @@ pub fn on_main(hwnd: HWND, request: &mut Request) {
 pub fn run_if_asked(window: HWND, manager: &Manager) {
     let args: Vec<String> = std::env::args().collect();
     let Some(i) = args.iter().position(|a| a == "--features") else { return };
+    // The scenario gives sign-ins itself; a prompt would wait for a person.
+    crate::signins::ASKS.set(false);
     let (Some(script), Some(out)) = (args.get(i + 1).and_then(|p| std::fs::read_to_string(p).ok()), args.get(i + 2).cloned()) else {
         return;
     };

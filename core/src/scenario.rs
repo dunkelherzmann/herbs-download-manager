@@ -17,6 +17,7 @@
 //! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
 //! expect ROW CHECK [VALUE]         file-size N, sources N, status-contains TEXT, verified-contains TEXT, gone
 //! expect-running N                 how many downloads run now
+//! sign-in SITE USER PASSWORD       saves a sign-in (as plain text in the test's own data folder)
 //! expect-file PATH exists|absent   a path under $DL
 //! sleep SECONDS
 //! ```
@@ -93,6 +94,13 @@ impl Run<'_> {
                     _ => (vec![self.need_row(&arg(2)?)?.id], &words[3..]),
                 };
                 self.host.command(&command, &ids, rest)
+            }
+            "sign-in" => {
+                let vault = self.manager.vault();
+                if vault.state() == crate::vault::State::NotChosen {
+                    vault.use_plain_text()?;
+                }
+                vault.save_sign_in(crate::vault::SignIn { site: arg(1)?, user: arg(2)?, password: arg(3)?, ..Default::default() })
             }
             "setting" => {
                 let (key, value) = (arg(1)?, arg(2)?);

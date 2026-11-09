@@ -493,6 +493,7 @@ pub fn run() {
             crate::add::add_links(&ctx, vec!["http://127.0.0.1:9/a.bin".into(), "http://127.0.0.1:9/b.bin".into()]);
             crate::add::batch(&ctx);
             crate::detail::settings(&ctx);
+            crate::signins::open(&ctx);
             if let Some(r) = ctx.manager.rows().first() {
                 crate::detail::open(&ctx, r.id, None);
             }
@@ -1278,6 +1279,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             WM_TIMER if wparam.0 == TIMER_REFRESH => {
                 refresh();
+                // A download that met a server asking for a login gets a prompt for one.
+                if let Some(ctx) = add_ctx() {
+                    crate::signins::ask_if_needed(&ctx);
+                }
                 LRESULT(0)
             }
             WM_TIMER if wparam.0 == TIMER_A11Y => {
@@ -1290,8 +1295,8 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             WM_TIMER if wparam.0 == TIMER_CAPTURE => {
                 let _ = KillTimer(Some(hwnd), TIMER_CAPTURE);
-                // An add window the test opened, else the main window.
-                let target = [w!("HerbsDMDetail"), w!("HerbsDMForm")]
+                // A sign-in question, an add window the test opened, else the main window.
+                let target = [w!("HerbsDMSignInForm"), w!("HerbsDMSignIns"), w!("HerbsDMDetail"), w!("HerbsDMForm")]
                     .iter()
                     .find_map(|c| FindWindowW(*c, PCWSTR::null()).ok().filter(|h| !h.is_invalid()))
                     .unwrap_or(hwnd);

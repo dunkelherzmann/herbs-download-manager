@@ -36,7 +36,7 @@ if [ "$(uname)" = Darwin ]; then
     echo "menus in the Main Menu (☰); ⌘Q reached it"
     # Every control explains itself: hover text and a VoiceOver name in every window (A11yAudit.swift).
     HD_DATA_DIR="$WORK/a11y" "$APP" --queue http://127.0.0.1:9/a.bin --a11y-report "$WORK/a11y.txt" >/dev/null 2>&1
-    for window in "Herb's Download Manager" Settings "New Download" "Add 2 Links" "Batch Download" a.bin; do
+    for window in "Herb's Download Manager" Settings Sign-ins "New Download" "Add 2 Links" "Batch Download" a.bin; do
         grep -q "^# checked:.*$window" "$WORK/a11y.txt" || { echo "Accessibility audit: the $window window didn't open" >&2; cat "$WORK/a11y.txt" >&2; exit 1; }
     done
     if grep -v '^#' "$WORK/a11y.txt" | grep -q .; then

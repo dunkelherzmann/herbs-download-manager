@@ -66,6 +66,9 @@ pub struct Entry {
     /// What the check found: "SHA-256 matches (f.bin.sha256)", or for a finished file checked later, a mismatch.
     #[serde(default)]
     pub verified: Option<String>,
+    /// The host that asked for a user name and password when it last ran (enhancements.md: links that need a login).
+    #[serde(default)]
+    pub needs_login: Option<String>,
 }
 
 /// What the list shows for one download.
@@ -98,6 +101,8 @@ pub struct Row {
     pub live: Vec<String>,
     /// False when it runs on a source that can't resume: pausing it means starting over.
     pub resumable: bool,
+    /// A failed download's host that asks for a user name and password.
+    pub needs_login: Option<String>,
 }
 
 /// What `add` needs.
@@ -206,6 +211,7 @@ struct Inner {
     trash_dir: Mutex<Option<PathBuf>>,
     /// Connection limits learned from servers (host-limits.json).
     learned: Arc<crate::hosts::Learned>,
+    vault: Arc<crate::vault::Vault>,
     /// S5, shared by every download.
     limiter: Arc<Limiter>,
 }
@@ -289,6 +295,7 @@ impl Manager {
                 settings: Mutex::new(settings),
                 trash_dir: Mutex::new(None),
                 learned: Arc::new(crate::hosts::Learned::open(Some(dir))),
+                vault: Arc::new(crate::vault::Vault::open(Some(dir))),
             }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
@@ -414,6 +421,7 @@ impl Manager {
                     speed_limit: None,
                     checksum: None,
                     verified: None,
+                    needs_login: None,
                 },
                 running: None,
             });
@@ -459,6 +467,7 @@ impl Manager {
                 limits: vec![self.inner.limiter.clone(), limiter.clone()],
                 look_for_checksum_files: settings.look_for_checksum_files,
                 learned: self.inner.learned.clone(),
+                vault: self.inner.vault.clone(),
             };
             let progress = Progress::new();
             progress.downloaded.store(e.downloaded, Ordering::SeqCst);
@@ -471,6 +480,7 @@ impl Manager {
                 limiter,
             });
             slot.entry.status = Status::Connecting;
+            slot.entry.needs_login = None;
             slot.running = Some(running.clone());
             (req, running)
         };
@@ -529,7 +539,10 @@ impl Manager {
                     e.finished = Some(now());
                 }
                 Outcome::Paused => e.status = Status::Paused,
-                Outcome::Failed(reason) => e.status = Status::Failed(reason),
+                Outcome::Failed(reason) => {
+                    e.needs_login = running.progress.needs_login.lock().unwrap().clone();
+                    e.status = Status::Failed(reason);
+                }
             }
         }
         self.save();
@@ -678,6 +691,22 @@ impl Manager {
     }
 
     /// Settings ▸ Forget: downloads learn every server's limit again.
+    /// The sign-ins for links that need a login.
+    pub fn vault(&self) -> &crate::vault::Vault {
+        &self.inner.vault
+    }
+
+    /// Downloads that failed for want of a sign-in to `site` (or of the Administrator Password), to start again
+    /// once it's given.
+    pub fn waiting_for_login(&self, site: &str) -> Vec<u64> {
+        let slots = self.inner.slots.lock().unwrap();
+        slots
+            .iter()
+            .filter(|s| s.running.is_none() && s.entry.needs_login.as_deref().is_some_and(|h| site.is_empty() || crate::vault::covers(site, h)))
+            .map(|s| s.entry.id)
+            .collect()
+    }
+
     pub fn forget_host_limits(&self) {
         self.inner.learned.forget();
     }
@@ -903,6 +932,7 @@ fn row(slot: &Slot) -> Row {
         path: e.dest.clone(),
         live,
         resumable,
+        needs_login: if slot.running.is_none() { e.needs_login.clone() } else { None },
     }
 }
 
@@ -941,9 +971,9 @@ impl Manager {
     pub fn probe(&self, url: &str) -> Result<Probe, String> {
         let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
         let client = self.client.clone();
+        let vault = self.inner.vault.clone();
         self.handle.block_on(async move {
-            let sent = client
-                .get(parsed)
+            let sent = transfer::signed(client.get(parsed.clone()), &parsed, &vault)
                 .header(reqwest::header::RANGE, "bytes=0-0")
                 .header(reqwest::header::ACCEPT_ENCODING, "identity")
                 .send();
@@ -952,6 +982,9 @@ impl Manager {
                 .map_err(|_| "The server didn't answer".to_string())?
                 .map_err(|e| transfer::error_text(&e))?;
             let status = response.status();
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(transfer::LOGIN_NEEDED.to_string());
+            }
             if !status.is_success() {
                 return Err(format!("{} {}", status.as_u16(), status.canonical_reason().unwrap_or("")).trim().to_string());
             }

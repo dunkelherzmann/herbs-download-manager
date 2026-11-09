@@ -90,3 +90,12 @@ sleep 2
 expect f11/small.bin status-contains Downloading
 wait f11/small.bin finished 30
 setting speed-limit 0
+
+feature A link that needs a login
+add f12 start $L/login.bin
+wait f12/login.bin failed 30
+expect f12/login.bin status-contains user name and password
+sign-in 127.0.0.1 herb test-password
+do resume f12/login.bin
+wait f12/login.bin finished 30
+expect f12/login.bin file-size 2097152
