@@ -25,6 +25,7 @@ On a Mac with Apple silicon, the Xcode Command Line Tools and Rust (rustup):
 macos/scripts/build.sh --install   # builds dist/Herb's Download Manager.app and copies it to /Applications
 scripts/test.sh                    # Rust tests, then the app's self-check
 cargo run -p hd-mock               # local test server: a 64 MiB file and two mirrors
+scripts/check.sh                   # a pushed branch on the Mac, Linux and Windows machines (in place of CI)
 ```
 
 ## Support

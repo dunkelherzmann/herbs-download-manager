@@ -1,10 +1,9 @@
-# Builds and tests on GitHub's own runners for each pull request and push to main.
-# Release builds are still made and installed on Herbert's own Mac, Linux and Windows machines.
+# Off since 2026-11-09: the repo is private and GitHub charges for private repos' Actions minutes, so every pull
+# request is checked on Herbert's own Mac, Linux and Windows machines with scripts/check.sh instead. It can still be
+# run by hand (Actions ▸ Build ▸ Run workflow) if the minutes are ever free again.
 name: Build
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
