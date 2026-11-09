@@ -1011,13 +1011,19 @@ impl Job {
                 true
             }
             Problem::Transient(msg) => {
+                // Connections to one source that drop together (a server restart, a file being replaced) are one
+                // failure: while the source waits for its retry, more drops don't count again.
+                let mut retry_at = source.retry_at.lock().unwrap();
+                if retry_at.is_some_and(|t| t > Instant::now()) {
+                    return true;
+                }
                 let failures = source.failures.fetch_add(1, Ordering::SeqCst) + 1;
                 if failures > self.retries {
                     self.kill(src, SourceStatus::Failed(msg));
                 } else {
                     *self.last_reason.lock().unwrap() = Some(msg);
                     let delay = retry_delay(&self.tuning, failures as usize - 1);
-                    *source.retry_at.lock().unwrap() = Some(Instant::now() + delay);
+                    *retry_at = Some(Instant::now() + delay);
                 }
                 true
             }
@@ -1525,11 +1531,17 @@ pub fn part_path(dest: &Path) -> PathBuf {
 
 /// The destination, or "name (2).ext", "name (3).ext"… when that name is taken (by a file or a partial download).
 /// Picks a free name like `unique_path` and creates its `.hdpart` file in the same step, so two downloads of the
-/// same file starting together never pick the same name: one that loses the race takes the next number.
+/// same file starting together never pick the same name: one that loses the race takes the next number. Once its
+/// `.hdpart` exists no other download can claim the name, so checking the finished name after creating it is enough.
 fn claim_path(folder: &Path, name: &str) -> std::io::Result<(PathBuf, File)> {
     for _ in 0..1000 {
         let dest = unique_path(folder, name);
         match std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(part_path(&dest)) {
+            // Another download may have finished under this name after it was picked: then try the next.
+            Ok(_) if dest.exists() => {
+                let _ = std::fs::remove_file(part_path(&dest));
+                continue;
+            }
             Ok(file) => return Ok((dest, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e),

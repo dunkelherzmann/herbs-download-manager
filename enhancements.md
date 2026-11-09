@@ -48,3 +48,15 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A link that matches a download already in the list is added as its mirror,** not as a separate download. *Requested 2026-11-09.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Show when a finished download is being put together** instead of looking stuck at 99%. *Requested 2026-11-09.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
