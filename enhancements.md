@@ -122,3 +122,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **A Keep on Top toggle (📌) between Settings and Search** that keeps the download manager above every other app. *Requested 2026-11-09.* Also View ▸ Keep on Top (⌃⌘T); every window of the app floats above other apps' windows, full-screen ones included; remembered between launches. Done for the Mac in #33.
+  - [x] Mac
+  - [ ] Linux
+  - [ ] Windows

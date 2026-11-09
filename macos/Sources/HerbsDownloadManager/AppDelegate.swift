@@ -11,6 +11,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         InWindowMenu.install(full: MainMenu.build(), appMenu: MainMenu.appMenu(), appName: "Herb's DM")
         let window = MainWindowController()
         mainWindow = window
+        // Test hook: --keep-on-top on|off sets Keep on Top at launch (only with $HD_DATA_DIR, so never Herbert's).
+        if let i = CommandLine.arguments.firstIndex(of: "--keep-on-top"), i + 1 < CommandLine.arguments.count,
+           ProcessInfo.processInfo.environment["HD_DATA_DIR"] != nil {
+            KeepOnTop.isOn = CommandLine.arguments[i + 1] == "on"
+        }
+        KeepOnTop.install()
         if let index = CommandLine.arguments.firstIndex(of: "--menu-report"), index + 1 < CommandLine.arguments.count {
             writeMenuReport(window, to: CommandLine.arguments[index + 1])
             return

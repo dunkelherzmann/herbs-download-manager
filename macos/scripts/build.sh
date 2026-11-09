@@ -2,7 +2,7 @@
 # Builds "Herb's Download Manager.app" (Apple silicon) in dist/: the Rust core as a static library, its Swift bindings,
 # then the AppKit app. Needs the Xcode Command Line Tools and rustup's stable toolchain.
 # Usage: macos/scripts/build.sh [--install] [--zip]
-#   --install  copies the app to /Applications (quitting a running copy first)
+#   --install  copies the app to /Applications (a running copy is left running; it uses the new build next launch)
 #   --zip      also writes dist/Herbs-Download-Manager-<version>-macOS.zip
 set -eu
 
@@ -105,8 +105,13 @@ if [ "$ZIP" = 1 ]; then
 fi
 
 if [ "$INSTALL" = 1 ]; then
-    osascript -e "tell application id \"com.herbertcisneros.HerbsDownloadManager\" to quit" >/dev/null 2>&1 || true
+    # Never quits Herbert's running copy: it keeps working from the old build (macOS keeps the replaced files open)
+    # and picks up the new one the next time he opens it.
     rm -rf "/Applications/$NAME.app"
     ditto "$APP" "/Applications/$NAME.app"
-    printf 'Installed /Applications/%s.app\n' "$NAME"
+    if pgrep -qf "/Applications/$NAME.app/Contents/MacOS/"; then
+        printf 'Installed /Applications/%s.app (the running copy uses it from its next launch)\n' "$NAME"
+    else
+        printf 'Installed /Applications/%s.app\n' "$NAME"
+    fi
 fi

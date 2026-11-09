@@ -50,6 +50,7 @@ enum MainMenu {
 
         let view = submenu(bar, "View")
         item(view, "Show Sidebar", #selector(MainWindowController.toggleSidebar(_:)), "s", [.command, .control])
+        item(view, "Keep on Top", #selector(MainWindowController.toggleKeepOnTop(_:)), "t", [.command, .control])
         let columnsItem = view.addItem(withTitle: "Columns", action: nil, keyEquivalent: "")
         let columns = NSMenu(title: "Columns")
         columns.delegate = ColumnsMenu.shared

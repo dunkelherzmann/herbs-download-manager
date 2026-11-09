@@ -10,6 +10,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     let list = DownloadListViewController()
     private let footer = NSTextField(labelWithString: "")
     private let findBar = FindBar()
+    private weak var keepOnTopItem: NSToolbarItem?
     /// Open New Download, Add Links and Batch windows (kept alive while shown).
     private var panels: [NSWindowController] = []
     /// Open Download windows by download id: one each.
@@ -49,7 +50,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     /// Separators group T2–T3, T4–T5, T6, T7 and T8 (§3).
     private static let layout: [String] = [
         "newDownload", "sep", "resume", "pause", "sep", "startQueue", "stopQueue", "sep", "stopAll", "sep",
-        "delete", "sep", "settings", NSToolbarItem.Identifier.flexibleSpace.rawValue, "search", "mainMenu",
+        "delete", "sep", "settings", NSToolbarItem.Identifier.flexibleSpace.rawValue, "keepOnTop", "search", "mainMenu",
     ]
 
     init() {
@@ -189,6 +190,18 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             return item
         }
         if id.rawValue == "mainMenu" { return InWindowMenu.toolbarItem(id) }
+        if id.rawValue == "keepOnTop" {
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.label = "Keep on Top"
+            item.paletteLabel = "Keep on Top"
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(toggleKeepOnTop(_:))
+            item.autovalidates = true
+            keepOnTopItem = item
+            showKeepOnTop()
+            return item
+        }
         guard let b = Self.buttons.first(where: { $0.id == id.rawValue }) else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
         item.label = b.label
@@ -207,6 +220,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     }
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleKeepOnTop(_:)) { item.state = KeepOnTop.isOn ? .on : .off }
         if item.action == #selector(toggleSidebar(_:)) {
             let collapsed = split.splitViewItems.first?.isCollapsed ?? false
             item.title = collapsed ? "Show Sidebar" : "Hide Sidebar"
@@ -240,7 +254,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections < 32
         case #selector(removeConnection(_:)):
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
-        case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)), #selector(toggleSearch(_:)): return true
+        case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)), #selector(toggleSearch(_:)),
+             #selector(toggleKeepOnTop(_:)): return true
         case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
              #selector(importLinks(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
@@ -258,6 +273,22 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
 
     /// Find (⌘F): opens the find bar, or moves the cursor back into it.
     @objc func focusSearch(_ sender: Any?) { findBar.open() }
+
+    /// Keep on Top (T11): every window of the app above other apps' windows, or back to normal.
+    @objc func toggleKeepOnTop(_ sender: Any?) {
+        KeepOnTop.isOn.toggle()
+        showKeepOnTop()
+    }
+
+    /// The pin is filled and tinted while Keep on Top is on; its hover text and VoiceOver value say which.
+    private func showKeepOnTop() {
+        guard let item = keepOnTopItem else { return }
+        let on = KeepOnTop.isOn
+        let image = NSImage(systemSymbolName: on ? "pin.fill" : "pin", accessibilityDescription: "Keep on Top")
+        item.image = on ? image?.withSymbolConfiguration(.init(paletteColors: [.controlAccentColor])) : image
+        item.toolTip = on ? "Keep on Top is on: Herb's DM stays above other apps' windows. Click to turn it off (⌃⌘T)"
+                          : "Keep on Top: keep Herb's DM above every other app's windows (⌃⌘T)"
+    }
 
     /// The toolbar's 🔍: opens or closes the find bar.
     @objc func toggleSearch(_ sender: Any?) { findBar.toggle() }

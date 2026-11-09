@@ -102,6 +102,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
 | T10 | Search (🔍): opens the find bar (§2) | "Search: show only downloads whose name or link contains some text" | ⌘F / Ctrl+F |
+| T11 | Keep on Top (📌, between Settings and Search; filled and tinted while on) | "Keep on Top: keep Herb's DM above every other app's windows" | ⌃⌘T / Ctrl+Alt+T |
 | T9 | Main Menu (☰, after the search field on macOS; the left corner on Linux and Windows) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
 
 Separators group T2–T3, T4–T5, T6, T7 and T8, as in AB Download Manager.
@@ -119,6 +120,7 @@ Icons use each platform's own monochrome symbols, never another app's artwork:
 | Delete | `trash` | `user-trash-symbolic` | Delete |
 | Settings | `gearshape` | `emblem-system-symbolic` | Settings |
 | Search | `magnifyingglass` | `system-search-symbolic` | Search |
+| Keep on Top | `pin` / `pin.fill` | `view-pin-symbolic` | Pin / Pinned |
 | Main Menu | `line.3.horizontal` | `open-menu-symbolic` | GlobalNavigationButton |
 
 ## 4. Menus
@@ -135,7 +137,7 @@ and Paste in text fields included.
 | File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
-| View | Show Sidebar ⌃⌘S · Columns ▸ · Show Download Window ⌘O |
+| View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
 | Window | standard (macOS) |
 | Help | Herb's Download Manager on GitHub |
 | (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS) · Quit Herb's DM ⌘Q |

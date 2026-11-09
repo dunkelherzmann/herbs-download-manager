@@ -10,6 +10,13 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 - Never run `cargo fmt`: there is no `rustfmt.toml` and the code isn't rustfmt-formatted (about 120-column lines);
   it rewrites the whole workspace.
 
+## Trying the app
+
+- Never quit, relaunch or click in Herbert's running copy. Run a test copy from `dist/` with `HD_DATA_DIR` (and
+  `HD_DOWNLOADS_DIR`) set to a scratch folder: it keeps its own list and its own UI settings. Read windows by the
+  test copy's pid (`CGWindowListCopyWindowInfo`), or with computer-use when his copy isn't running. `build.sh
+  --install` leaves his running copy alone; the new build loads at his next launch.
+
 ## Writing tests (learned the hard way)
 
 - `hd-mock` servers that fake a dying or changed file must also cut responses already under way; otherwise "source
