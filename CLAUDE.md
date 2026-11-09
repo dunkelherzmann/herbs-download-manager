@@ -31,7 +31,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (set `XDG_RUNTIME_DIR` over ssh), never the desktop.
   Paths given to the Flatpak (`--capture`, `HD_DATA_DIR`) must be under the home folder: the sandbox has its own
   `/tmp`, so a picture "saved" to `/tmp` never appears on the host.
-- Windows: `powershell -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). `--capture
+- Windows: `powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). Scripts are blocked on windows, so every `.ps1` runs with `-ExecutionPolicy Bypass`, which lifts the block for that one run without changing the system setting. `--capture
   FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
   `IsWindowVisible` on a child is false until its top-level window first shows: keep layout state (such as whether
@@ -46,7 +46,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 `tests/features.scenario` is run by each app through its own command code (`core/src/scenario.rs` has the language):
 `macos/scripts/features.sh` (part of `scripts/test.sh`), `sh linux/scripts/features.sh` after `linux/scripts/build.sh
---install`, `powershell -File windows\scripts\features.ps1` after `windows\scripts\build.ps1`. A new feature gets
+--install`, `powershell -ExecutionPolicy Bypass -File windows\scripts\features.ps1` after `windows\scripts\build.ps1`. A new feature gets
 its steps there; each feature downloads into its own folder, and waits for its downloads to finish, because a link to a
 file another unfinished download fetches becomes its mirror. A host step refreshes the list before selecting rows: the list is
 refreshed only twice a second, and a command acts on the rows as the list last saw them (Resume once skipped a row it
