@@ -1,0 +1,28 @@
+//! Herb's Download Manager for Windows (SPECIFICATION.md §1): a Win32 window over the shared core, laid out as the
+//! Mac's, with the window controls on the right and the Main Menu (☰) in the top-left corner.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
+#[cfg(windows)]
+mod app;
+
+use std::path::PathBuf;
+
+/// The list lives in %LOCALAPPDATA%\Herb's Download Manager, or in %HD_DATA_DIR% for tests, so they never touch the
+/// user's list.
+pub fn data_folder() -> PathBuf {
+    match std::env::var_os("HD_DATA_DIR") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Herb's Download Manager"),
+    }
+}
+
+fn main() {
+    // `--self-check` prints what the core reports and exits without a window (the build script checks the build).
+    if std::env::args().any(|a| a == "--self-check") {
+        let s = hd_core::settings::Settings::default();
+        println!("core {} connections {} per-server {}", hd_core::version(), s.connections, s.connections_per_server);
+        return;
+    }
+    #[cfg(windows)]
+    app::run();
+}

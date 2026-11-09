@@ -7,7 +7,7 @@ request each, and tick an item with its PR number once it is built and its test 
 
 ## Next (top priority)
 
-- [ ] **Menus in the window, matching the Mac.** When the main window is built, every menu and submenu sits in the title bar's menu bar with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. (§2, §4, enhancements.md) *Asked 2026-11-09.*
+- [ ] **Menus in the window, matching the Mac.** The Main Menu (☰, in the top-left corner since the Mac moved to one, #26) holds every menu and submenu with the Mac's menus, order and shortcuts; no command is reachable only somewhere else. The skeleton has the menus' titles; their items come with the main window. (§2, §4, enhancements.md) *Asked 2026-11-09.*
 
 ## Bugs to fix
 
@@ -18,7 +18,7 @@ No open bugs in `bugs.md`.
 The Windows version is ported once the Mac version has each feature, item by item in the Mac's build order
 ([`macos/pending.md`](../macos/pending.md)). Everything is still to build.
 
-- [ ] **Project skeleton**: Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe`, `scripts\build-windows.ps1`, copied to the desktop on every build. (§1)
+- [x] **Project skeleton**: Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe`, `windows\scripts\build.ps1`, copied to the desktop on every build. (§1) #36
 - [ ] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Windows). (§7, §8, §10)
 - [ ] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
   menu in the title bar's left corner. (§2–§4)
@@ -28,4 +28,4 @@ The Windows version is ported once the Mac version has each feature, item by ite
 
 ## Not checked automatically
 
-Nothing is built yet.
+The main window: checked from its `--capture` picture (WM_PRINT over SSH).
