@@ -55,6 +55,10 @@ pub struct Request {
     pub cookies: Option<String>,
     /// add: check each link first, and add nothing if one doesn't work, so the browser can keep the download.
     pub check: bool,
+    /// add, from the browser extension: the link is a streamed video's playlist (§15), whatever its address says.
+    pub stream: bool,
+    /// add, one link: the file's name (the extension names a stream after its page).
+    pub name: Option<String>,
 }
 
 /// One download as `list` reports it.
@@ -175,6 +179,19 @@ pub fn serve(manager: &Manager, downloads: PathBuf) -> std::io::Result<()> {
 }
 
 /// Written so only the user can read it (the token lets anyone who has it control the app).
+/// A name from a page's title made fit for a file: no folder separators or characters Windows refuses, at most 120
+/// characters.
+fn safe_name(name: &str) -> String {
+    let clean: String = name.chars().map(|c| if "/\\:*?\"<>|".contains(c) || c.is_control() { ' ' } else { c }).collect();
+    let words: Vec<&str> = clean.split_whitespace().collect();
+    let mut out = words.join(" ");
+    if out.chars().count() > 120 {
+        let (stem, ext) = out.rsplit_once('.').map(|(a, b)| (a.to_string(), format!(".{b}"))).unwrap_or((out.clone(), String::new()));
+        out = stem.chars().take(120 - ext.chars().count()).collect::<String>().trim_end().to_string() + &ext;
+    }
+    out.trim_matches('.').trim().to_string()
+}
+
 /// The browser's cookies and page for the links' sites, as sign-ins for this session (they win over saved ones, whose
 /// user name and password they keep).
 fn browser_sign_ins(manager: &Manager, r: &Request) {
@@ -299,7 +316,9 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                     }
                 }
             }
-            let links = r.urls.iter().map(|u| PendingLink { url: u.clone(), ..Default::default() }).collect();
+            // A name given for one link, made safe for a file name.
+            let name = r.name.as_deref().filter(|_| r.urls.len() == 1).map(safe_name).filter(|n| !n.is_empty());
+            let links = r.urls.iter().map(|u| PendingLink { url: u.clone(), name: name.clone(), stream: r.stream, ..Default::default() }).collect();
             let mut session = AddSession::new(manager, links, &folder, manager.settings().connections, !r.queue);
             loop {
                 match session.step(manager) {

@@ -460,7 +460,8 @@ downloads to the app. The browser keeps a download the app doesn't take.
   or the server refused it.
 - Private (incognito) windows' downloads stay in the browser.
 - Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**.
-- The toolbar button turns the hand-over off and on; when off, its badge says "off".
+- The toolbar button opens the extension's list: **Take the browser's downloads** (a switch: when off, the browser
+  keeps its downloads and the button's badge says "off"), and **On this page**, the media the tab played (§15).
 - The cookies and page arrive as a sign-in for the link's site for this session only (§9.1): they're never written
   to disk, and they keep a saved sign-in's user name and password.
 - The extension talks to `hdm` (§12) by native messaging, which passes on only `add` and `ping`. At each launch the
@@ -614,6 +615,17 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   join (`-c copy`): every decoded picture and sound block the same, at the same times (within a millisecond), sound
   and picture as far apart as before. ffmpeg is only the tests' reference; the app never uses it. macOS doesn't
   decode MP3 sound inside MP4 (ffmpeg's file behaves the same); other players do.
-- Not yet: DASH, choosing a quality or a sound track (the best is taken), streams whose address doesn't end in
-  `.m3u8`, the browser extension's list of a page's media, and scanning a page from the app (enhancements.md).
+- **The browser extension's list:** the extension notes what each tab loads that can be downloaded, in the order
+  seen: stream playlists (HLS by an `.m3u8` address or an `mpegurl` type; DASH by `.mpd` or `dash+xml`) and whole
+  video and sound files (by a `video/` or `audio/` type, or a media file's extension with no type). Left out:
+  stream pieces (`.ts`, `.m4s`, `video/mp2t`…), ranges and files under 1 MB that a page's script fetched (pieces
+  of a player's stream), sounds under 64 KB a page plays (clicks, chimes), scripts, styles and pages. A master
+  playlist is read once and its quality and sound playlists are left out of the list. The button shows how many
+  items the tab has; the list is forgotten when the tab goes to another page. Each item shows its name (a stream:
+  the page's title), its kind ("Video stream", "Video", "Sound"), size and site; a click adds it to the app's
+  queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream is named after
+  its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
+  media extension. DASH streams are listed but not added yet ("not supported yet").
+- Not yet: DASH, choosing a quality or a sound track (the best is taken), and scanning a page from the app
+  (enhancements.md).
 

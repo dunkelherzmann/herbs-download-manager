@@ -81,6 +81,8 @@ fn a_stream_link_downloads_its_pieces_and_joins_them() {
     let path = dir.join("files/h264-ts.mp4");
     assert_eq!(std::fs::read(&path).unwrap(), joined_directly("h264-ts", &dir), "the same file as joining the pieces directly");
     assert!(!dir.join("files/h264-ts.mp4.hdparts").exists(), "the pieces are gone once joined");
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row.size, Some(std::fs::metadata(&path).unwrap().len()), "the list shows the file's size, not the pieces'");
     assert!(m.quit(Duration::from_secs(5)));
 }
 

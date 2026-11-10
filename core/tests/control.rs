@@ -215,3 +215,35 @@ fn the_browser_extension_hands_over_a_download_with_its_cookies() {
     assert!(m.vault().list().is_empty(), "nor written to sign-ins.json");
     assert!(m.quit(Duration::from_secs(5)));
 }
+
+#[test]
+fn the_extension_adds_a_stream_by_its_type_named_after_its_page() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let media = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/media/h264-ts");
+    // The playlist at an address that doesn't say it's one; its pieces beside it.
+    s.put("/clip/play", MockFile::new(std::fs::read(media.join("index.m3u8")).unwrap()));
+    for n in 0..3 {
+        s.put(&format!("/clip/s{n}.ts"), MockFile::new(std::fs::read(media.join(format!("s{n}.ts"))).unwrap()));
+    }
+    let dir = folder("page-stream");
+    let m = Manager::open(&dir).unwrap();
+    control::serve(&m, dir.join("files")).unwrap();
+    let mut out = Vec::new();
+    let message = json!({"command": "add", "urls": [s.url("/clip/play")], "check": true, "queue": true, "stream": true,
+                         "name": "My Trip: part 1/2 | Videos.mp4"});
+    assert_eq!(cli::native(&mut framed(&[message]).as_slice(), &mut out, &dir), 0);
+    assert_eq!(unframed(&out)[0]["ok"], true, "{}", unframed(&out)[0]);
+    let row = m.rows().into_iter().next().unwrap();
+    assert_eq!(row.name, "My Trip part 1 2 Videos.mp4", "a page title made fit for a file name");
+    assert_eq!(row.status, hd_core::manager::Status::Waiting, "added to the queue");
+    m.start_queue();
+    let until = Instant::now() + Duration::from_secs(30);
+    while m.rows()[0].status != hd_core::manager::Status::Finished {
+        assert!(Instant::now() < until, "never finished: {:?}", m.rows()[0].status);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let bytes = std::fs::read(dir.join("files/My Trip part 1 2 Videos.mp4")).unwrap();
+    assert_eq!(&bytes[4..8], b"ftyp", "joined into an MP4 although its address had no .m3u8");
+    assert!(m.quit(Duration::from_secs(5)));
+}

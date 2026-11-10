@@ -364,6 +364,7 @@ impl DownloadManager {
             start,
             size,
             early,
+            stream: false,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }

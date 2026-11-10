@@ -11,9 +11,12 @@ pub const FIREFOX_ID: &str = "hdm@herbsdownloadmanager.org";
 /// The extension's id in Chrome and its kin, fixed by the public key in its manifest.
 pub const CHROME_ID: &str = "clhikpnhhffblbcgfcpebhiholmchidg";
 
-const FILES: [(&str, &[u8]); 6] = [
+const FILES: [(&str, &[u8]); 9] = [
     ("manifest.json", include_bytes!("../../extension/manifest.json")),
     ("background.js", include_bytes!("../../extension/background.js")),
+    ("popup.html", include_bytes!("../../extension/popup.html")),
+    ("popup.js", include_bytes!("../../extension/popup.js")),
+    ("popup.css", include_bytes!("../../extension/popup.css")),
     ("icons/icon-16.png", include_bytes!("../../extension/icons/icon-16.png")),
     ("icons/icon-32.png", include_bytes!("../../extension/icons/icon-32.png")),
     ("icons/icon-48.png", include_bytes!("../../extension/icons/icon-48.png")),
@@ -154,6 +157,11 @@ mod tests {
         assert_eq!(id, CHROME_ID);
         let script = std::str::from_utf8(FILES[1].1).unwrap();
         assert!(script.contains(&format!("\"{HOST}\"")));
+        // Every file the manifest names is in the copy the app writes.
+        let names: Vec<&str> = FILES.iter().map(|(n, _)| *n).collect();
+        for named in [manifest["action"]["default_popup"].as_str().unwrap(), "popup.js", "popup.css"] {
+            assert!(names.contains(&named), "{named} missing from FILES");
+        }
     }
 
     #[test]

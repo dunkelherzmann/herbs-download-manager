@@ -144,6 +144,8 @@ pub struct NewDownload {
     pub size: Option<u64>,
     /// The early download New Download started for this link (`start_early`), adopted instead of starting afresh.
     pub early: Option<u64>,
+    /// A streamed video's playlist (§15), even when its address doesn't end in `.m3u8`.
+    pub stream: bool,
 }
 
 /// The first id of an early download.
@@ -485,7 +487,7 @@ impl Manager {
             }
             self.cancel_early(token);
         }
-        let stream = crate::media::download::is_stream_link(&new.url);
+        let stream = new.stream || crate::media::download::is_stream_link(&new.url);
         // A stream's name is known now (it's joined under it at the end); a file's comes from the server.
         let name = new.name.or_else(|| stream.then(|| crate::media::download::stream_name(&new.url)));
         let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
@@ -642,6 +644,8 @@ impl Manager {
                 Outcome::Finished(path) => {
                     e.verified = running.progress.verified.lock().unwrap().clone();
                     e.name = path.file_name().map(|n| n.to_string_lossy().into_owned()).or(e.name.take());
+                    // The file's own size: a stream's pieces add up to more than the file joined from them.
+                    e.downloaded = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(e.downloaded);
                     e.dest = Some(path);
                     e.size = Some(e.downloaded);
                     e.status = Status::Finished;

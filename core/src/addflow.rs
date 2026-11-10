@@ -19,6 +19,8 @@ pub struct PendingLink {
     pub size: Option<u64>,
     /// The early download New Download started for this link (`Manager::start_early`).
     pub early: Option<u64>,
+    /// A streamed video's playlist (§15), when the address doesn't say so (the browser extension saw its type).
+    pub stream: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,7 +122,7 @@ pub struct AddSession {
 
 fn name_of(link: &PendingLink) -> String {
     link.name.clone().unwrap_or_else(|| {
-        if crate::media::download::is_stream_link(&link.url) {
+        if link.stream || crate::media::download::is_stream_link(&link.url) {
             return crate::media::download::stream_name(&link.url);
         }
         reqwest::Url::parse(&link.url)
@@ -251,6 +253,7 @@ impl AddSession {
             start: self.start,
             size: link.size,
             early: link.early,
+            stream: link.stream,
         });
         match added {
             Added::MirrorOf(_) => self.summary.mirrored += 1,
