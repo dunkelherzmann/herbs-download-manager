@@ -141,3 +141,6 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **Feature tests watch what the app does in the background** (asked 2026-11-10, Linux and Windows). The feature test run goes through the app-observer skill: a crash, a hang, a write outside the test folder (Linux), or a change to the real app's data, the browsers' native-host folders and registry keys, or the startup programs (Windows) fails the run. `HD_NO_OBSERVE=1` turns it off.
+  - [x] Linux (`linux/scripts/features.sh`)
+  - [x] Windows (`windows/scripts/features.ps1`)

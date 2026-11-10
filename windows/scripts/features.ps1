@@ -18,12 +18,27 @@ try {
     $env:HD_DATA_DIR = Join-Path $work 'data'
     $env:HD_DOWNLOADS_DIR = Join-Path $work 'dl'
     $report = Join-Path $work 'report.txt'
-    $app = Start-Process -FilePath (Join-Path $root 'dist\HerbsDownloadManager.exe') -PassThru -Wait -ArgumentList @(
-        '--features', (Join-Path $root 'tests\features.scenario'), $report,
+    $exe = Join-Path $root 'dist\HerbsDownloadManager.exe'
+    $arguments = @('--features', (Join-Path $root 'tests\features.scenario'), $report,
         "L=http://127.0.0.1:$port", "M1=http://127.0.0.1:$($port + 1)", "M2=http://127.0.0.1:$($port + 2)",
         "DL=$($env:HD_DOWNLOADS_DIR)", "SMALL_SHA256=$sum")
+    # The app-observer skill watches the run when it's installed (HD_NO_OBSERVE=1 skips it): a crash, a hang, or a
+    # change to the real app's data, the browsers' native-host registration or the startup programs fails the run.
+    $observer = Join-Path $HOME '.agents\library\app-observer\scripts\observer.py'
+    if ((Test-Path $observer) -and -not $env:HD_NO_OBSERVE) {
+        $ErrorActionPreference = 'Continue'  # the verdict comes on stderr, which 'Stop' would throw
+        $verdict = @(& python $observer run --out (Join-Path $work 'observer') --name features --timeout 300 `
+            --guard "$env:LOCALAPPDATA\Herb's Download Manager" --guard 'HKCU\Software\Google\Chrome\NativeMessagingHosts' `
+            --guard 'HKCU\Software\Microsoft\Edge\NativeMessagingHosts' --guard 'HKCU\Software\Mozilla\NativeMessagingHosts' `
+            --guard 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' -- $exe @arguments 2>&1 | ForEach-Object { "$_" })
+        $code = $LASTEXITCODE
+    } else {
+        $code = (Start-Process -FilePath $exe -PassThru -Wait -ArgumentList $arguments).ExitCode
+        $verdict = @()
+    }
     if (Test-Path $report) { Get-Content $report | Write-Host } else { Write-Host 'the app wrote no report' }
-    exit $app.ExitCode
+    $verdict | Where-Object { $_ -like 'observer: *' } | Write-Host
+    exit $code
 } finally {
     Stop-Process -Id $mock.Id -Force -ErrorAction SilentlyContinue
 }

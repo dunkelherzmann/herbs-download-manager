@@ -22,3 +22,5 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux (not affected: the GTK app saves no window layout)
   - [x] Windows (not affected: nothing saved)
+- [ ] **Feature tests failed once under load** (*found in testing*, 2026-11-10, Linux). One run of `linux/scripts/features.sh` had 4 of 17 features fail while the Linux machine was busy (load about 4), among them "The scheduler starts the queue, then the app offers to sleep": `expect f15/small.bin status-contains Waiting: no download f15/small.bin`. The next three runs passed, with and without the app-observer. Probably a timing assumption in the scenario.
+  - [ ] Linux
