@@ -5,9 +5,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 ## Checking and merging
 
-- The repository is private until releases are ready; then it goes public (Herbert, 2026-11-09). Before that step:
-  a secrets and privacy scan (code and history), stale branches removed, description and topics, README install
-  steps. Once public, GitHub Actions is free and can check pull requests again.
+- The repository is public (since 2026-11-10). Releases: `scripts/release.sh` builds and checks the four files from
+  origin/main (HDM_RELEASE_REF=origin/BRANCH to try a branch), and `scripts/release.sh --publish` tags v<version> and
+  publishes the pre-release. On Linux, `flatpak-builder --run` exits 1 even for `true`: judge a check run there by
+  its output.
 
 - GitHub Actions checks every pull request again (free since the repo went public, 2026-11-10;
   `.github/workflows/build.yml`). Before merging, also check a pushed branch with `scripts/check.sh`, which runs the Mac build and tests here and `cargo test --workspace` on linux and windows, then merge.

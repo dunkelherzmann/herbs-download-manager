@@ -212,3 +212,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Releases on GitHub,** with a file to download for each system and install steps. *Requested 2026-11-10.* `scripts/release.sh` builds them all from main in one go (an `--publish` flag tags the commit and publishes the pre-release) and checks each file. The files are a macOS zip (ad-hoc signed, not notarized), a Linux Flatpak bundle that fetches its GNOME runtime from Flathub, a Windows zip with `hdm.exe` beside the app, and the extension.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
