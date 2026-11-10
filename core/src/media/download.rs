@@ -142,6 +142,69 @@ async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault) 
     response.text().await.map_err(|e| transfer::error_text(&e))
 }
 
+/// A stream's preview for the browser extension's list (§15): one picture from its start, as a tiny MP4 a browser
+/// shows, and its length when the playlist or manifest gives it (a live stream has none).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Preview {
+    pub mp4: Vec<u8>,
+    pub seconds: Option<f64>,
+}
+
+/// Makes a stream's preview: the smallest picture's first piece, fetched with the sign-ins in `vault` (the
+/// browser's cookies), reduced to its first whole picture. Nothing is saved.
+pub async fn preview(client: &reqwest::Client, url: &str, vault: &crate::vault::Vault) -> Result<Preview, String> {
+    let url = Url::parse(url).map_err(|_| "Not a valid link".to_string())?;
+    let first = text(client, &url, vault).await?;
+    let (pieces, seconds): (Vec<Segment>, Option<f64>) = if first.contains("<MPD") {
+        let m = super::dash::parse(&first, &url)?;
+        let rep = m.video.iter().min_by_key(|r| (r.width as u64 * r.height as u64, r.bandwidth)).ok_or("This stream has no picture")?;
+        if let super::dash::Addressing::Base { index: None, .. } = rep.addressing {
+            // One whole file per quality with no index: its first picture isn't reachable without fetching it all.
+            return Err("This stream can't be previewed".into());
+        }
+        (dash_pieces(client, rep, vault).await?, m.duration.filter(|_| !m.live))
+    } else {
+        let playlist = match hls::parse(&first, &url)? {
+            p @ Playlist::Master { .. } => {
+                let Playlist::Master { variants, .. } = &p else { unreachable!() };
+                let pool: Vec<&hls::Variant> = variants.iter().filter(|v| v.resolution.is_some()).collect();
+                let smallest = pool
+                    .iter()
+                    .copied()
+                    .min_by_key(|v| (v.resolution.map(|(w, h)| w as u64 * h as u64).unwrap_or(0), v.bandwidth))
+                    .or_else(|| p.pick_variant(None))
+                    .ok_or("The stream lists no quality")?;
+                smallest.url.clone()
+            }
+            Playlist::Media { .. } => url.clone(),
+        };
+        let (segments, ended) = media_playlist(client, &playlist, vault).await?;
+        let seconds = ended.then(|| segments.iter().map(|s| s.duration).sum::<f64>()).filter(|s| *s > 0.0);
+        (segments, seconds)
+    };
+    let piece = pieces.into_iter().next().ok_or("The stream has no pieces yet")?;
+    let mut joiner = Joiner::new(&std::env::temp_dir().join(format!("hdm-preview-{}-{}", std::process::id(), piece.sequence)))
+        .map_err(|e| e.to_string())?;
+    joiner.still();
+    let source = joiner.source();
+    if let Some((map_url, map_range)) = &piece.map {
+        let init = fetch_bytes(client, map_url, *map_range, vault).await?;
+        joiner.init(source, &init).map_err(|e| e.to_string())?;
+    }
+    let mut data = fetch_bytes(client, &piece.url, piece.range, vault).await?;
+    if let Key::Aes128 { url: key_url, iv } = &piece.key {
+        let key: [u8; 16] = fetch_bytes(client, key_url, None, vault).await?.as_slice().try_into().map_err(|_| "The stream's key isn't 16 bytes")?;
+        data = decrypt_aes128(&data, &key, &iv.unwrap_or_else(|| hls::sequence_iv(piece.sequence))).map_err(|e| e.to_string())?;
+    }
+    joiner.piece(source, &data, false).map_err(|e| e.to_string())?;
+    let out = std::env::temp_dir().join(format!("hdm-preview-{}-{}.mp4", std::process::id(), piece.sequence));
+    let made = joiner.finish(&out).map_err(|e| e.to_string());
+    let mp4 = made.and_then(|_| std::fs::read(&out).map_err(|e| e.to_string()));
+    let _ = std::fs::remove_file(&out);
+    let _ = std::fs::remove_file(std::env::temp_dir().join(format!("hdm-preview-{}-{}", std::process::id(), piece.sequence)));
+    Ok(Preview { mp4: mp4?, seconds })
+}
+
 /// One track of a stream: an HLS playlist, or pieces listed by a DASH manifest.
 enum Track {
     Hls(Url),

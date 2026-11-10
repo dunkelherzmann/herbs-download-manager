@@ -46,7 +46,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Paths given to the Flatpak (`--capture`, `HD_DATA_DIR`) must be under the home folder: the sandbox has its own
   `/tmp`, so a picture "saved" to `/tmp` never appears on the host.
 - Windows tests over ssh with several steps: write a `.ps1` file, copy it over and run it with `-ExecutionPolicy Bypass
-  -File`. Inline `cmd` one-liners lose PowerShell's quotes, and a `start /b` child keeps the ssh session open until
+  -File`. The ssh shell there is `cmd`: chain commands with `&&`, never `;` (it became part of a file name). Inline `cmd` one-liners lose PowerShell's quotes, and a `start /b` child keeps the ssh session open until
   killed. Start processes with `Start-Process -PassThru` and stop them by that id, never by name: Herbert's own copy
   and browser run there too. The worktree may have been removed by another session: check it exists first. Make the
   script remove an existing worktree before `git worktree add`, and print the commit it builds (`git log --oneline
@@ -66,6 +66,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Paths with "Herb's" in them don't survive `ssh windows '…'`: the apostrophe ends the shell's quoting and
   vanishes, so a command made a new "Herbs Download Manager" folder. Put such steps in a `.ps1` (`Join-Path
   $env:LOCALAPPDATA "Herb's Download Manager"`), copy it over with scp and run that.
+  A control whose state follows another's text (enabled when the link is a stream) must also be set where the form
+  sets that text: the EN_CHANGE sent inside `with_form` finds the form borrowed and is dropped, so a prefilled link
+  left "Only the sound" dimmed (#78).
   Don't let sibling controls overlap (a tab control's body under its pages): WM_PRINT paints siblings in its own
   order, so the pictures showed empty pages. Make the tab control just the strip and put the pages below it.
 

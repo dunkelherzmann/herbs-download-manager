@@ -21,6 +21,8 @@ pub struct Joiner {
     sources: Vec<Source>,
     /// Only the sound is kept (the picture's tracks are left out of the file).
     sound_only: bool,
+    /// Only the first whole picture is kept: a still for a preview.
+    still: bool,
 }
 
 /// What `finish` wrote.
@@ -38,12 +40,17 @@ const JUMP_SECONDS: f64 = 10.0;
 impl Joiner {
     /// The pieces' bytes wait in `spool_path` until `finish`.
     pub fn new(spool_path: &Path) -> Result<Joiner, JoinError> {
-        Ok(Joiner { spool: Spool::create(spool_path)?, sources: Vec::new(), sound_only: false })
+        Ok(Joiner { spool: Spool::create(spool_path)?, sources: Vec::new(), sound_only: false, still: false })
     }
 
     /// Keeps only the sound: the file is an `.m4a` (or `.mp3`), with no picture.
     pub fn sound_only(&mut self) {
         self.sound_only = true;
+    }
+
+    /// Keeps only the first whole picture, with no sound: a still for a preview.
+    pub fn still(&mut self) {
+        self.still = true;
     }
 
     /// A new playlist (the video's, then a separate sound track's); returns its number.
@@ -168,6 +175,14 @@ impl Joiner {
             }
         }
         let mut tracks: Vec<Track> = tracks.into_iter().map(|(t, _)| t).collect();
+        if self.still {
+            // The first picture that stands on its own (a key frame), shown for a moment.
+            let mut video = tracks.into_iter().find(|t| t.kind == Kind::Video).ok_or_else(|| JoinError::Damaged("This stream has no picture".into()))?;
+            let first = *video.samples.iter().find(|s| s.sync).ok_or_else(|| JoinError::Damaged("The piece has no whole picture".into()))?;
+            video.samples = vec![super::Sample { dts: 0, cts: 0, duration: video.timescale.max(1), ..first }];
+            video.edit = None;
+            tracks = vec![video];
+        }
         // Durations still unknown at a piece's edge come from the next sample.
         for t in &mut tracks {
             for i in 1..t.samples.len() {

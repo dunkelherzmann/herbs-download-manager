@@ -274,8 +274,8 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
 }
 
 /// The browser extension's side (§13): native messaging, one message at a time, each a 32-bit length in the
-/// computer's byte order followed by that many bytes of JSON. Only `add`, `scan`, `ping` and `open` (which opens the
-/// app) are passed on to the app, which
+/// computer's byte order followed by that many bytes of JSON. `preview` is answered here (no app needed); only `add`,
+/// `scan`, `ping` and `open` (which opens the app) are passed on to the app, which
 /// answers as for the command line ({ok, error, message}). Ends when the browser closes the pipe.
 pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32 {
     /// Browsers send at most 4 GB, but a link and its cookies are far less.
@@ -313,12 +313,69 @@ pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32
                 let request = Request { command: "scan".into(), urls: r.urls, cookies: r.cookies, referer: r.referer, ..Default::default() };
                 control::send(dir, &request).unwrap_or_else(Answer::failed)
             }
+            // The extension's list: a stream's first picture and length, made here with the browser's cookies.
+            Ok(r) if r.command == "preview" => preview(&r),
             Ok(r) => Answer { error: Some(format!("The browser can't ask for “{}”.", r.command)), ..Default::default() },
         };
         let text = serde_json::to_vec(&answer).unwrap_or_default();
         if output.write_all(&(text.len() as u32).to_ne_bytes()).and_then(|_| output.write_all(&text)).and_then(|_| output.flush()).is_err() {
             return 1;
         }
+    }
+}
+
+/// A stream's preview (§15), for a link (`urls[0]`) or a manifest the page carries (`manifest`), fetched with the
+/// browser's cookies and page address for the link's site. Each answer is well under the browser's 1 MB limit: one
+/// picture of the smallest quality.
+fn preview(r: &Request) -> Answer {
+    let vault = crate::vault::Vault::open(None);
+    let manifest_file = r.manifest.as_ref().map(|text| {
+        let path = std::env::temp_dir().join(format!("hdm-preview-{}.mpd", std::process::id()));
+        (path.clone(), std::fs::write(&path, text))
+    });
+    let url = match &manifest_file {
+        Some((path, Ok(()))) => reqwest::Url::from_file_path(path).map(|u| u.to_string()).unwrap_or_default(),
+        Some((_, Err(e))) => return Answer::failed(e.to_string()),
+        None => r.urls.first().cloned().unwrap_or_default(),
+    };
+    let hosts: Vec<String> = std::iter::once(url.as_str())
+        .chain(r.referer.as_deref())
+        .filter_map(|u| reqwest::Url::parse(u).ok()?.host_str().map(str::to_string))
+        .collect();
+    if r.cookies.is_some() || r.referer.is_some() {
+        for host in hosts {
+            vault.remember_for_session(crate::vault::SignIn {
+                site: host,
+                cookies: r.cookies.clone().unwrap_or_default(),
+                referer: r.referer.clone().unwrap_or_default(),
+                ..Default::default()
+            });
+        }
+    }
+    let made = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())
+        .and_then(|rt| {
+            rt.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(20), crate::media::download::preview(&crate::http::client(), &url, &vault))
+                    .await
+                    .unwrap_or_else(|_| Err("The stream didn't answer in time".into()))
+            })
+        });
+    if let Some((path, _)) = manifest_file {
+        let _ = std::fs::remove_file(path);
+    }
+    match made {
+        Ok(p) => Answer {
+            ok: true,
+            preview: Some(crate::control::PreviewAnswer {
+                mp4: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &p.mp4),
+                seconds: p.seconds,
+            }),
+            ..Default::default()
+        },
+        Err(e) => Answer::failed(e),
     }
 }
 

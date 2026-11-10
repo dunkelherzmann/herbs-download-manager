@@ -134,9 +134,20 @@ pub struct Answer {
     /// scan: the page's files and media.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub found: Option<Vec<FoundFile>>,
+    /// preview (browser extension): a stream's first picture as a tiny MP4, in base64, and its length in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<PreviewAnswer>,
     /// The app isn't running (the browser extension then offers to open it).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub not_running: bool,
+}
+
+/// A stream's preview for the extension's list (§15).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct PreviewAnswer {
+    /// The MP4, base64.
+    pub mp4: String,
+    pub seconds: Option<f64>,
 }
 
 /// One file `scan` found on a page (§15).

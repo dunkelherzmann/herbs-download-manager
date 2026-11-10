@@ -184,7 +184,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **A preview of each video in the extension's list:** a still picture with the video's length (and its site's icon), so several sources found on one page can be told apart before downloading, as Video DownloadHelper shows. *Requested 2026-11-10.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **A preview of each video in the extension's list:** a still picture with the video's length (and its site's icon), so several sources found on one page can be told apart before downloading, as Video DownloadHelper shows. *Requested 2026-11-10.* Done in #79, extension 1.7: one picture of each stream's smallest quality (made by `hdm`, no app needed) or of a whole video file, with its length. The site's icon is left out: every item in the list comes from the same page.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

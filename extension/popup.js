@@ -131,6 +131,51 @@ function pickers(item) {
   return { box: quality || sound ? box : null, chosen };
 }
 
+// A video's preview beside its name (§15), so several found on one page can be told apart: one picture and its
+// length. A stream's picture comes from hdm (its smallest quality's first piece, three asked at a time); a whole
+// video file's the browser reads itself. Without one, the box stays empty.
+let previewsRunning = 0;
+const previewsWaiting = [];
+
+function thumbnail(tab, item, streamed) {
+  const box = document.createElement("span");
+  box.className = "thumb";
+  box.setAttribute("aria-hidden", "true");
+  const time = document.createElement("span");
+  time.className = "time";
+  const show = (src, seconds) => {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "metadata";
+    video.playsInline = true;
+    video.onloadedmetadata = () => {
+      if (!seconds && Number.isFinite(video.duration)) time.textContent = length(video.duration);
+    };
+    video.onerror = () => video.remove();
+    video.src = src;
+    box.prepend(video);
+    if (seconds) time.textContent = length(seconds);
+  };
+  box.append(time);
+  if (!streamed) {
+    show(`${item.url}#t=1`);
+    return box;
+  }
+  if (item.seconds) time.textContent = length(item.seconds);
+  const run = async () => {
+    previewsRunning += 1;
+    const answer = await ask({ type: "preview", tabId: tab.id, item }).catch(() => null);
+    previewsRunning -= 1;
+    if (previewsWaiting.length) previewsWaiting.shift()();
+    if (!(answer && answer.ok && answer.preview)) return;
+    const bytes = Uint8Array.from(atob(answer.preview.mp4), (c) => c.charCodeAt(0));
+    show(URL.createObjectURL(new Blob([bytes], { type: "video/mp4" })), answer.preview.seconds || item.seconds);
+  };
+  if (previewsRunning < 3) run();
+  else previewsWaiting.push(run);
+  return box;
+}
+
 // One item: its name, what it is (kind, size, site), and a click that adds it to the queue.
 function row(tab, item, label, facts) {
   const li = document.createElement("li");
@@ -145,7 +190,12 @@ function row(tab, item, label, facts) {
   detail.className = "detail";
   const host = (() => { try { return item.url ? new URL(item.url).hostname : ""; } catch { return ""; } })();
   detail.textContent = [...facts, host].filter(Boolean).join(" · ");
-  button.append(name, detail);
+  const words = document.createElement("span");
+  words.className = "words";
+  words.append(name, detail);
+  // Videos and streams get a preview; sounds don't.
+  if (streamed || item.kind === "video") button.append(thumbnail(tab, item, streamed));
+  button.append(words);
   button.title = item.url || label;
   let soundOnly = null;
   // Adds it (`extra`: sound only), and says how that went in the item's second line.

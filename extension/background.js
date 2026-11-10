@@ -42,6 +42,9 @@ async function cookiesFor(url) {
 }
 
 // Asks the app to download the link; resolves to its answer ({ok, error, message}). `extra`: queue, stream, name.
+// Previews already made, by link (or manifest): the newest 60.
+const previews = new Map();
+
 async function send(url, referer, extra = {}) {
   const message = { command: "add", urls: [url], referer: referer || "", cookies: await cookiesFor(url), check: true, ...extra };
   try {
@@ -293,6 +296,31 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
         if (!about.protected) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, ...about });
       }
       reply({ on: await isOn(), items });
+    } else if (message.type === "preview") {
+      // A stream's first picture and length (§15), made by hdm with the browser's cookies; kept while the browser
+      // runs, so the list shows it at once next time.
+      const item = message.item;
+      const key = item.url || item.manifest;
+      if (previews.has(key)) {
+        reply(previews.get(key));
+        return;
+      }
+      const tab = await api.tabs.get(message.tabId).catch(() => null);
+      const page = tab && web(tab.url) ? tab.url : "";
+      const request = item.kind === "page-dash"
+        ? { command: "preview", manifest: item.manifest, referer: page, cookies: page ? await cookiesFor(page) : "" }
+        : { command: "preview", urls: [item.url], referer: page, cookies: await cookiesFor(item.url) };
+      let answer;
+      try {
+        answer = await api.runtime.sendNativeMessage(HOST, request);
+      } catch {
+        answer = { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
+      }
+      if (answer && answer.ok) {
+        previews.set(key, answer);
+        if (previews.size > 60) previews.delete(previews.keys().next().value);
+      }
+      reply(answer || { ok: false });
     } else if (message.type === "toggle") {
       await api.storage.local.set({ on: !(await isOn()) });
       await showState();

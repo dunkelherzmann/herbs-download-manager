@@ -651,6 +651,12 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   quality or sound track shows two lists under it: **Quality as in Settings**, **Highest** and each picture size with
   its bit rate ("720p · 2.8 Mb/s", one per size, HDR left out as above); and **Sound as in Settings**, **The stream's
   own sound** and each sound track by name and language ("English (en)"). What they show is what the app downloads.
+Each video and stream shows a **preview** to its left, so several found on one page can be told apart: one picture
+with its length in the corner ("0:13"). A stream's is made by `hdm` itself (the app needn't run), with the page's
+cookies: the first whole picture of its smallest quality's first piece, as a tiny MP4 (a few KB), and its length from
+the playlist or manifest (none for a live stream). Three are made at a time and kept while the browser runs. A whole
+video file's picture and length are read by the browser. A video that can't be previewed (a DASH quality kept as one
+file with no index, a protected or broken stream) keeps an empty box; sounds have none.
 Every stream also has a **Sound Only** button there, which adds just its sound (see Sound only above). A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
   media extension. A file a player fetches in pieces by byte range in its address (`bytestart`, `byteend`,
