@@ -76,6 +76,7 @@ const S_STOP: u16 = 91;
 const S_WHEN_DONE: u16 = 92;
 /// Monday to Sunday: S_DAY..S_DAY + 6.
 const S_DAY: u16 = 93;
+const S_EXTENSION: u16 = 100;
 const S_CLOSE: u16 = 2;
 
 const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
@@ -511,7 +512,7 @@ pub fn settings(ctx: &Ctx) {
     let sign_ins = crate::signins::summary(ctx);
     let start_text = schedule::time_text(s.schedule.start.unwrap_or(60));
     let stop_text = schedule::time_text(s.schedule.stop.unwrap_or(7 * 60));
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 654), &[
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 734), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -554,7 +555,10 @@ pub fn settings(ctx: &Ctx) {
         (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 564, 170, 20),
         (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 564, 250, 20),
         (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 558, 95, 28),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 610, 85, 30),
+        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 598, 170, 20),
+        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 592, 190, 28),
+        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 626, 350, 52),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 690, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -582,6 +586,7 @@ pub fn settings(ctx: &Ctx) {
         (S_DAY + 4, "", "Start the queue on Fridays"),
         (S_DAY + 5, "", "Start the queue on Saturdays"),
         (S_DAY + 6, "", "Start the queue on Sundays"),
+        (S_EXTENSION, "", "Open the folder with the extension that hands Chrome's, Edge's, Brave's and Firefox's downloads to the app"),
         (S_LIMITS, "Server limits", limits_detail.as_str()),
         (S_FORGET, "", "Forget every server's remembered limit; downloads learn them again"),
         (S_MANAGE, "Manage sign-ins", "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"),
@@ -821,6 +826,10 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                         S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES | S_START | S_STOP if code == EN_KILLFOCUS => save_settings(hwnd),
                         S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
                         id if (S_DAY..S_DAY + 7).contains(&id) => save_settings(hwnd),
+                        S_EXTENSION => match hd_core::browser::extension_folder(&crate::data_folder()) {
+                            Ok(folder) => crate::app::open_path(&folder, false),
+                            Err(e) => eprintln!("The extension can't be written: {e}"),
+                        },
                         S_MANAGE => {
                             if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
                                 crate::signins::open(&ctx);

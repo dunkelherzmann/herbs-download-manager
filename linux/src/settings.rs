@@ -86,6 +86,22 @@ pub fn open(ctx: &Ctx) {
         .description("Start and stop the queue at set times").build();
     page.add(&scheduler);
     page.add(&crate::signins::group(ctx));
+    // §13: the extension that hands the browsers' downloads to the app.
+    let browsers = adw::PreferencesGroup::builder().title("Browser extension")
+        .description("Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.").build();
+    let extension = adw::ActionRow::builder().title("Chrome, Edge, Brave, Vivaldi and Firefox").build();
+    let show = gtk::Button::builder().label("Show Extension Folder").valign(gtk::Align::Center)
+        .tooltip_text("Open the folder with the extension, to load it in the browser").build();
+    extension.add_suffix(&show);
+    browsers.add(&extension);
+    page.add(&browsers);
+    {
+        let window = ctx.window.clone();
+        show.connect_clicked(move |_| match hd_core::browser::extension_folder(&crate::data_folder()) {
+            Ok(folder) => gtk::FileLauncher::new(Some(&gio::File::for_path(folder))).launch(Some(&window), None::<&gio::Cancellable>, |_| {}),
+            Err(e) => eprintln!("The extension can't be written: {e}"),
+        });
+    }
 
     // S1: Save downloads to.
     let folder = adw::ActionRow::builder().title("Save downloads to").subtitle(crate::save_folder(&ctx.manager).display().to_string()).build();

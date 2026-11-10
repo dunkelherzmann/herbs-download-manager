@@ -48,6 +48,13 @@ pub struct Request {
     pub search: String,
     /// remove: move the files to the Trash too.
     pub delete_files: bool,
+    /// add, from the browser extension (§13): the page the link was on, sent with each request to its site.
+    pub referer: Option<String>,
+    /// add, from the browser extension: the browser's cookies for the link (a Cookie header). Kept for this session
+    /// only, as an unremembered sign-in for the link's site (§9.1); never written to disk.
+    pub cookies: Option<String>,
+    /// add: check each link first, and add nothing if one doesn't work, so the browser can keep the download.
+    pub check: bool,
 }
 
 /// One download as `list` reports it.
@@ -168,6 +175,28 @@ pub fn serve(manager: &Manager, downloads: PathBuf) -> std::io::Result<()> {
 }
 
 /// Written so only the user can read it (the token lets anyone who has it control the app).
+/// The browser's cookies and page for the links' sites, as sign-ins for this session (they win over saved ones, whose
+/// user name and password they keep).
+fn browser_sign_ins(manager: &Manager, r: &Request) {
+    let (cookies, referer) = (r.cookies.clone().unwrap_or_default(), r.referer.clone().unwrap_or_default());
+    if cookies.is_empty() && referer.is_empty() {
+        return;
+    }
+    let vault = manager.vault();
+    let mut hosts: Vec<String> = r.urls.iter().filter_map(|u| reqwest::Url::parse(u).ok()?.host_str().map(str::to_string)).collect();
+    hosts.dedup();
+    for host in hosts {
+        let mut sign_in = match vault.for_host(&host) {
+            crate::vault::Lookup::Found(s) => s,
+            _ => crate::vault::SignIn::default(),
+        };
+        sign_in.site = host;
+        sign_in.cookies = cookies.clone();
+        sign_in.referer = referer.clone();
+        vault.remember_for_session(sign_in);
+    }
+}
+
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension("json.tmp");
     let _ = std::fs::remove_file(&tmp);
@@ -262,6 +291,14 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                     f
                 }
             };
+            browser_sign_ins(manager, &r);
+            if r.check {
+                for url in &r.urls {
+                    if let Err(e) = manager.probe(url) {
+                        return Answer::error(format!("Herb's Download Manager can't download “{url}”: {e}"));
+                    }
+                }
+            }
             let links = r.urls.iter().map(|u| PendingLink { url: u.clone(), ..Default::default() }).collect();
             let mut session = AddSession::new(manager, links, &folder, manager.settings().connections, !r.queue);
             loop {

@@ -39,6 +39,21 @@ For an AI assistant, `hdm mcp` is an MCP server on standard input and output. In
 claude mcp add herbs-download-manager -- "/Applications/Herb's Download Manager.app/Contents/MacOS/hdm" mcp
 ```
 
+## Browser extension
+
+The extension in `extension/` hands Chrome's, Edge's, Brave's, Vivaldi's and Firefox's downloads to the app, with the
+browser's cookies for them; the browser keeps any download the app doesn't take (it isn't running, or the link doesn't
+work for it). Right-click a link for **Download with Herb's Download Manager**; the toolbar button turns it off and on.
+
+The app registers itself with the browsers each time it opens. To load the extension, open Settings ▸ Browser
+extension ▸ **Show Extension Folder**, then:
+
+- Chrome, Edge, Brave, Vivaldi: Extensions ▸ turn on Developer mode ▸ **Load Unpacked**, and choose that folder.
+- Firefox: `about:debugging` ▸ This Firefox ▸ **Load Temporary Add-on**, and choose `manifest.json` in it (until the
+  extension is signed by Mozilla, Firefox forgets it when it quits).
+
+Safari isn't supported yet.
+
 ## Building
 
 On a Mac with Apple silicon, the Xcode Command Line Tools and Rust (rustup):

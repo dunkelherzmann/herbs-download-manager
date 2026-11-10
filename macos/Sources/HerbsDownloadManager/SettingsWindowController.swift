@@ -109,6 +109,7 @@ final class SettingsWindowController: NSWindowController {
     private let stopTime = NSDatePicker()
     private let days = (0..<7).map { _ in NSButton(checkboxWithTitle: "", target: nil, action: nil) }
     private let whenDone = NSPopUpButton()
+    private let showExtension = NSButton(title: "Show Extension Folder", target: nil, action: nil)
 
     private static let doneChoices: [(String, WhenDone)] = [
         ("Do nothing", .nothing), ("Quit", .quit), ("Sleep", .sleep), ("Shut down", .shutDown),
@@ -197,6 +198,16 @@ final class SettingsWindowController: NSWindowController {
         notify.setAccessibilityIdentifier("settings-notify")
 
         buildScheduler()
+        showExtension.target = self
+        showExtension.action = #selector(revealExtension(_:))
+        showExtension.toolTip = "Show the extension that hands Chrome's, Edge's, Brave's, Vivaldi's and Firefox's downloads to the app"
+        showExtension.setAccessibilityIdentifier("settings-show-extension")
+        let extensionHelp = NSTextField(wrappingLabelWithString: "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ "
+            + "Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose "
+            + "manifest.json in it. Safari isn't supported yet.")
+        extensionHelp.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        extensionHelp.textColor = .secondaryLabelColor
+        extensionHelp.preferredMaxLayoutWidth = 330
 
         let label = { (text: String) in NSTextField(labelWithString: text) }
         let grid = NSGridView(views: [
@@ -213,6 +224,8 @@ final class SettingsWindowController: NSWindowController {
             [label("When the queue is done:"), whenDone],
             [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
             [label("Sign-ins:"), NSStackView(views: [signInsText, manageSignIns])],
+            [label("Browser extension:"), showExtension],
+            [NSGridCell.emptyContentView, extensionHelp],
             [NSGridCell.emptyContentView, checksumFiles],
             [NSGridCell.emptyContentView, serverDate],
             [NSGridCell.emptyContentView, notify],
@@ -351,6 +364,19 @@ final class SettingsWindowController: NSWindowController {
         }
         signInsText.stringValue = [saved, how].compactMap { $0 }.joined(separator: ", ")
         signInsText.toolTip = "Sites' user names and passwords, cookies and referers, for links that need a login"
+    }
+
+    /// The extension in the app's data folder, shown in Finder, for Load Unpacked.
+    @objc private func revealExtension(_ sender: Any?) {
+        do {
+            let folder = URL(fileURLWithPath: try AppModel.shared.manager.extensionFolder(), isDirectory: true)
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "The extension can't be written to the app's folder"
+            alert.informativeText = errorText(error)
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+        }
     }
 
     @objc private func openSignIns(_ sender: Any?) {

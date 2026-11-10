@@ -4,7 +4,7 @@ Every enhancement requested for Herb's Download Manager, oldest first. New reque
 A box is ticked once the change has shipped. A request that covers several platforms has a box for each, and its main box is ticked when they're all done.
 
 - [x] **Set up the project, locally and on GitHub,** with `SPECIFICATION.md`, `bugs.md`, `enhancements.md` and `pending.md`. *Requested 2026-11-08.* Done in #1.
-- [x] **Study Internet Download Manager, Free Download Manager, XDM, Progressive Downloader and AB Download Manager** with Craft Anything and REA, Progressive Downloader as the main inspiration, and record their features in the spec. *Requested 2026-11-08.* Done in #1 (`SPECIFICATION.md` §13).
+- [x] **Study Internet Download Manager, Free Download Manager, XDM, Progressive Downloader and AB Download Manager** with Craft Anything and REA, Progressive Downloader as the main inspiration, and record their features in the spec. *Requested 2026-11-08.* Done in #1 (`SPECIFICATION.md` §14).
 - [ ] **Multi-threaded downloading:** many connections per file, split dynamically. *Requested 2026-11-08.* Mac, Linux and Windows. (§8) The shared engine does it (#5); each app still needs its window.
   - [ ] Mac
   - [ ] Linux
@@ -26,7 +26,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [x] **Study IDM on the Windows PC with Craft Anything and REA** instead of only its website: its menus, toolbar, dialogs and strings from `IDMan.exe`, and its main window while running. *Requested 2026-11-08.* Done in #2 (`SPECIFICATION.md` §13).
+- [x] **Study IDM on the Windows PC with Craft Anything and REA** instead of only its website: its menus, toolbar, dialogs and strings from `IDMan.exe`, and its main window while running. *Requested 2026-11-08.* Done in #2 (`SPECIFICATION.md` §14).
 - [x] **Up to 32 connections per download,** chosen from 1 to 32. *Requested 2026-11-09.* Spec: 32 by default for downloads and per server, with a 1–32 picker (§5.1 A5, §9 S2–S3). Done in #3.
 - [ ] **Use the most appropriate, portable language, evaluating Rust.** *Requested 2026-11-09.* Spec: Rust core on all three platforms, Swift/AppKit host on the Mac, Rust Win32 and GTK 4 hosts (§1). Done in #3; built per platform below.
   - [ ] Mac
@@ -48,7 +48,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21.
+- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21. Asked again 2026-11-10: dragging a link from a browser into the app. Windows only takes dropped files so far (a link from a browser needs an OLE drop target).
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
@@ -89,10 +89,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [ ] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #59 for Chrome, Edge, Brave, Vivaldi and Firefox: the extension (`extension/`) hands each download to the app through `hdm`, with the browser's cookies and page; each app registers `hdm` with the browsers at launch, and Settings ▸ Browser extension shows the folder to load (SPECIFICATION.md §13). Safari is left: it only keeps extensions signed by an Apple developer.
+  - [x] Mac (Chrome, Edge, Brave, Vivaldi, Firefox)
+  - [x] Linux
+  - [x] Windows
+  - [ ] Safari
 - [x] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #58: Settings ▸ Scheduler starts and stops the queue at set times on chosen days (running downloads go back to waiting at the stop time), and when the queue is done, quits, sleeps or shuts down after a minute's countdown with Cancel; the footer shows the next start or stop (SPECIFICATION.md §11.1).
   - [x] Mac
   - [x] Linux
@@ -132,3 +133,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Windows
 - [x] **Natural wording in the spec's platform table:** "Built on Mac", "Built on Windows", "Built on Linux". *Requested 2026-11-09.* Done in the Download window PR for Linux.
 - [ ] **Make the repository public when releases are ready to go on it.** *Requested 2026-11-09.* Before switching it: a scan for secrets and private details (in the code and in the history), stale branches removed, a description and topics, and a README with install steps for Mac, Linux and Windows. Public repositories get GitHub Actions free, so the automatic checks on pull requests can come back then.
+- [ ] **Download a page's videos and sounds, streamed ones too,** as Video DownloadHelper and Mister Download Manager do: the browser extension notices the media a page plays (HLS `.m3u8` and DASH `.mpd` streams, and whole video and sound files), and the app downloads a stream's pieces (`.ts` or fragments) and joins them into one `.mp4`, without re-encoding. *Requested 2026-11-10, from studying both.* Protected (DRM) video stays out of reach.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **The browser extension finds a page's downloadable files:** the files a page links to or plays, never its scripts, styles or bits of HTML, listed to tick and add. *Requested 2026-11-10.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

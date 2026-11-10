@@ -63,6 +63,15 @@ final class AppModel {
             do { try manager.startControlServer(downloads: Self.defaultDownloadsFolder.path) } catch {
                 NSLog("hdm can't reach the app: %@", errorText(error))
             }
+            // The browser extension reaches the app through hdm (§13): tell the browsers where it is. A test copy
+            // leaves them pointing at the installed app.
+            if !TestCopy.isOn {
+                let m = manager
+                let hdm = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/hdm").path
+                DispatchQueue.global(qos: .utility).async {
+                    for problem in m.registerBrowserHost(hdmPath: hdm) { NSLog("Browser extension: %@", problem) }
+                }
+            }
         } catch {
             let alert = NSAlert()
             alert.messageText = "Herb's Download Manager can't open its download list"

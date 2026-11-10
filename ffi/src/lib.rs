@@ -416,6 +416,17 @@ impl DownloadManager {
         self.inner.take_queue_done().map(Into::into)
     }
 
+    /// Registers `hdm` (at `hdm_path`) as the browser extension's native messaging host with the browsers found
+    /// (§13). Returns the problems, if any.
+    pub fn register_browser_host(&self, hdm_path: String) -> Vec<String> {
+        hd_core::browser::register(std::path::Path::new(&hdm_path), self.inner.data_dir())
+    }
+
+    /// The browser extension, unpacked in the data folder, for Load Unpacked.
+    pub fn extension_folder(&self) -> Result<String, CoreError> {
+        hd_core::browser::extension_folder(self.inner.data_dir()).map(|p| p.display().to_string()).map_err(|e| CoreError::Io { message: e.to_string() })
+    }
+
     /// The footer's words for the queue: "Queue running, 2 waiting, stops at 07:00, then sleeps".
     pub fn queue_text(&self) -> Option<String> {
         self.inner.queue_text()

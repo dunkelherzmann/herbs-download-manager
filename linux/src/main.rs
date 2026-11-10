@@ -105,6 +105,17 @@ fn main() -> gtk::glib::ExitCode {
                 if let Err(e) = hd_core::control::serve(&manager, downloads_folder()) {
                     eprintln!("hdm can't reach the app: {e}");
                 }
+                // The browser extension reaches the app through hdm (§13): tell the browsers where it is. A test copy
+                // leaves them pointing at the installed app.
+                if std::env::var_os("HD_DATA_DIR").is_none()
+                    && let Some(hdm) = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join("hdm")))
+                {
+                    std::thread::spawn(move || {
+                        for problem in hd_core::browser::register(&hdm, &data_folder()) {
+                            eprintln!("Browser extension: {problem}");
+                        }
+                    });
+                }
                 // Test hook: `--add URL` (repeatable) adds and starts a download, as on the Mac.
                 let args: Vec<String> = std::env::args().collect();
                 for (i, a) in args.iter().enumerate() {

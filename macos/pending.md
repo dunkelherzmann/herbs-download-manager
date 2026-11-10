@@ -62,7 +62,7 @@ No open bugs in `bugs.md`.
 - [x] **A note per download**, in a column and the search. (§2.2, §4.1, enhancements.md; #55)
 - [x] **Command line and MCP server.** (enhancements.md, SPECIFICATION.md §12; #57)
 - [x] **Scheduler** for the queue. (§11, enhancements.md)
-- [ ] **Browser extension** (Safari, Chrome, Firefox). (enhancements.md)
+- [ ] **Browser extension** (Safari, Chrome, Firefox). (enhancements.md) Chrome, Edge, Brave, Vivaldi and Firefox done in #59; Safari left.
 
 ## Not checked automatically
 

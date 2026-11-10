@@ -289,6 +289,15 @@ pub fn run() {
         };
         // hdm, the command line and MCP server, reaches the app through it (§12); the app works without it.
         let _ = hd_core::control::serve(&manager, crate::downloads_folder());
+        // The browser extension reaches the app through hdm.exe beside it (§13): tell the browsers where it is. A test
+        // copy leaves them pointing at the installed app.
+        if std::env::var_os("HD_DATA_DIR").is_none()
+            && let Some(hdm) = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.join("hdm.exe")))
+        {
+            std::thread::spawn(move || {
+                let _ = hd_core::browser::register(&hdm, &crate::data_folder());
+            });
+        }
         let args: Vec<String> = std::env::args().collect();
         // Test hook: `--add URL` (repeatable) adds and starts a download, as on the Mac.
         for (i, a) in args.iter().enumerate() {
@@ -977,7 +986,7 @@ fn set_column(i: usize, on: bool) {
     });
 }
 
-fn open_path(path: &std::path::Path, select: bool) {
+pub(crate) fn open_path(path: &std::path::Path, select: bool) {
     unsafe {
         if select {
             let args = wide(&format!("/select,\"{}\"", path.display()));

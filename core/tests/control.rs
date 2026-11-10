@@ -156,3 +156,62 @@ fn the_command_line_parses_its_words() {
     let relative = parse(&["add", "http://a/b", "--folder", "here"]).unwrap().0.folder.unwrap();
     assert!(std::path::Path::new(&relative).is_absolute());
 }
+
+/// One native messaging exchange: the length in the computer's byte order, then JSON.
+fn framed(messages: &[Value]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for m in messages {
+        let body = m.to_string().into_bytes();
+        out.extend((body.len() as u32).to_ne_bytes());
+        out.extend(body);
+    }
+    out
+}
+
+fn unframed(mut bytes: &[u8]) -> Vec<Value> {
+    let mut out = Vec::new();
+    while bytes.len() >= 4 {
+        let n = u32::from_ne_bytes(bytes[..4].try_into().unwrap()) as usize;
+        out.push(serde_json::from_slice(&bytes[4..4 + n]).unwrap());
+        bytes = &bytes[4 + n..];
+    }
+    out
+}
+
+#[test]
+fn the_browser_extension_hands_over_a_download_with_its_cookies() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    s.put("/file.bin", MockFile::new(pattern(5000, 9)));
+    let dir = folder("native");
+    let m = Manager::open(&dir).unwrap();
+    let talk = |messages: &[Value]| {
+        let mut out = Vec::new();
+        assert_eq!(cli::native(&mut framed(messages).as_slice(), &mut out, &dir), 0);
+        unframed(&out)
+    };
+
+    let closed = talk(&[json!({"command": "ping"})]);
+    assert_eq!(closed[0]["error"], control::NOT_RUNNING, "the extension lets the browser keep it");
+
+    control::serve(&m, dir.join("files")).unwrap();
+    let answers = talk(&[
+        json!({"command": "ping"}),
+        json!({"command": "add", "urls": [s.url("/missing.bin")], "check": true}),
+        json!({"command": "add", "urls": [s.url("/file.bin")], "check": true, "cookies": "session=abc", "referer": "http://127.0.0.1/page"}),
+        json!({"command": "remove", "ids": [1]}),
+    ]);
+    assert_eq!(answers[0]["ok"], true);
+    assert!(answers[1]["error"].as_str().unwrap().contains("can't download"), "{}", answers[1]);
+    assert_eq!(answers[2]["ok"], true, "{}", answers[2]);
+    assert!(answers[3]["error"].as_str().unwrap().contains("can't ask for “remove”"), "only add and ping pass");
+    assert_eq!(m.rows().len(), 1, "the missing link wasn't added");
+    match m.vault().for_host("127.0.0.1") {
+        hd_core::vault::Lookup::Found(sign_in) => {
+            assert_eq!((sign_in.cookies.as_str(), sign_in.referer.as_str()), ("session=abc", "http://127.0.0.1/page"))
+        }
+        _ => panic!("the browser's cookies weren't kept for the site"),
+    }
+    assert!(m.vault().list().is_empty(), "nor written to sign-ins.json");
+    assert!(m.quit(Duration::from_secs(5)));
+}

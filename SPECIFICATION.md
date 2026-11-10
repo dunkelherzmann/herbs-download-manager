@@ -448,7 +448,36 @@ While the app runs it listens on 127.0.0.1 only, at a port it picks, and writes 
 removes the file. When the app isn't open, `hdm` says "Herb's Download Manager isn't running. Open it, then try
 again." (exit code 1; 2 for a mistyped command). `$HD_DATA_DIR` points `hdm` at a test copy.
 
-## 13. Reference apps
+## 13. Browser extension
+
+An extension for Chrome, Edge, Brave, Vivaldi and Firefox (`extension/` in the repository) hands the browser's
+downloads to the app. The browser keeps a download the app doesn't take.
+
+- Each new download in a normal window is paused while the app checks its link, with the browser's cookies for it
+  and the page it came from. If the link works for the app, the browser's download is cancelled and erased from its
+  list, and the app downloads it (S1, started now). Otherwise the browser resumes it, and the extension's button
+  shows "!" with the reason in its hover text for 15 seconds: the app isn't running, isn't set up for this browser,
+  or the server refused it.
+- Private (incognito) windows' downloads stay in the browser.
+- Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**.
+- The toolbar button turns the hand-over off and on; when off, its badge says "off".
+- The cookies and page arrive as a sign-in for the link's site for this session only (§9.1): they're never written
+  to disk, and they keep a saved sign-in's user name and password.
+- The extension talks to `hdm` (§12) by native messaging, which passes on only `add` and `ping`. At each launch the
+  app registers `hdm` with the browsers it finds for the user: a host manifest named
+  `org.herbsdownloadmanager.hdm.json` in each browser's `NativeMessagingHosts` folder on the Mac and Linux (Firefox's
+  `native-messaging-hosts`), or in the registry under `HKCU\Software\…\NativeMessagingHosts` on Windows. The Linux
+  Flatpak points them at a small script that runs its `hdm` through `flatpak run`. A browser installed later is
+  found at the next launch; a test copy registers nothing.
+- Settings ▸ Browser extension ▸ **Show Extension Folder** writes the extension to `Browser Extension` in the app's
+  data folder and shows it, with how to load it: Chrome, Edge, Brave and Vivaldi load it unpacked (Extensions ▸
+  Developer mode ▸ Load Unpacked), with the id `clhikpnhhffblbcgfcpebhiholmchidg` that its manifest's key fixes;
+  Firefox loads it as a temporary add-on (about:debugging), until it's signed by Mozilla.
+- Firefox from a Snap (Ubuntu's) starts `hdm` through the desktop's portal, which asks once whether to allow it.
+- Not yet: Safari, which only keeps extensions signed by an Apple developer; browsers in a Flatpak sandbox, which
+  can't start `hdm`.
+
+## 14. Reference apps
 
 The design above comes from studying five download managers on 2026-11-08. Facts are labelled by their source:
 **official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (the

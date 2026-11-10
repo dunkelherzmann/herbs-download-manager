@@ -3,7 +3,7 @@
 //! as tools, for AI assistants. Each app ships it: in the Mac app's bundle, beside the Windows .exe, and in the
 //! Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -30,6 +30,13 @@ Settings unless --folder gives another. remove takes downloads off the list and 
 /// Runs `hdm` with its arguments (without the program name); returns the exit code.
 pub fn main(args: Vec<String>) -> i32 {
     let dir = control::default_data_dir();
+    // A browser starts hdm as its extension's native messaging host (§13): Chrome and its kin pass the extension's
+    // origin, Firefox the host's manifest and the extension's id.
+    let from_browser = args.first().is_some_and(|a| a.starts_with("chrome-extension://"))
+        || args.get(1).is_some_and(|a| a == crate::browser::FIREFOX_ID);
+    if from_browser || args.first().is_some_and(|a| a == "native") {
+        return native(&mut std::io::stdin().lock(), &mut std::io::stdout(), &dir);
+    }
     match args.first().map(String::as_str) {
         None | Some("help" | "--help" | "-h") => {
             print!("{USAGE}");
@@ -210,6 +217,44 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
         },
         other => return Err(format!("No tool “{other}”.")),
     })
+}
+
+/// The browser extension's side (§13): native messaging, one message at a time, each a 32-bit length in the
+/// computer's byte order followed by that many bytes of JSON. Only `add` and `ping` are passed on to the app, which
+/// answers as for the command line ({ok, error, message}). Ends when the browser closes the pipe.
+pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32 {
+    /// Browsers send at most 4 GB, but a link and its cookies are far less.
+    const MAX: usize = 1024 * 1024;
+    loop {
+        let mut size = [0u8; 4];
+        if input.read_exact(&mut size).is_err() {
+            return 0;
+        }
+        let size = u32::from_ne_bytes(size) as usize;
+        if size > MAX {
+            return 1;
+        }
+        let mut body = vec![0u8; size];
+        if input.read_exact(&mut body).is_err() {
+            return 1;
+        }
+        let answer = match serde_json::from_slice::<Request>(&body) {
+            Err(_) => Answer { error: Some("The browser's message wasn't understood.".into()), ..Default::default() },
+            Ok(r) if r.command == "ping" => match control::send(dir, &Request { command: "list".into(), filter: Some("downloading".into()), ..Default::default() }) {
+                Ok(_) => Answer { ok: true, message: Some(crate::version().into()), ..Default::default() },
+                Err(e) => Answer { error: Some(e), ..Default::default() },
+            },
+            Ok(r) if r.command == "add" => {
+                let request = Request { command: "add".into(), ids: vec![], text: String::new(), delete_files: false, ..r };
+                control::send(dir, &request).unwrap_or_else(|e| Answer { error: Some(e), ..Default::default() })
+            }
+            Ok(r) => Answer { error: Some(format!("The browser can't ask for “{}”.", r.command)), ..Default::default() },
+        };
+        let text = serde_json::to_vec(&answer).unwrap_or_default();
+        if output.write_all(&(text.len() as u32).to_ne_bytes()).and_then(|_| output.write_all(&text)).and_then(|_| output.flush()).is_err() {
+            return 1;
+        }
+    }
 }
 
 /// Answers one MCP message (JSON-RPC 2.0, one per line) for the app whose data folder is `dir`; `None` for
