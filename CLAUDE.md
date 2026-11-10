@@ -77,6 +77,12 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 ## The browser extension
 
+- Its background script is tested in Node with a stand-in browser API: `node --test tests/extension`
+  (`tests/extension/harness.js` loads the real `background.js` and `naming.js`; `load({tabs, fetch, native, script})`
+  sets what the browser, the network, `hdm` and the page answer). `scripts/test.sh` runs it, so the check does.
+  Test there, not with throwaway scripts: a new detection, ordering or naming rule gets its case in
+  `background.test.js`. Tests stay out of `extension/`, which ships whole (every file in it is embedded, #83).
+
 - Every change to `extension/` raises `version` in `extension/manifest.json` (1.1 → 1.2): each install step copies a
   version Herbert hasn't got yet into his Downloads folder as "Herb's DM extension <version>" (his request,
   2026-11-10), and the app's Show Extension Folder copy is rewritten from the same files.

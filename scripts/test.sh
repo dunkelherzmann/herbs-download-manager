@@ -10,6 +10,15 @@ printf 'Rust tests…\n'
 cargo test --quiet --workspace 2>&1 | grep -E '^test result|FAILED|panicked|error' || true
 cargo test --quiet --workspace >/dev/null 2>&1 || { echo "Rust tests failed (run: cargo test --workspace)" >&2; exit 1; }
 
+# The browser extension's background, run in Node with a stand-in browser (tests/extension).
+if command -v node >/dev/null 2>&1; then
+    printf 'Extension tests…\n'
+    node --test tests/extension 2>&1 | grep -E '^ℹ (pass|fail)|^✖' || true
+    node --test tests/extension >/dev/null 2>&1 || { echo "Extension tests failed (run: node --test tests/extension)" >&2; exit 1; }
+else
+    echo "Extension tests skipped: Node isn't installed" >&2
+fi
+
 if [ "$(uname)" = Darwin ]; then
     printf 'Mac app self-check…\n'
     APP="$ROOT/dist/Herb's Download Manager.app/Contents/MacOS/HerbsDownloadManager"

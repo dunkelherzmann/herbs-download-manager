@@ -192,3 +192,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [x] Linux
   - [x] Windows
+- [x] **The browser extension's code is tested in the three-machine check:** its background script runs in Node with a stand-in browser (detection, the DASH-piece rule, hinted streams, order, the right-click menu, naming rules, hand-over, page headers). *Requested 2026-11-10.* Done in #85.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
