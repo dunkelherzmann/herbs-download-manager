@@ -86,6 +86,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 - Every change to `extension/` raises `version` in `extension/manifest.json` (1.1 → 1.2): each install step copies a
   version Herbert hasn't got yet into his Downloads folder as "Herb's DM extension <version>" (his request,
   2026-11-10), and the app's Show Extension Folder copy is rewritten from the same files.
+- **Right after merging a change to `extension/`, run `sh scripts/extension-everywhere.sh`**: it copies the merged
+  version from origin/main into the Downloads folder of the Mac, linux and windows. Merges don't install,
+  so 1.5–1.10 never reached the Mac's Downloads until he asked where they were (bugs.md, 2026-11-10).
 
 ## Feature tests
 

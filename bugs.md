@@ -32,3 +32,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **New extension versions weren't in the Downloads folder** as asked: only an app install copied them, and merges don't install, so the Mac had stopped at 1.4 and Linux and Windows at 1.7 while 1.10 was merged. *Reported 2026-11-10.* Fixed in #86: `scripts/extension-everywhere.sh` copies the merged version to all three machines' Downloads, run after every merge that changes the extension (CLAUDE.md); 1.10 is there now.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
