@@ -216,3 +216,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Export Links:** File ▸ Export Links… (⇧⌘E, Ctrl+Shift+E) saves the selected downloads' links, or all of them, as a text file with each file's name and its link and mirrors under it, drawn as a tree like `tree`'s output; Import Links reads it back into one download with mirrors per file. `hdm export [ID…]` and the MCP tool `export_links` give the same tree. *Requested 2026-11-10, with a picture of `tree`'s output.* SPECIFICATION.md §5.8.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

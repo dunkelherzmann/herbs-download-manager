@@ -481,6 +481,11 @@ impl DownloadManager {
         self.inner.queue_running()
     }
 
+    /// Export Links (§5.8): these downloads (all with none), each name with its link and mirrors under it, as a tree.
+    pub fn links_tree(&self, ids: Vec<u64>) -> String {
+        self.inner.links_tree(&ids)
+    }
+
     /// Once, when the running queue has finished everything: the scheduler's "When the queue is done" action.
     pub fn take_queue_done(&self) -> Option<WhenDone> {
         self.inner.take_queue_done().map(Into::into)

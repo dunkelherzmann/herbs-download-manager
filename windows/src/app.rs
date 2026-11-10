@@ -63,6 +63,7 @@ const C_FIND_DONE: u16 = 143;
 const C_RENAME: u16 = 144;
 const C_MOVE: u16 = 145;
 const C_NOTE: u16 = 146;
+const C_EXPORT: u16 = 147;
 // The private messages: WM_PROBED (add.rs) +1, WM_SCANNED (add.rs) +2, WM_FEATURE (features.rs) +20, WM_TRAY +21, WM_QUEUE_DONE (queuedone.rs) +22.
 /// The notification area icon's messages (a click on the "Download finished" balloon).
 const WM_TRAY: u32 = WM_APP + 21;
@@ -582,11 +583,12 @@ unsafe fn insert_tree(tree: HWND, parent: HTREEITEM, text: &str, data: isize) ->
 /// The Mac's shortcuts with Ctrl (§3, §4).
 unsafe fn accelerator_table() -> HACCEL {
     let ctrl = FCONTROL | FVIRTKEY;
-    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 21] = [
+    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 22] = [
         (ctrl, b'O' as u16, C_DOWNLOAD_WINDOW),
         (ctrl | FALT, b'M' as u16, C_ADD_MIRROR),
         (ctrl, b'N' as u16, C_NEW),
         (ctrl | FSHIFT, b'O' as u16, C_IMPORT),
+        (ctrl | FSHIFT, b'E' as u16, C_EXPORT),
         (ctrl | FSHIFT, b'V' as u16, C_CLIPBOARD),
         // Ctrl+V too (§5.2); the find bar's field keeps its own paste, as accelerators aren't used while typing there.
         (ctrl, b'V' as u16, C_CLIPBOARD),
@@ -851,7 +853,7 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
         C_REMOVE_CONNECTION => selected.len() == 1 && unfinished && selected[0].allowed_connections > 1,
         C_DELETE_FINISHED => rows.iter().any(|r| r.status == Status::Finished),
         C_DELETE_UNFINISHED => rows.iter().any(|r| r.status != Status::Finished),
-        C_DELETE_ALL => !rows.is_empty(),
+        C_DELETE_ALL | C_EXPORT => !rows.is_empty(),
         C_ADD_MIRROR => selected.len() == 1,
         C_PROPERTIES | C_DOWNLOAD_WINDOW => !selected.is_empty(),
         _ => true,
@@ -897,7 +899,8 @@ unsafe fn show_main_menu(hwnd: HWND, button: HWND) {
     let (sel, rows, checks) = (selected(), with(|s| s.rows.clone()).unwrap_or_default(), checks());
     let mut items: Vec<(&str, u16)> = vec![
         ("File", 0), ("New Download…\tCtrl+N", C_NEW), ("Import Links…\tCtrl+Shift+O", C_IMPORT),
-        ("Add from Clipboard\tCtrl+Shift+V", C_CLIPBOARD), ("Batch Download…\tCtrl+Shift+N", C_BATCH), ("-", 0),
+        ("Add from Clipboard\tCtrl+Shift+V", C_CLIPBOARD), ("Batch Download…\tCtrl+Shift+N", C_BATCH),
+        ("Export Links…\tCtrl+Shift+E", C_EXPORT), ("-", 0),
         ("Close Window\tCtrl+W", C_QUIT), ("Exit", C_QUIT), (")", 0),
         ("Edit", 0), ("Copy Link\tCtrl+C", C_COPY_LINK), ("Select All\tCtrl+A", C_SELECT_ALL), ("-", 0), ("Find\tCtrl+F", C_FIND), (")", 0),
         ("Tasks", 0), ("Resume\tCtrl+R", C_RESUME), ("Pause\tCtrl+.", C_PAUSE), ("-", 0),
@@ -1202,6 +1205,19 @@ fn command(hwnd: HWND, id: u16) {
                         Some(links) => crate::add::add_links(&ctx, links),
                         None => added(Some("That file isn't text, so it has no links".into())),
                     }
+                }
+            }
+            // Export Links (§5.8): the selected downloads, or all with none selected, as a tree of names and links.
+            C_EXPORT => {
+                let today = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + local_offset()).div_euclid(86_400);
+                let (y, m, d) = civil(today);
+                if let Some(path) = crate::add::export_file(hwnd, &format!("Herb's DM links {y}-{m:02}-{d:02}.txt")) {
+                    let ids: Vec<u64> = sel.iter().map(|r| r.id).collect();
+                    let text = with(|s| s.manager.links_tree(&ids)).unwrap_or_default();
+                    added(Some(match std::fs::write(&path, text) {
+                        Ok(()) => format!("Links saved to {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                        Err(e) => format!("The links couldn't be saved: {e}"),
+                    }));
                 }
             }
             C_ADD_MIRROR => {

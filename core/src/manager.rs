@@ -1540,6 +1540,22 @@ pub struct Detail {
 }
 
 impl Manager {
+    /// Export Links (§5.8): these downloads (all with none given), oldest first, each named with its link and mirrors
+    /// under it, as a tree.
+    pub fn links_tree(&self, ids: &[u64]) -> String {
+        let slots = self.inner.slots.lock().unwrap();
+        let mut files: Vec<(u64, String, Vec<String>)> = slots
+            .iter()
+            .filter(|s| ids.is_empty() || ids.contains(&s.entry.id))
+            .map(|s| {
+                let name = row(s).name;
+                (s.entry.id, name, std::iter::once(s.entry.url.clone()).chain(s.entry.mirrors.iter().cloned()).collect())
+            })
+            .collect();
+        files.sort_by_key(|f| f.0);
+        crate::links::tree(&files.into_iter().map(|(_, n, l)| (n, l)).collect::<Vec<_>>())
+    }
+
     /// The Download window's view of a download: live while it runs, from its saved state otherwise.
     pub fn detail(&self, id: u64) -> Option<Detail> {
         let slots = self.inner.slots.lock().unwrap();

@@ -135,7 +135,7 @@ and Paste in text fields included.
 | Menu | Items |
 |---|---|
 | Herb's DM (macOS menu bar only) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
-| File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
+| File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · Export Links… ⇧⌘E · — · Close Window ⌘W · (Linux, Windows: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Rename… · Move To… · Note… · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
@@ -232,6 +232,25 @@ File ▸ Import Links… chooses one or more files and opens the Add Links windo
 text-based file: with no extension, `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.html`, rich text and word-processor
 files (`.rtf`, `.rtfd`, `.doc`, `.docx`, `.odt`, web archives; their hyperlinks count too, not only the visible
 text) and `.webloc` bookmarks. A file that isn't text (a zip, an image) has no links, and the app says so.
+
+### 5.8 Export Links (⇧⌘E)
+
+File ▸ Export Links… saves the selected downloads' links, or every download's when none is selected, as a text file
+("Herb's DM links 2026-11-10.txt"). Each file's name comes with its link and its mirrors under it, drawn as a tree
+the way `tree` draws a folder, oldest download first:
+
+```
+.
+├── Big Buck Bunny.mp4
+│   ├── https://a.example/bbb.mp4
+│   └── https://b.example/m/bbb.mp4
+└── notes.zip
+    └── https://c.example/notes.zip
+```
+
+Import Links reads it back: Add Links gathers the links to each file into one download and its mirrors again.
+`hdm export [ID…]` prints the same tree, and the MCP tool `export_links` returns it. It is off while the list is
+empty.
 
 ### 5.5 Batch Download (⇧⌘N)
 
@@ -461,6 +480,7 @@ Linux Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
 | `hdm pause ID…` · `hdm resume ID…` | as Pause and Resume |
 | `hdm remove ID… [--delete-files]` | takes downloads off the list; with `--delete-files` their files go to the Trash (Recycle Bin) |
 | `hdm note ID TEXT…` | sets the note (§4.1); empty text removes it |
+| `hdm export [ID…]` | prints those downloads (all without IDs) as a tree of names with their links and mirrors (§5.8) |
 | `hdm mcp` | an MCP server on standard input and output with the same commands as tools: `list_downloads`, `add_downloads`, `pause_downloads`, `resume_downloads`, `remove_downloads` (marked destructive) and `set_note` |
 
 While the app runs it listens on 127.0.0.1 only, at a port it picks, and writes the port and a random token to

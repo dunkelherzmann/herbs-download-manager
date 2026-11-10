@@ -30,6 +30,7 @@ fn main_menu() -> gio::Menu {
     item(&file, "Import Links…", "import-links");
     item(&file, "Add from Clipboard", "add-from-clipboard");
     item(&file, "Batch Download…", "batch-download");
+    item(&file, "Export Links…", "export-links");
     let close = gio::Menu::new();
     item(&close, "Close Window", "close");
     item(&close, "Exit", "quit");
@@ -512,6 +513,7 @@ fn enable(window: &adw::ApplicationWindow, selected: &[Row], rows: &[Row]) {
     set("delete-finished", rows.iter().any(|r| r.status == Status::Finished));
     set("delete-unfinished", rows.iter().any(|r| r.status != Status::Finished));
     set("delete-all", !rows.is_empty());
+    set("export-links", !rows.is_empty());
     set("add-mirror", selected.len() == 1);
     set("properties", !selected.is_empty());
     set("show-download-window", !selected.is_empty());
@@ -743,6 +745,11 @@ fn add_actions(
     ] {
         let ctx = ctx.clone();
         add(name, accels, Box::new(move || run(&ctx)));
+    }
+    {
+        // The selected downloads, or all with none selected.
+        let (ui, ctx) = (ui.clone(), ctx.clone());
+        add("export-links", &["<Control><Shift>e"], Box::new(move || crate::add::export(&ctx, ui.list.selected().iter().map(|r| r.id).collect())));
     }
     {
         let (ui, ctx) = (ui.clone(), ctx.clone());

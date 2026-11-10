@@ -1,5 +1,6 @@
 import AppKit
 import HDCore
+import UniformTypeIdentifiers
 
 /// The main window (SPECIFICATION.md §2, §3): title with the search field at the right, toolbar, resizable sidebar
 /// of filters, the download list, and a footer with the selection, active downloads and total speed.
@@ -245,6 +246,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(deleteAllUnfinished(_:)): return rows.contains { !$0.status.isFinished }
         case #selector(deleteMissingFiles(_:)): return !Self.missing(rows).isEmpty
         case #selector(deleteEntireList(_:)): return !rows.isEmpty
+        case #selector(exportLinks(_:)): return !rows.isEmpty
         case #selector(openSelected(_:)), #selector(showInFinder(_:)), #selector(renameFile(_:)), #selector(moveFile(_:)):
             return selected.count == 1 && selected[0].path.map { FileManager.default.fileExists(atPath: $0) } == true
         case #selector(copyLink(_:)): return !selected.isEmpty
@@ -344,6 +346,44 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
                 guard response == .OK else { return }
                 self.importLinks(from: panel.urls)
             }
+        }
+    }
+
+    /// File ▸ Export Links… (⇧⌘E, §5.8): the selected downloads, or all with none selected, saved as a text file with
+    /// each file's name and its link and mirrors under it, as a tree. Import Links reads it back.
+    @objc func exportLinks(_ sender: Any?) {
+        guard let window else { return }
+        let ids = targets.map(\.id)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = Self.exportName()
+        panel.allowedContentTypes = [.plainText]
+        panel.message = ids.isEmpty ? "Every download's links, under its file's name"
+            : (ids.count == 1 ? "The selected download's links" : "The \(ids.count) selected downloads' links")
+        panel.prompt = "Export"
+        panel.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                guard response == .OK, let url = panel.url else { return }
+                self.exportLinks(ids, to: url)
+            }
+        }
+    }
+
+    /// "Herb's DM links 2026-11-10.txt"
+    static func exportName() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return "Herb's DM links \(f.string(from: Date())).txt"
+    }
+
+    func exportLinks(_ ids: [UInt64], to url: URL) {
+        do {
+            try AppModel.shared.manager.linksTree(ids: ids).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "The links couldn't be saved."
+            alert.informativeText = error.localizedDescription
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
         }
     }
 

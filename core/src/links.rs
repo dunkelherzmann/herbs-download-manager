@@ -26,6 +26,25 @@ pub fn text_of_file(path: &std::path::Path) -> Option<String> {
     }
 }
 
+/// Export Links (§5.8): each file's name with its link and its mirrors under it, drawn as a tree (as `tree` draws a
+/// folder). Read back by Import Links, whose Add Links window gathers links to the same file into one download again.
+pub fn tree(files: &[(String, Vec<String>)]) -> String {
+    let mut out = String::from(".\n");
+    for (i, (name, links)) in files.iter().enumerate() {
+        let last = i + 1 == files.len();
+        out.push_str(if last { "└── " } else { "├── " });
+        out.push_str(name);
+        out.push('\n');
+        for (j, link) in links.iter().enumerate() {
+            out.push_str(if last { "    " } else { "│   " });
+            out.push_str(if j + 1 == links.len() { "└── " } else { "├── " });
+            out.push_str(link);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Every http, https and ftp link in plain text or HTML, in order, without repeats. Trailing punctuation that
 /// belongs to the sentence (".", ",", ")", quotes) is left out.
 pub fn find(text: &str) -> Vec<String> {
@@ -218,6 +237,25 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exported_links_are_a_tree_import_reads_back() {
+        let files = vec![
+            ("Big Buck Bunny.mp4".to_string(), vec!["https://a.example/bbb.mp4".to_string(), "https://b.example/m/bbb.mp4".into()]),
+            ("notes.zip".to_string(), vec!["ftp://c.example/notes.zip".to_string()]),
+        ];
+        let text = tree(&files);
+        assert_eq!(text, "\
+.
+├── Big Buck Bunny.mp4
+│   ├── https://a.example/bbb.mp4
+│   └── https://b.example/m/bbb.mp4
+└── notes.zip
+    └── ftp://c.example/notes.zip
+");
+        assert_eq!(find(&text), ["https://a.example/bbb.mp4", "https://b.example/m/bbb.mp4", "ftp://c.example/notes.zip"]);
+        assert_eq!(tree(&[]), ".\n");
+    }
 
     #[test]
     fn sorts_add_links_rows_by_each_column() {

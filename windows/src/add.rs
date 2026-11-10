@@ -197,6 +197,33 @@ pub fn clipboard_text(owner: HWND) -> String {
     }
 }
 
+/// Export Links (§5.8): where to save the links, from the Save dialog, starting at `name`.
+pub fn export_file(owner: HWND, name: &str) -> Option<PathBuf> {
+    unsafe {
+        let mut buffer = vec![0u16; 32 * 1024];
+        for (i, c) in name.encode_utf16().enumerate() {
+            buffer[i] = c;
+        }
+        let filter = wide("Text files (*.txt)\0*.txt\0All files\0*.*\0");
+        let mut ofn = OPENFILENAMEW {
+            lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+            hwndOwner: owner,
+            lpstrFilter: PCWSTR(filter.as_ptr()),
+            lpstrFile: PWSTR(buffer.as_mut_ptr()),
+            nMaxFile: buffer.len() as u32,
+            lpstrTitle: w!("Export Links"),
+            lpstrDefExt: w!("txt"),
+            Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
+            ..Default::default()
+        };
+        if !GetSaveFileNameW(&mut ofn).as_bool() {
+            return None;
+        }
+        let end = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+        Some(PathBuf::from(String::from_utf16_lossy(&buffer[..end])))
+    }
+}
+
 /// Import Links (§5.7): the links in one or more text files chosen with the Open dialog.
 pub fn import_files(owner: HWND) -> Option<Vec<PathBuf>> {
     unsafe {

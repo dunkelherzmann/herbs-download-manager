@@ -808,6 +808,25 @@ pub fn import(ctx: &Ctx) {
     });
 }
 
+/// Export Links (§5.8): these downloads (all with none), saved as a text file with each file's name and its link and
+/// mirrors under it, as a tree. Import Links reads it back.
+pub fn export(ctx: &Ctx, ids: Vec<u64>) {
+    let date = glib::DateTime::now_local().ok().and_then(|d| d.format("%Y-%m-%d").ok()).map(|d| d.to_string()).unwrap_or_default();
+    let dialog = gtk::FileDialog::builder()
+        .title("Export Links")
+        .accept_label("Export")
+        .initial_name(format!("{}.txt", format!("Herb's DM links {date}").trim_end()))
+        .build();
+    let ctx = ctx.clone();
+    dialog.save(Some(&ctx.window.clone()), None::<&gio::Cancellable>, move |result| {
+        let Some(path) = result.ok().and_then(|f| f.path()) else { return };
+        match std::fs::write(&path, ctx.manager.links_tree(&ids)) {
+            Ok(()) => (ctx.tell)(format!("Links saved to {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())),
+            Err(e) => (ctx.tell)(format!("The links couldn't be saved: {e}")),
+        }
+    });
+}
+
 /// Add from Clipboard (§5.2).
 pub fn from_clipboard(ctx: &Ctx) {
     let ctx = ctx.clone();

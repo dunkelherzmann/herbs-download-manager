@@ -13,6 +13,7 @@ enum MainMenu {
         item(file, "Import Links…", #selector(MainWindowController.importLinks(_:)), "o", [.command, .shift])
         item(file, "Add from Clipboard", #selector(MainWindowController.addFromClipboard(_:)), "v", [.command, .shift])
         item(file, "Batch Download…", #selector(MainWindowController.batchDownload(_:)), "n", [.command, .shift])
+        item(file, "Export Links…", #selector(MainWindowController.exportLinks(_:)), "e", [.command, .shift])
         file.addItem(.separator())
         file.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 

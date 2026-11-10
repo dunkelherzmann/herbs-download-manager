@@ -32,7 +32,7 @@ struct Door {
 #[serde(default)]
 pub struct Request {
     pub token: String,
-    /// list, add, pause, resume, remove or note.
+    /// list, add, pause, resume, remove, note or export.
     pub command: String,
     pub ids: Vec<u64>,
     pub urls: Vec<String>,
@@ -356,6 +356,14 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                     ..Default::default()
                 },
             }
+        }
+        // Export Links (§5.8): the downloads asked for (all with none), as a tree of names and their links.
+        "export" => {
+            let unknown: Vec<String> = r.ids.iter().filter(|id| !rows.iter().any(|row| row.id == **id)).map(u64::to_string).collect();
+            if !unknown.is_empty() {
+                return Answer::error(format!("No download {}", unknown.join(", ")));
+            }
+            Answer { ok: true, message: Some(manager.links_tree(&r.ids).trim_end().to_string()), ..Default::default() }
         }
         "list" => {
             let filter = match r.filter.as_deref().unwrap_or("all") {

@@ -82,6 +82,15 @@ fn the_command_line_adds_lists_notes_pauses_resumes_and_removes() {
     assert!(ask(&dir, &["pause", &slow.id.to_string()]).ok);
     wait_for(&dir, slow.id, "paused");
 
+    // Export Links: each download's name with its link and mirrors under it, as a tree; all, or those asked for.
+    s.put("/mirror/slow.bin", MockFile::new(data.clone()));
+    m.add_mirrors(slow.id, &[s.url("/mirror/slow.bin")]);
+    let tree = ask(&dir, &["export"]).message.unwrap();
+    assert_eq!(tree, format!(".\n├── small.bin\n│   └── {small}\n└── slow.bin\n    ├── {}\n    └── {}", s.url("/slow.bin"), s.url("/mirror/slow.bin")));
+    let one = ask(&dir, &["export", &slow.id.to_string()]).message.unwrap();
+    assert!(one.starts_with(".\n└── slow.bin\n") && !one.contains("small.bin"), "{one}");
+    assert_eq!(ask(&dir, &["export", "999999"]).error.as_deref(), Some("No download 999999"));
+
     let wrong = ask(&dir, &["pause", "999999"]);
     assert_eq!(wrong.error.as_deref(), Some("There's no download with id 999999."));
     assert!(!ask(&dir, &["add", "ftp://example.com/a"]).ok);
@@ -120,7 +129,7 @@ fn the_mcp_server_lists_its_tools_and_calls_them() {
 
     let tools = call(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}));
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["list_downloads", "add_downloads", "pause_downloads", "resume_downloads", "remove_downloads", "scan_page", "set_note"]);
+    assert_eq!(names, ["list_downloads", "export_links", "add_downloads", "pause_downloads", "resume_downloads", "remove_downloads", "scan_page", "set_note"]);
 
     // Before the app listens, a tool says so instead of failing the protocol.
     let closed = call(json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_downloads", "arguments": {}}}));

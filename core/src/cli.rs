@@ -21,6 +21,7 @@ hdm controls Herb's Download Manager while it runs.
   hdm resume ID…
   hdm remove ID… [--delete-files]
   hdm note ID TEXT…           (an empty TEXT removes the note)
+  hdm export [ID…]            each download's name with its link and mirrors under it, as a tree (all without IDs)
   hdm scan PAGE [--json] [--add]   lists a web page's files and media; --add puts them all in the queue
   hdm mcp                     an MCP server on standard input and output, for AI assistants
 
@@ -136,7 +137,7 @@ pub fn parse(args: &[String]) -> Result<(Request, bool), String> {
         "list" if words.is_empty() => {}
         "add" => r.urls = words,
         "scan" if words.len() == 1 => r.urls = words,
-        "pause" | "resume" | "remove" => r.ids = ids(&words)?,
+        "pause" | "resume" | "remove" | "export" => r.ids = ids(&words)?,
         "note" if !words.is_empty() => {
             r.ids = ids(&words[..1])?;
             r.text = words[1..].join(" ");
@@ -210,6 +211,11 @@ fn tools() -> Value {
              "filter": {"type": "string", "enum": ["all", "downloading", "paused", "finished", "unfinished"], "description": "Which downloads (default all)"},
              "search": {"type": "string", "description": "Only downloads whose name, link or note contains this text"}}},
          "annotations": {"readOnlyHint": true}},
+        {"name": "export_links", "title": "Export links",
+         "description": "Each download's name with its link and its mirrors under it, drawn as a tree (as the tree command draws folders); the downloads given, or all.",
+         "inputSchema": {"type": "object", "properties": {
+             "ids": {"type": "array", "items": {"type": "integer"}, "description": "The downloads' ids, from list_downloads (all when left out)"}}},
+         "annotations": {"readOnlyHint": true}},
         {"name": "add_downloads", "title": "Add downloads",
          "description": "Adds http or https links as downloads. Links to the same file become one download with mirrors. They start now unless queue is true.",
          "inputSchema": {"type": "object", "required": ["urls"], "properties": {
@@ -252,6 +258,7 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
     let ids = || -> Vec<u64> { a.get("ids").and_then(Value::as_array).map(|v| v.iter().filter_map(Value::as_u64).collect()).unwrap_or_default() };
     Ok(match name {
         "list_downloads" => Request { command: "list".into(), filter: text("filter"), search: text("search").unwrap_or_default(), ..Default::default() },
+        "export_links" => Request { command: "export".into(), ids: ids(), ..Default::default() },
         "add_downloads" => Request {
             command: "add".into(),
             urls: a.get("urls").and_then(Value::as_array).map(|v| v.iter().filter_map(|u| u.as_str().map(str::to_string)).collect()).unwrap_or_default(),
