@@ -85,6 +85,7 @@ pub fn open(ctx: &Ctx) {
     let scheduler = adw::PreferencesGroup::builder().title("Scheduler")
         .description("Start and stop the queue at set times").build();
     page.add(&scheduler);
+    page.add(&streams_group(ctx));
     page.add(&crate::signins::group(ctx));
     // §13: the extension that hands the browsers' downloads to the app.
     let browsers = adw::PreferencesGroup::builder().title("Browser extension")
@@ -308,3 +309,48 @@ pub fn open(ctx: &Ctx) {
     }
     dialog.present(Some(&ctx.window));
 }
+
+/// S13 and S14 (§15): what a stream added from now on downloads, unless the browser extension chose for it. Each row
+/// saves its own setting, so a hand-edited list of several sound languages survives other changes.
+fn streams_group(ctx: &Ctx) -> adw::PreferencesGroup {
+    let s = ctx.manager.settings();
+    let group = adw::PreferencesGroup::builder().title("Streamed video")
+        .description("The browser extension can choose otherwise for each video").build();
+    let qualities: Vec<Option<u32>> = std::iter::once(None).chain(hd_core::media::QUALITIES.iter().copied().map(Some)).collect();
+    let names: Vec<String> = qualities.iter().map(|q| q.map(|q| format!("{q}p")).unwrap_or_else(|| "Highest".into())).collect();
+    let quality = adw::ComboRow::builder().title("Video stream quality").subtitle("The best one up to this size, or the smallest when every one is bigger")
+        .model(&gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>())).build();
+    quality.set_selected(qualities.iter().position(|q| *q == s.stream_quality).unwrap_or(0) as u32);
+    crate::explain_row(&quality, "The quality a streamed video is downloaded in: the best one up to this size, or the smallest when every one is bigger");
+    let mut languages: Vec<(String, String)> = hd_core::media::LANGUAGES.iter().map(|(c, n)| (c.to_string(), n.to_string())).collect();
+    // One not offered here (a hand-edited settings file) is shown as its code.
+    if let Some(first) = s.sound_languages.first().filter(|f| !languages.iter().any(|(c, _)| c == *f)) {
+        languages.push((first.clone(), first.clone()));
+    }
+    let sound_names: Vec<&str> = std::iter::once("The stream's own").chain(languages.iter().map(|(_, n)| n.as_str())).collect();
+    let sound = adw::ComboRow::builder().title("Sound language").subtitle("For a stream with sound in several languages")
+        .model(&gtk::StringList::new(&sound_names)).build();
+    sound.set_selected(s.sound_languages.first().and_then(|f| languages.iter().position(|(c, _)| c == f)).map(|i| i as u32 + 1).unwrap_or(0));
+    crate::explain_row(&sound, "For a stream with sound in several languages: the one to download. When the stream doesn't have it, its own sound is taken");
+    {
+        let manager = ctx.manager.clone();
+        quality.connect_selected_notify(move |row| {
+            let mut s = manager.settings();
+            s.stream_quality = qualities.get(row.selected() as usize).copied().flatten();
+            manager.set_settings(s);
+        });
+    }
+    {
+        let manager = ctx.manager.clone();
+        sound.connect_selected_notify(move |row| {
+            let mut s = manager.settings();
+            let i = row.selected() as usize;
+            s.sound_languages = if i == 0 { Vec::new() } else { languages.get(i - 1).map(|(c, _)| vec![c.clone()]).unwrap_or_default() };
+            manager.set_settings(s);
+        });
+    }
+    group.add(&quality);
+    group.add(&sound);
+    group
+}
+

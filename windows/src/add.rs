@@ -586,6 +586,7 @@ fn submit(hwnd: HWND, start: bool) {
                         // The download already under way is adopted (moved to the chosen folder and name).
                         early: f.early.take(),
                         stream: false,
+                        choice: None,
                     }],
                     f.folder.clone(),
                     connections,

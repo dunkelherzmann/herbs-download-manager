@@ -59,6 +59,10 @@ pub struct Request {
     pub stream: bool,
     /// add, one link: the file's name (the extension names a stream after its page).
     pub name: Option<String>,
+    /// add, a stream: its quality, `highest` or the most lines (`1080`); absent takes Settings' (S13).
+    pub quality: Option<String>,
+    /// add, a stream: its sound language (`de`); absent takes Settings' (S14), empty is the stream's own sound.
+    pub sound: Option<String>,
     /// add, from the browser extension: a DASH manifest a page carries in its data (Facebook's reels) instead of a
     /// link. Saved in the app's data folder and downloaded from there; `urls` may then be empty.
     pub manifest: Option<String>,
@@ -390,7 +394,15 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
             }
             // A name given for one link, made safe for a file name.
             let name = r.name.as_deref().filter(|_| r.urls.len() == 1).map(safe_name).filter(|n| !n.is_empty());
-            let links = r.urls.iter().map(|u| PendingLink { url: u.clone(), name: name.clone(), stream: r.stream, ..Default::default() }).collect();
+            let choice = match stream_choice(&manager.settings(), &r) {
+                Ok(c) => c,
+                Err(e) => return Answer::error(e),
+            };
+            let links = r
+                .urls
+                .iter()
+                .map(|u| PendingLink { url: u.clone(), name: name.clone(), stream: r.stream, choice: choice.clone(), ..Default::default() })
+                .collect();
             let mut session = AddSession::new(manager, links, &folder, manager.settings().connections, !r.queue);
             loop {
                 match session.step(manager) {
@@ -523,4 +535,42 @@ pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
         }
     }
     Err("Herb's Download Manager was opened but didn't answer in time".into())
+}
+
+/// A stream's quality and sound track from an add request, over Settings' (S13, S14); `None` when it gives neither.
+fn stream_choice(settings: &crate::settings::Settings, r: &Request) -> Result<Option<crate::media::StreamChoice>, String> {
+    if r.quality.is_none() && r.sound.is_none() {
+        return Ok(None);
+    }
+    let mut choice = settings.stream_choice();
+    if let Some(q) = r.quality.as_deref().map(str::trim) {
+        choice.quality = match q.trim_end_matches(['p', 'P']) {
+            "" | "highest" | "best" => None,
+            n => Some(n.parse().ok().filter(|n| *n > 0).ok_or(format!("“{q}” isn't a quality: give highest, or lines such as 1080"))?),
+        };
+    }
+    if let Some(sound) = r.sound.as_deref().map(str::trim) {
+        choice.sound = if sound.is_empty() { Vec::new() } else { vec![sound.to_string()] };
+    }
+    Ok(Some(choice))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_add_request_chooses_a_streams_quality_and_sound_over_settings() {
+        let settings = crate::settings::Settings { stream_quality: Some(720), sound_languages: vec!["fr".into()], ..Default::default() };
+        let choice = |quality: Option<&str>, sound: Option<&str>| {
+            stream_choice(&settings, &Request { quality: quality.map(str::to_string), sound: sound.map(str::to_string), ..Default::default() })
+        };
+        assert_eq!(choice(None, None), Ok(None), "neither: Settings' when the download is added");
+        let c = choice(Some("1080p"), None).unwrap().unwrap();
+        assert_eq!((c.quality, c.sound), (Some(1080), vec!["fr".to_string()]), "the sound stays Settings'");
+        let c = choice(Some("highest"), Some("de")).unwrap().unwrap();
+        assert_eq!((c.quality, c.sound), (None, vec!["de".to_string()]));
+        assert_eq!(choice(None, Some("")).unwrap().unwrap().sound, Vec::<String>::new(), "empty: the stream's own sound");
+        assert!(choice(Some("big"), None).is_err());
+    }
 }

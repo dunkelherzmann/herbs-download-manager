@@ -14,6 +14,8 @@ pub struct Variant {
     pub codecs: Option<String>,
     /// The AUDIO group its sound comes from, when the sound is a separate track.
     pub audio: Option<String>,
+    /// High dynamic range (VIDEO-RANGE=PQ or HLG): left out when the stream also has a standard version.
+    pub hdr: bool,
 }
 
 /// A separate sound track (EXT-X-MEDIA TYPE=AUDIO).
@@ -179,6 +181,7 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
                 }),
                 codecs: attr(&a, "CODECS").map(str::to_string),
                 audio: attr(&a, "AUDIO").map(str::to_string),
+                hdr: matches!(attr(&a, "VIDEO-RANGE"), Some("PQ" | "HLG")),
             });
         } else {
             if let Some((len, off)) = range {
@@ -209,16 +212,47 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
 impl Playlist {
     /// The best quality: the most pixels, then the most bits a second.
     pub fn best_variant(&self) -> Option<&Variant> {
+        self.pick_variant(None)
+    }
+
+    /// The quality to download (S13): the best one whose picture is at most `max` lines (its shorter side, so
+    /// "1080p" means the same for a tall phone video), or the smallest when every one is bigger; the best with no
+    /// `max`. HDR versions are left out when a standard one exists, and a stream that gives no sizes takes its best.
+    pub fn pick_variant(&self, max: Option<u32>) -> Option<&Variant> {
         let Playlist::Master { variants, .. } = self else { return None };
-        variants.iter().max_by_key(|v| (v.resolution.map(|(w, h)| w as u64 * h as u64).unwrap_or(0), v.bandwidth))
+        let standard: Vec<&Variant> = variants.iter().filter(|v| !v.hdr).collect();
+        let pool = if standard.is_empty() { variants.iter().collect() } else { standard };
+        let rank = |v: &&Variant| (v.resolution.map(|(w, h)| w as u64 * h as u64).unwrap_or(0), v.bandwidth);
+        let lines = |v: &Variant| v.resolution.map(|(w, h)| w.min(h));
+        match max {
+            Some(max) if pool.iter().any(|v| lines(v).is_some()) => pool
+                .iter()
+                .copied()
+                .filter(|v| lines(v).is_some_and(|l| l <= max))
+                .max_by_key(rank)
+                .or_else(|| pool.iter().copied().filter(|v| lines(v).is_some()).min_by_key(rank)),
+            _ => pool.into_iter().max_by_key(rank),
+        }
     }
 
     /// The separate sound track a variant plays with: the default of its group, else its first.
     pub fn audio_for(&self, variant: &Variant) -> Option<&Rendition> {
+        self.audio_in(variant, &[])
+    }
+
+    /// The separate sound track a variant plays with (S14): the first of `languages` its group has (`en` matches
+    /// `en-US`), else the group's default (the stream's own sound), else its first.
+    pub fn audio_in(&self, variant: &Variant, languages: &[String]) -> Option<&Rendition> {
         let Playlist::Master { audio, .. } = self else { return None };
         let group = variant.audio.as_deref()?;
         let in_group: Vec<&Rendition> = audio.iter().filter(|r| r.group == group && r.url.is_some()).collect();
-        in_group.iter().find(|r| r.default).or(in_group.first()).copied()
+        let primary = |code: &str| code.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+        languages
+            .iter()
+            .find_map(|want| in_group.iter().find(|r| r.language.as_deref().is_some_and(|l| primary(l) == primary(want))))
+            .or_else(|| in_group.iter().find(|r| r.default))
+            .or(in_group.first())
+            .copied()
     }
 }
 
@@ -287,5 +321,54 @@ mod tests {
         assert!(matches!(segments[0].key, Key::Protected(_)));
         assert!(!ended, "no ENDLIST: live");
         assert!(parse("<html>", &base()).is_err());
+    }
+
+    fn variant(line: &str) -> String {
+        format!("#EXT-X-STREAM-INF:{line},AUDIO=\"aud\"\n{}.m3u8\n", line.len())
+    }
+
+    #[test]
+    fn the_chosen_quality_is_the_best_that_fits() {
+        let text = format!(
+            "#EXTM3U\n{}{}{}{}{}",
+            variant("BANDWIDTH=800000,RESOLUTION=640x360"),
+            variant("BANDWIDTH=2500000,RESOLUTION=1280x720"),
+            variant("BANDWIDTH=3000000,RESOLUTION=1280x720"),
+            variant("BANDWIDTH=5000000,RESOLUTION=1920x1080"),
+            variant("BANDWIDTH=9000000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ"),
+        );
+        let p = parse(&text, &base()).unwrap();
+        let size = |max| p.pick_variant(max).map(|v| (v.resolution.unwrap().1, v.bandwidth));
+        assert_eq!(size(None), Some((1080, 5_000_000)), "Highest leaves out HDR when a standard version exists");
+        assert_eq!(size(Some(1080)), Some((1080, 5_000_000)));
+        assert_eq!(size(Some(720)), Some((720, 3_000_000)), "of two 720p versions, the one with more bits a second");
+        assert_eq!(size(Some(1000)), Some((720, 3_000_000)), "at most the lines asked for");
+        assert_eq!(size(Some(240)), Some((360, 800_000)), "nothing that small: the smallest");
+
+        let hdr_only = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ\nuhd.m3u8\n";
+        assert!(parse(hdr_only, &base()).unwrap().pick_variant(Some(1080)).is_some(), "only HDR: it is taken");
+
+        let tall = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=720x1280\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1080x1920\nb.m3u8\n";
+        let pick = parse(tall, &base()).unwrap().pick_variant(Some(720)).unwrap().url.path().to_string();
+        assert_eq!(pick, "/v/a.m3u8", "a tall video's 720p is 720 wide");
+
+        let sizeless = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2\nb.m3u8\n";
+        assert_eq!(parse(sizeless, &base()).unwrap().pick_variant(Some(480)).unwrap().bandwidth, 2, "no sizes: the best");
+    }
+
+    #[test]
+    fn the_sound_track_follows_the_preferred_languages() {
+        let text = "#EXTM3U\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"Original\",DEFAULT=YES,LANGUAGE=\"ja\",URI=\"ja.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",LANGUAGE=\"en-US\",URI=\"en.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"Deutsch\",LANGUAGE=\"de\",URI=\"de.m3u8\"\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1280x720,AUDIO=\"aud\"\nv.m3u8\n";
+        let p = parse(text, &base()).unwrap();
+        let v = p.best_variant().unwrap();
+        let name = |langs: &[&str]| p.audio_in(v, &langs.iter().map(|l| l.to_string()).collect::<Vec<_>>()).unwrap().name.clone();
+        assert_eq!(name(&[]), "Original", "no preference: the stream's own sound");
+        assert_eq!(name(&["en"]), "English", "en matches en-US");
+        assert_eq!(name(&["fr", "DE"]), "Deutsch", "the first preferred language the stream has");
+        assert_eq!(name(&["fr"]), "Original", "none of them: the stream's own");
     }
 }

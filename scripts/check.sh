@@ -6,7 +6,7 @@
 #
 # - Mac (here): macos/scripts/build.sh and scripts/test.sh, as the old macOS job did, on the current checkout.
 # - Linux (linux) and Windows (windows), over ssh: `cargo test --workspace` in a throwaway worktree of
-#   origin/BRANCH (/tmp/hdm-check, %TEMP%\hdm-check), so their own checkouts stay on main; builds are cached in
+#   origin/BRANCH (/tmp/hdm-check-BRANCH, %TEMP%\hdm-check-BRANCH), so their own checkouts stay on main; builds are cached in
 #   ~/.cache/hdm-check-target.
 # Prints one line per machine and exits non-zero if any failed. Logs go to .build/check/<machine>.log.
 set -u
@@ -26,17 +26,20 @@ if [ "$(git -C "$ROOT" rev-parse HEAD)" != "$(git -C "$ROOT" rev-parse "origin/$
     exit 2
 fi
 COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
+# Each branch checks in its own folder: sessions check their branches at the same time, and one run deleting the
+# shared folder under another's tests failed them (2026-11-10).
+DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"
 
 # The worktree stays until the next run removes it, so cargo's exit code is the command's.
-(ssh linux "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH && rm -rf /tmp/hdm-check \
-    && git worktree prune && git worktree add -q --detach /tmp/hdm-check FETCH_HEAD && cd /tmp/hdm-check \
+(ssh linux "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH && rm -rf /tmp/$DIR \
+    && git worktree prune && git worktree add -q --detach /tmp/$DIR FETCH_HEAD && cd /tmp/$DIR \
     && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo test --workspace 2>&1" \
     >"$LOGS/linux.log" 2>&1; echo $? >"$LOGS/linux.status") &
 
 # Windows' ssh shell is cmd. Rust goes in with rustup, into %USERPROFILE%\.cargo\bin.
 (ssh windows "cd /d %USERPROFILE%\\Projects\\herbs-download-manager && git fetch -q origin $BRANCH \
-    && (if exist %TEMP%\\hdm-check rmdir /s /q %TEMP%\\hdm-check) & git worktree prune \
-    && git worktree add -q --detach %TEMP%\\hdm-check FETCH_HEAD && cd /d %TEMP%\\hdm-check \
+    && (if exist %TEMP%\\$DIR rmdir /s /q %TEMP%\\$DIR) & git worktree prune \
+    && git worktree add -q --detach %TEMP%\\$DIR FETCH_HEAD && cd /d %TEMP%\\$DIR \
     && set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& set CARGO_TARGET_DIR=%USERPROFILE%\\.cache\\hdm-check-target&& cargo test --workspace 2>&1" \
     >"$LOGS/windows.log" 2>&1; echo $? >"$LOGS/windows.status") &
 

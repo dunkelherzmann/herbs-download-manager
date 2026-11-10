@@ -160,10 +160,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Choose the quality and the sound track, with defaults in Settings,** as Video DownloadHelper does: a preferred quality (Highest, 1080p as the default, 720p, 480p) used when nothing else is picked, each found stream's own quality picker overriding it, and a preferred list of sound languages ("the original" by default) for streams that offer several sound tracks; HDR versions are left out unless asked for. *Requested 2026-11-10, from studying Video DownloadHelper 10.6.7.2 (`.investigation/vdh.cany`).*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Choose the quality and the sound track, with defaults in Settings,** as Video DownloadHelper does: a preferred quality (Highest by default, as before, then 2160p down to 360p) used when nothing else is picked, each found stream's own quality picker overriding it, and a preferred sound language (the stream's own by default) for streams that offer several sound tracks; HDR versions are left out when a standard one exists. `hdm add --quality/--sound` and the MCP tool too. Done in #76 (Settings S13 and S14, the extension's two lists under a stream, extension 1.5; SPECIFICATION.md §9, §12, §15). *Requested 2026-11-10, from studying Video DownloadHelper 10.6.7.2 (`.investigation/vdh.cany`).*
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **Subtitles kept with the video:** a stream's subtitles in the preferred languages (a list in Settings) go into the MP4 as subtitle tracks, labelled with their language, without touching the picture or sound. *Requested 2026-11-10, from studying Video DownloadHelper.*
   - [ ] Mac
   - [ ] Linux

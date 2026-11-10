@@ -1,4 +1,4 @@
-//! Downloading an HLS stream (SPECIFICATION.md §15): the playlist, its best quality and separate sound track, every
+//! Downloading an HLS stream (SPECIFICATION.md §15): the playlist, its chosen quality and separate sound track, every
 //! piece (several at once, within the speed limits, retried like a download's source), then one MP4 joined from them.
 //! The pieces wait in `<name>.hdparts` beside the file, so a paused or interrupted stream continues where it was.
 
@@ -28,6 +28,8 @@ pub struct StreamRequest {
     pub retries: u32,
     pub limits: Vec<Arc<Limiter>>,
     pub vault: Arc<crate::vault::Vault>,
+    /// The quality and sound track to take from a master playlist.
+    pub choice: super::StreamChoice,
 }
 
 /// The most pieces fetched at once: servers that stream rarely like more from one viewer.
@@ -223,7 +225,7 @@ async fn wait(seconds: f64, stop: &tokio::sync::watch::Receiver<u8>) {
 
 async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progress>, stop: &tokio::sync::watch::Receiver<u8>) -> Result<Outcome, String> {
     let url = Url::parse(&req.url).map_err(|_| "Not a valid link".to_string())?;
-    // The tracks: HLS playlists (read again each round, for live streams), or a DASH manifest's best video and its
+    // The tracks: HLS playlists (the chosen quality and its sound, read again each round, for live streams), or a DASH manifest's best video and its
     // sound, whose pieces are known at once.
     let first = text(client, &url, &req.vault).await?;
     let mut playlists = Vec::new();
@@ -232,9 +234,9 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     } else {
         match hls::parse(&first, &url)? {
             p @ Playlist::Master { .. } => {
-                let video = p.best_variant().ok_or("The stream lists no quality to download")?.clone();
+                let video = p.pick_variant(req.choice.quality).ok_or("The stream lists no quality to download")?.clone();
                 playlists.push(Track::Hls(video.url.clone()));
-                if let Some(sound) = p.audio_for(&video).and_then(|r| r.url.clone()) {
+                if let Some(sound) = p.audio_in(&video, &req.choice.sound).and_then(|r| r.url.clone()) {
                     playlists.push(Track::Hls(sound));
                 }
             }

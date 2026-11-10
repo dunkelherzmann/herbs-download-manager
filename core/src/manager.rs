@@ -76,6 +76,10 @@ pub struct Entry {
     /// A streamed video (an HLS playlist, §15): its pieces are downloaded and joined into one MP4.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stream: bool,
+    /// A stream's quality and sound track, fixed when it was added; none (older lists) is the best and the stream's
+    /// own sound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<crate::media::StreamChoice>,
 }
 
 /// What the list shows for one download.
@@ -146,6 +150,8 @@ pub struct NewDownload {
     pub early: Option<u64>,
     /// A streamed video's playlist (§15), even when its address doesn't end in `.m3u8`.
     pub stream: bool,
+    /// A stream's quality and sound track; `None` takes Settings' (S13, S14).
+    pub choice: Option<crate::media::StreamChoice>,
 }
 
 /// The first id of an early download.
@@ -491,6 +497,7 @@ impl Manager {
         // A stream's name is known now (it's joined under it at the end); a file's comes from the server.
         let name = new.name.or_else(|| stream.then(|| crate::media::download::stream_name(&new.url)));
         let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
+        let choice = stream.then(|| new.choice.unwrap_or_else(|| self.settings().stream_choice()));
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();
             let id = slots.iter().map(|s| s.entry.id).max().unwrap_or(0) + 1;
@@ -512,6 +519,7 @@ impl Manager {
                     finished: None,
                     resume_at_launch: false,
                     stream,
+                    choice,
                     speed_limit: None,
                     checksum: None,
                     verified: None,
@@ -574,6 +582,7 @@ impl Manager {
                 retries: settings.retries,
                 limits: vec![self.inner.limiter.clone(), limiter.clone()],
                 vault: self.inner.vault.clone(),
+                choice: e.choice.clone().unwrap_or_default(),
             });
             let progress = Progress::new();
             // A stream counts the pieces already in its parts folder itself.
@@ -805,6 +814,7 @@ impl Manager {
                     finished: None,
                     resume_at_launch: false,
                     stream: false,
+                    choice: None,
                     speed_limit: None,
                     checksum: None,
                     verified: None,
@@ -923,6 +933,7 @@ impl Manager {
                     finished: finished.then(now),
                     resume_at_launch: false,
                     stream: false,
+                    choice: None,
                     speed_limit: None,
                     checksum: None,
                     verified: e.verified,

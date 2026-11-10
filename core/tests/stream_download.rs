@@ -188,3 +188,41 @@ fn a_protected_stream_is_refused() {
     assert!(reason.contains("protected (DRM)"), "{reason}");
     assert!(m.quit(Duration::from_secs(5)));
 }
+
+/// A master playlist over two fixtures: 1080p (the HEVC stream) and 360p (the H.264 one).
+fn serve_master(s: &MockServer) {
+    serve(s, "h264-ts", None);
+    serve(s, "hevc-ts", None);
+    s.put("/show/master.m3u8", MockFile::new(
+        b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n/hevc-ts/index.m3u8\n\
+          #EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\n/h264-ts/index.m3u8\n".to_vec(),
+    ));
+}
+
+#[test]
+fn a_stream_downloads_the_quality_chosen_for_it_or_in_settings() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    serve_master(&s);
+    let dir = folder("quality");
+    let m = Manager::open(&dir).unwrap();
+    // Chosen for it (the extension's picker): the 360p version.
+    let chosen = hd_core::media::StreamChoice { quality: Some(480), sound: Vec::new() };
+    let id = m.add(NewDownload { url: s.url("/show/master.m3u8"), folder: dir.join("files"), name: Some("chosen.mp4".into()), connections: 4,
+                                 start: true, stream: true, choice: Some(chosen), ..NewDownload::default() });
+    wait_for(&m, id, "finished", |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(dir.join("files/chosen.mp4")).unwrap(), joined_directly("h264-ts", &dir), "the 360p version");
+
+    // Settings' quality (S13), fixed when the download is added: changing it afterwards doesn't change the download.
+    let mut settings = m.settings();
+    settings.stream_quality = Some(360);
+    m.set_settings(settings.clone());
+    let id = m.add(NewDownload { url: s.url("/show/master.m3u8"), folder: dir.join("files"), name: Some("settings.mp4".into()), connections: 4,
+                                 start: false, stream: true, ..NewDownload::default() });
+    settings.stream_quality = None;
+    m.set_settings(settings);
+    m.resume(&[id]);
+    wait_for(&m, id, "finished", |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(dir.join("files/settings.mp4")).unwrap(), joined_directly("h264-ts", &dir), "Settings' 360p at the time it was added");
+    assert!(m.quit(Duration::from_secs(5)));
+}

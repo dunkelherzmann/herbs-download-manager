@@ -337,6 +337,8 @@ as long as one source stays on.
 | S10 | Server limits | | how many servers limit connections, with **Forget** (§7.4) |
 | S11 | Sign-ins | | how many are saved and how, with **Manage…** (§9.1) |
 | S12 | Keep the server's date for finished files | Off | the file gets the server's `Last-Modified` date instead of the time it finished |
+| S13 | Video stream quality | Highest | Highest, 2160p, 1440p, 1080p, 720p, 480p, 360p (§15) |
+| S14 | Sound language | The stream's own | the stream's own, or one of 24 languages, each named in its own language (§15) |
 
 Settings opens with ⌘, (Ctrl+, on Linux and Windows) as one window, and each change applies at once, with no OK
 button. They are kept in `settings.json` in the app's data folder, the same file on every platform; a missing or
@@ -345,7 +347,10 @@ the chosen folder is missing (a disk not plugged in), new downloads go to Downlo
 Download and Add Links pickers. S3 and S6 apply to every download from its next start. S4 and S5 apply at once to
 running downloads. S5 is shared by all downloads together, whatever their number of connections, and a download's
 own limit (§6 Options) applies on top of it. With S7 other than Ask, the question in §5.6 isn't asked and that
-answer is used. S8 arrives with checksum verification and isn't shown until then.
+answer is used. S8 arrives with checksum verification and isn't shown until then. S13 and S14 apply to streams added
+from then on: a stream keeps the quality and sound it was added with, so a paused one goes on with the same pieces.
+`settings.json` keeps S14 as a list of language codes in order; Settings shows and sets the first, and leaves a longer
+hand-written list alone until it's changed there.
 
 ### 9.1 Sign-ins (links that need a login)
 
@@ -437,7 +442,7 @@ Linux Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
 | Command | What it does |
 |---|---|
 | `hdm list [--filter all\|downloading\|paused\|finished\|unfinished] [--search TEXT] [--json]` | id, status, size, name and note; `--json` gives every field |
-| `hdm add LINK… [--folder FOLDER] [--queue]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given |
+| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14; the MCP tool `add_downloads` takes `quality` and `sound` the same way |
 | `hdm pause ID…` · `hdm resume ID…` | as Pause and Resume |
 | `hdm remove ID… [--delete-files]` | takes downloads off the list; with `--delete-files` their files go to the Trash (Recycle Bin) |
 | `hdm note ID TEXT…` | sets the note (§4.1); empty text removes it |
@@ -595,8 +600,13 @@ Sites stream video as HLS (an `.m3u8` playlist of pieces) or DASH (an `.mpd` man
 pieces and joins them into one `.mp4` file with its own code in the shared core, never re-encoding anything: each
 picture and sound sample keeps the bytes the site sent, so the file has the site's quality.
 
-- **HLS:** a master playlist's best quality is taken (the most pixels, then the most bits a second), with its
-  separate sound track when it has one (the default of its group). Pieces may be MPEG-TS (`.ts`) or MP4 fragments
+- **HLS:** a master playlist's quality is chosen by S13, or for that stream in the extension's list or `hdm add
+  --quality`: the best one (the most pixels, then the most bits a second) whose picture is at most that many lines
+  (its shorter side, so a tall phone video's 720p is 720 wide), or the smallest when every one is bigger; Highest
+  takes the best. HDR versions (`VIDEO-RANGE` PQ or HLG) are left out when a standard version exists, since most
+  screens show them washed out; a stream that gives no picture sizes takes its best. Its separate sound track, when
+  it has one, is the first language of S14 (or the one chosen for it) that its group has, `en` matching `en-US`;
+  else the group's default, the stream's own sound. Pieces may be MPEG-TS (`.ts`) or MP4 fragments
   with an init section; byte ranges, AES-128 encryption and discontinuities are handled. Protected streams
   (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused with "This stream is protected (DRM): it can't be
   saved", never broken.
@@ -627,7 +637,10 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   playlist is read once and its quality and sound playlists are left out of the list. The button shows how many
   items the tab has; the list is forgotten when the tab goes to another page. Each item shows its name (a stream:
   the page's title), its kind ("Video stream", "Video", "Sound"), size and site; a click adds it to the app's
-  queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream is named after
+  queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream with more than one
+  quality or sound track shows two lists under it: **Quality as in Settings**, **Highest** and each picture size with
+  its bit rate ("720p · 2.8 Mb/s", one per size, HDR left out as above); and **Sound as in Settings**, **The stream's
+  own sound** and each sound track by name and language ("English (en)"). What they show is what the app downloads. A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
   media extension. A file a player fetches in pieces by byte range in its address (`bytestart`, `byteend`,
   `range`) is never listed (one such piece was a reel's fragments without its beginning or sound). When the list
@@ -653,12 +666,11 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
     page ("<title>.mp4"), several after their playlists. The same name and size under two addresses is listed once.
 - **DASH:** a link ending in `.mpd`, or a manifest the browser extension finds in a page's data (Facebook carries
   its reels' manifests in the page instead of loading them), is a stream download: the best video (the most
-  pixels, then the most bits a second) and the best sound, joined into one MP4 like HLS. Pieces are found three
+  pixels, then the most bits a second) and the best sound, joined into one MP4 like HLS (S13 and S14 choose among HLS qualities and sound tracks only, for now). Pieces are found three
   ways: one file per quality with its init section and index (`SegmentBase`, Facebook's reels: the index's
   subsegments are the pieces, fetched by byte range), listed (`SegmentList`), or from a pattern (`SegmentTemplate`
   with `$Number$` or `$Time$`, by piece length or a `SegmentTimeline`). Sound keeps its place against the picture as
   the source has it (ffmpeg's join of two separate files starts each at zero instead). Protected tracks
   (`ContentProtection`) are refused; live DASH (`type="dynamic"`) isn't recorded yet. A manifest from a page is
   kept as `manifests/<sha256>.mpd` in the data folder and downloaded from there.
-- Not yet: choosing a quality or a sound track (the best is taken) (enhancements.md).
 

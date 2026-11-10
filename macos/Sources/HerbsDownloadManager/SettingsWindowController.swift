@@ -109,6 +109,10 @@ final class SettingsWindowController: NSWindowController {
     private let stopTime = NSDatePicker()
     private let days = (0..<7).map { _ in NSButton(checkboxWithTitle: "", target: nil, action: nil) }
     private let whenDone = NSPopUpButton()
+    private let streamQuality = NSPopUpButton()
+    private let soundLanguage = NSPopUpButton()
+    private static let qualities: [UInt32?] = [nil] + streamQualityChoices().map { Optional($0) }
+    private static let languages = soundLanguageChoices()
     private let showExtension = NSButton(title: "Show Extension Folder", target: nil, action: nil)
 
     private static let doneChoices: [(String, WhenDone)] = [
@@ -198,6 +202,7 @@ final class SettingsWindowController: NSWindowController {
         notify.setAccessibilityIdentifier("settings-notify")
 
         buildScheduler()
+        buildStreams()
         showExtension.target = self
         showExtension.action = #selector(revealExtension(_:))
         showExtension.toolTip = "Show the extension that hands Chrome's, Edge's, Brave's, Vivaldi's and Firefox's downloads to the app"
@@ -222,6 +227,8 @@ final class SettingsWindowController: NSWindowController {
             [NSGridCell.emptyContentView, NSStackView(views: [stopOn, stopTime])],
             [label("On:"), NSStackView(views: days)],
             [label("When the queue is done:"), whenDone],
+            [label("Video stream quality:"), streamQuality],
+            [label("Sound language:"), soundLanguage],
             [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
             [label("Sign-ins:"), NSStackView(views: [signInsText, manageSignIns])],
             [label("Browser extension:"), showExtension],
@@ -236,6 +243,7 @@ final class SettingsWindowController: NSWindowController {
         grid.columnSpacing = 8
         grid.row(at: 7).topPadding = 6
         grid.row(at: 11).topPadding = 6
+        grid.row(at: 13).topPadding = 6
         grid.translatesAutoresizingMaskIntoConstraints = false
         let content = NSView()
         content.addSubview(grid)
@@ -269,7 +277,36 @@ final class SettingsWindowController: NSWindowController {
         stopTime.dateValue = Self.date(s.scheduleStop ?? 7 * 60)
         for (box, on) in zip(days, s.scheduleDays) { box.state = on ? .on : .off }
         whenDone.selectItem(at: Self.doneChoices.firstIndex { $0.1 == s.whenDone } ?? 0)
+        streamQuality.selectItem(at: Self.qualities.firstIndex { $0 == s.streamQuality } ?? 0)
+        // The first preferred language; one not offered here (a hand-edited settings file) is shown as its code.
+        if let first = s.soundLanguages.first {
+            if !Self.languages.contains(where: { $0.code == first }), soundLanguage.numberOfItems == Self.languages.count + 1 {
+                soundLanguage.addItem(withTitle: first)
+            }
+            let i = Self.languages.firstIndex { $0.code == first }.map { $0 + 1 } ?? soundLanguage.numberOfItems - 1
+            soundLanguage.selectItem(at: i)
+        } else {
+            soundLanguage.selectItem(at: 0)
+        }
         enableScheduler()
+    }
+
+    /// S13 and S14 (§15): what a stream added from now on downloads, unless the extension chose for it.
+    private func buildStreams() {
+        streamQuality.addItems(withTitles: Self.qualities.map { $0.map { "\($0)p" } ?? "Highest" })
+        streamQuality.target = self
+        streamQuality.action = #selector(save(_:))
+        streamQuality.toolTip = "The quality a streamed video is downloaded in: the best one up to this size, or the smallest "
+            + "when every one is bigger. The browser extension can choose another for each video"
+        streamQuality.setAccessibilityLabel("Video stream quality")
+        streamQuality.setAccessibilityIdentifier("settings-stream-quality")
+        soundLanguage.addItems(withTitles: ["The stream's own"] + Self.languages.map(\.name))
+        soundLanguage.target = self
+        soundLanguage.action = #selector(save(_:))
+        soundLanguage.toolTip = "For a stream with sound in several languages: the one to download. When the stream doesn't "
+            + "have it, its own sound is taken"
+        soundLanguage.setAccessibilityLabel("Sound language")
+        soundLanguage.setAccessibilityIdentifier("settings-sound-language")
     }
 
     /// Q1–Q4 (§11.1). The days run Monday first, named as the Mac's language names them.
@@ -337,6 +374,12 @@ final class SettingsWindowController: NSWindowController {
         s.scheduleStop = stopOn.state == .on ? Self.minutes(stopTime.dateValue) : nil
         s.scheduleDays = days.map { $0.state == .on }
         s.whenDone = Self.doneChoices[max(0, whenDone.indexOfSelectedItem)].1
+        s.streamQuality = Self.qualities[max(0, streamQuality.indexOfSelectedItem)]
+        // Only a change here replaces the list, so a hand-edited list of several languages survives other changes.
+        if (sender as? NSPopUpButton) === soundLanguage {
+            let i = soundLanguage.indexOfSelectedItem
+            s.soundLanguages = i <= 0 ? [] : i <= Self.languages.count ? [Self.languages[i - 1].code] : s.soundLanguages
+        }
         enableScheduler()
         AppModel.shared.settings = s
         if s.notifyWhenFinished, (sender as? NSButton) === notify { AppModel.shared.askToNotify() }

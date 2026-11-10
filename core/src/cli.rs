@@ -15,7 +15,7 @@ pub const USAGE: &str = "\
 hdm controls Herb's Download Manager while it runs.
 
   hdm list [--filter all|downloading|paused|finished|unfinished] [--search TEXT] [--json]
-  hdm add LINK… [--folder FOLDER] [--queue]
+  hdm add LINK… [--folder FOLDER] [--queue] [--quality highest|1080|720…] [--sound LANGUAGE]
   hdm pause ID…
   hdm resume ID…
   hdm remove ID… [--delete-files]
@@ -24,7 +24,8 @@ hdm controls Herb's Download Manager while it runs.
   hdm mcp                     an MCP server on standard input and output, for AI assistants
 
 add starts the downloads now, or with --queue leaves them waiting in the queue; they go to the folder set in
-Settings unless --folder gives another. remove takes downloads off the list and leaves their files, or with
+Settings unless --folder gives another. For a streamed video, --quality and --sound (a language code such as de)
+choose its quality and sound track instead of Settings'. remove takes downloads off the list and leaves their files, or with
 --delete-files moves the files to the Trash too. IDs are the numbers hdm list shows.
 ";
 
@@ -116,6 +117,8 @@ pub fn parse(args: &[String]) -> Result<(Request, bool), String> {
             "--add" if r.command == "scan" => r.queue = true,
             "--folder" if r.command == "add" => r.folder = Some(absolute(&value("--folder")?)),
             "--queue" if r.command == "add" => r.queue = true,
+            "--quality" if r.command == "add" => r.quality = Some(value("--quality")?),
+            "--sound" if r.command == "add" => r.sound = Some(value("--sound")?),
             "--delete-files" if r.command == "remove" => r.delete_files = true,
             flag if flag.starts_with("--") => return Err(format!("{} doesn't take {flag}", r.command)),
             word => words.push(word.to_string()),
@@ -208,7 +211,9 @@ fn tools() -> Value {
          "inputSchema": {"type": "object", "required": ["urls"], "properties": {
              "urls": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "The links to download"},
              "folder": {"type": "string", "description": "Full path of the folder to save to (default: the one set in Settings)"},
-             "queue": {"type": "boolean", "description": "Leave them waiting in the queue instead of starting now"}}},
+             "queue": {"type": "boolean", "description": "Leave them waiting in the queue instead of starting now"},
+             "quality": {"type": "string", "description": "A streamed video's quality: highest, or the most lines such as 1080 or 720 (default: Settings')"},
+             "sound": {"type": "string", "description": "A streamed video's sound language, such as en or de (default: Settings')"}}},
          "annotations": {"readOnlyHint": false, "destructiveHint": false, "openWorldHint": true}},
         {"name": "pause_downloads", "title": "Pause downloads", "description": "Pauses downloads, keeping what's downloaded.",
          "inputSchema": {"type": "object", "required": ["ids"], "properties": {"ids": ids}},
@@ -246,6 +251,8 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
             urls: a.get("urls").and_then(Value::as_array).map(|v| v.iter().filter_map(|u| u.as_str().map(str::to_string)).collect()).unwrap_or_default(),
             folder: text("folder"),
             queue: flag("queue"),
+            quality: text("quality"),
+            sound: text("sound"),
             ..Default::default()
         },
         "pause_downloads" => Request { command: "pause".into(), ids: ids(), ..Default::default() },

@@ -258,6 +258,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                 // The download already under way is adopted (moved to the chosen folder and name), not started again.
                 early: early.take(),
                 stream: false,
+                choice: None,
             };
             add_all(&ctx, vec![link], folder.borrow().clone(), connections.value() as u32, start);
             window.close();

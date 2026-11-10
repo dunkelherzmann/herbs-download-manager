@@ -63,6 +63,10 @@ pub struct Settings {
     /// Seven days, Monday first.
     pub schedule_days: Vec<bool>,
     pub when_done: WhenDone,
+    /// S13: the most lines of a stream's picture (1080 for 1080p); `None` is Highest.
+    pub stream_quality: Option<u32>,
+    /// S14: sound languages in order; empty is the stream's own sound.
+    pub sound_languages: Vec<String>,
 }
 
 impl From<settings::Settings> for Settings {
@@ -87,6 +91,8 @@ impl From<settings::Settings> for Settings {
             schedule_stop: s.schedule.stop,
             schedule_days: s.schedule.days.to_vec(),
             when_done: s.schedule.when_done.into(),
+            stream_quality: s.stream_quality,
+            sound_languages: s.sound_languages,
         }
     }
 }
@@ -115,6 +121,8 @@ impl From<Settings> for settings::Settings {
                 days: std::array::from_fn(|i| s.schedule_days.get(i).copied().unwrap_or(true)),
                 when_done: s.when_done.into(),
             },
+            stream_quality: s.stream_quality,
+            sound_languages: s.sound_languages,
         }
     }
 }
@@ -133,6 +141,24 @@ pub fn default_settings() -> Settings {
 #[uniffi::export]
 pub fn connection_choices() -> Vec<u32> {
     settings::CONNECTIONS.collect()
+}
+
+/// S13's choices besides Highest, largest first (2160 … 360).
+#[uniffi::export]
+pub fn stream_quality_choices() -> Vec<u32> {
+    hd_core::media::QUALITIES.to_vec()
+}
+
+/// A sound language S14 offers: its code (`de`) and its name in its own language (`Deutsch`).
+#[derive(uniffi::Record)]
+pub struct SoundLanguage {
+    pub code: String,
+    pub name: String,
+}
+
+#[uniffi::export]
+pub fn sound_language_choices() -> Vec<SoundLanguage> {
+    hd_core::media::LANGUAGES.iter().map(|(code, name)| SoundLanguage { code: code.to_string(), name: name.to_string() }).collect()
 }
 
 // --- The download list ------------------------------------------------------------------------------------------
@@ -386,6 +412,7 @@ impl DownloadManager {
             size,
             early,
             stream,
+            choice: None,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }

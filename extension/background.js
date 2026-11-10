@@ -145,22 +145,44 @@ function kindOf(d) {
   return { kind: audio ? "audio" : "video", size, mime };
 }
 
-// A playlist's first bytes, fetched again with the site's cookies: a master playlist's quality playlists, if it is one.
+// A tag's attribute, quoted or not: RESOLUTION=1920x1080, LANGUAGE="de".
+const attrOf = (line, name) => (new RegExp(`[:,]${name}=("([^"]*)"|[^,]*)`).exec(line) || [])[2] ?? (new RegExp(`[:,]${name}=([^,]*)`).exec(line) || [])[1];
+
+// A playlist's first bytes, fetched again with the site's cookies: a master playlist's quality and sound playlists
+// (`urls`, to hide them from the list), its qualities (the most bits a second for each picture size, largest first,
+// HDR left out when a standard version exists) and its sound languages. `null` when it isn't a playlist.
 async function variantsOf(url) {
   try {
     const r = await fetch(url, { credentials: "include" });
     const text = (await r.text()).slice(0, 256 * 1024);
     if (!text.trimStart().startsWith("#EXTM3U")) return null;
     const lines = text.split(/\r?\n/).map((l) => l.trim());
-    const out = [];
+    const urls = [];
+    const variants = [];
+    const sounds = [];
     lines.forEach((l, i) => {
-      if (l.startsWith("#EXT-X-STREAM-INF") && lines[i + 1] && !lines[i + 1].startsWith("#")) out.push(new URL(lines[i + 1], url).href);
+      if (l.startsWith("#EXT-X-STREAM-INF") && lines[i + 1] && !lines[i + 1].startsWith("#")) {
+        urls.push(new URL(lines[i + 1], url).href);
+        const size = /^(\d+)[xX](\d+)$/.exec(attrOf(l, "RESOLUTION") || "");
+        variants.push({
+          lines: size ? Math.min(Number(size[1]), Number(size[2])) : 0,
+          bandwidth: Number(attrOf(l, "BANDWIDTH")) || 0,
+          hdr: /^(PQ|HLG)$/.test(attrOf(l, "VIDEO-RANGE") || ""),
+        });
+      }
       const uri = /^#EXT-X-MEDIA:.*URI="([^"]+)"/.exec(l);
-      if (uri) out.push(new URL(uri[1], url).href);
+      if (uri) urls.push(new URL(uri[1], url).href);
+      const language = l.startsWith("#EXT-X-MEDIA:") && attrOf(l, "TYPE") === "AUDIO" && uri && attrOf(l, "LANGUAGE");
+      if (language && !sounds.some((s) => s.language === language)) sounds.push({ language, name: attrOf(l, "NAME") || language });
     });
-    return out;
+    const standard = variants.filter((v) => !v.hdr);
+    const qualities = [];
+    for (const v of (standard.length ? standard : variants).filter((v) => v.lines).sort((a, b) => b.lines - a.lines || b.bandwidth - a.bandwidth)) {
+      if (!qualities.some((q) => q.lines === v.lines)) qualities.push({ lines: v.lines, bandwidth: v.bandwidth });
+    }
+    return { urls, qualities, sounds };
   } catch {
-    return [];
+    return { urls: [], qualities: [], sounds: [] };
   }
 }
 
@@ -172,11 +194,14 @@ function note(d, found) {
     if (items.some((i) => i.url === d.url)) return;
     const item = { url: d.url, kind: found.kind, size: found.size || 0, mime: found.mime || "", hidden: false };
     if (found.kind === "stream") {
-      const variants = await variantsOf(d.url);
-      if (variants === null) return; // not a playlist after all
+      const found = await variantsOf(d.url);
+      if (found === null) return; // not a playlist after all
+      const variants = found.urls;
       // A quality playlist of a master already listed is part of it; a master hides the ones seen before it.
       if (items.some((i) => (i.variants || []).includes(d.url))) item.hidden = true;
       item.variants = variants;
+      item.qualities = found.qualities;
+      item.sounds = found.sounds;
       for (const i of items) if (variants.includes(i.url)) i.hidden = true;
     }
     items.push(item);
@@ -300,6 +325,9 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       const name = item.name || nameFor(item, tab && tab.title);
       // Added to the queue; right after opening the app ("Open and Download"), started at once.
       const options = { queue: !message.start, stream: ["stream", "dash", "page-dash"].includes(item.kind) || item.stream === true, name };
+      // A stream's quality and sound chosen in the list (S13, S14 otherwise).
+      if (message.quality) options.quality = message.quality;
+      if (message.sound !== undefined) options.sound = message.sound;
       let answer;
       if (item.kind === "page-dash") {
         // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.

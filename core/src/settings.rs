@@ -47,6 +47,10 @@ pub struct Settings {
     pub keep_server_date: bool,
     /// The scheduler (§11.1).
     pub schedule: crate::schedule::Schedule,
+    /// S13: the quality of streamed video, as the most lines (1080 for 1080p); `None` is Highest.
+    pub stream_quality: Option<u32>,
+    /// S14: sound languages for streams with several sound tracks, in order; empty is the stream's own.
+    pub sound_languages: Vec<String>,
 }
 
 impl Default for Settings {
@@ -63,11 +67,18 @@ impl Default for Settings {
             notify_when_finished: true,
             keep_server_date: false,
             schedule: crate::schedule::Schedule::default(),
+            stream_quality: None,
+            sound_languages: Vec::new(),
         }
     }
 }
 
 impl Settings {
+    /// What a stream added now downloads, unless it was chosen for it (S13, S14).
+    pub fn stream_choice(&self) -> crate::media::StreamChoice {
+        crate::media::StreamChoice { quality: self.stream_quality, sound: self.sound_languages.clone() }
+    }
+
     /// Brings every number into its allowed range, so a hand-edited settings file can't break a download.
     pub fn clamped(mut self) -> Self {
         let clamp = |v: u32, r: &RangeInclusive<u32>| v.clamp(*r.start(), *r.end());
@@ -76,6 +87,11 @@ impl Settings {
         self.downloads_at_once = clamp(self.downloads_at_once, &DOWNLOADS_AT_ONCE);
         self.retries = clamp(self.retries, &RETRIES);
         self.schedule = self.schedule.clamped();
+        // A quality not offered takes the nearest offered one; 0 is Highest.
+        self.stream_quality = self.stream_quality.filter(|q| *q > 0).map(|q| {
+            *crate::media::QUALITIES.iter().min_by_key(|o| o.abs_diff(q)).unwrap_or(&1080)
+        });
+        self.sound_languages.retain(|l| !l.trim().is_empty());
         if self.speed_limit == Some(0) {
             self.speed_limit = None;
         }
@@ -111,6 +127,15 @@ mod tests {
         assert_eq!(s.when_file_exists, WhenFileExists::Ask);
         assert!(s.look_for_checksum_files && s.notify_when_finished);
         assert_eq!(s.clone().clamped(), s);
+    }
+
+    #[test]
+    fn a_stream_quality_not_offered_takes_the_nearest() {
+        let s = |q| Settings { stream_quality: q, ..Settings::default() }.clamped().stream_quality;
+        assert_eq!(Settings::default().stream_quality, None, "Highest");
+        assert_eq!(s(Some(1000)), Some(1080));
+        assert_eq!(s(Some(100)), Some(360));
+        assert_eq!(s(Some(0)), None);
     }
 
     #[test]

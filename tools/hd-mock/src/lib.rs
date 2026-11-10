@@ -428,6 +428,19 @@ pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServe
         ] {
             server.put(&format!("/reel/{name}"), MockFile::new(bytes.to_vec()));
         }
+        // A stream in two qualities (S13): 1080p is core/tests/media/hevc-ts at /hevc/, 360p the clip above.
+        for (name, bytes) in [
+            ("index.m3u8", &include_bytes!("../../../core/tests/media/hevc-ts/index.m3u8")[..]),
+            ("s0.ts", &include_bytes!("../../../core/tests/media/hevc-ts/s0.ts")[..]),
+            ("s1.ts", &include_bytes!("../../../core/tests/media/hevc-ts/s1.ts")[..]),
+            ("s2.ts", &include_bytes!("../../../core/tests/media/hevc-ts/s2.ts")[..]),
+        ] {
+            server.put(&format!("/hevc/{name}"), MockFile::new(bytes.to_vec()));
+        }
+        server.put("/show/master.m3u8", MockFile::new(
+            b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n/hevc/index.m3u8\n\
+              #EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\n/clip/index.m3u8\n".to_vec(),
+        ));
         server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
         servers.push(server);
     }

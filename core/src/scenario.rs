@@ -17,7 +17,8 @@
 //! setting KEY VALUE                downloads-at-once, speed-limit (bytes a second, 0 for none),
 //!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off),
 //!                                  keep-server-date (on, off), schedule-start and schedule-stop (+MINUTES from the
-//!                                  scheduler's now, HH:MM, or off), when-done (nothing, quit, sleep, shut-down)
+//!                                  scheduler's now, HH:MM, or off), when-done (nothing, quit, sleep, shut-down),
+//!                                  stream-quality (highest, or lines such as 1080), sound-language (a code, or own)
 //! clock +SECONDS                   moves the scheduler's clock forward
 //! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
 //! expect ROW CHECK [VALUE]         file-size N, file-date SECONDS, sources N, status-contains TEXT,
@@ -157,6 +158,10 @@ impl Run<'_> {
                         if key == "schedule-start" { s.schedule.start = minutes } else { s.schedule.stop = minutes }
                     }
                     "when-done" => s.schedule.when_done = crate::schedule::WhenDone::from_word(&value).ok_or("no such action")?,
+                    "stream-quality" => {
+                        s.stream_quality = if value == "highest" { None } else { Some(value.parse().map_err(|_| "highest or lines".to_string())?) }
+                    }
+                    "sound-language" => s.sound_languages = if value == "own" { Vec::new() } else { vec![value] },
                     _ => return Err(format!("no setting {key}")),
                 }
                 self.manager.set_settings(s);

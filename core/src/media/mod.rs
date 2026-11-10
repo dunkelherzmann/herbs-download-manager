@@ -15,6 +15,31 @@ pub mod ts;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
+/// Which quality and sound track of a stream to download (S13, S14, or the extension's pickers). Fixed when the
+/// download is added, so a paused stream goes on with the same playlists.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StreamChoice {
+    /// The most lines the picture may have (its shorter side: 1080 for 1080p); `None` is the best there is.
+    pub quality: Option<u32>,
+    /// Sound languages in order of preference (`en`, `de`…); empty, or none of them there, is the stream's own.
+    pub sound: Vec<String>,
+}
+
+/// The qualities offered in Settings and the extension, besides Highest.
+pub const QUALITIES: [u32; 6] = [2160, 1440, 1080, 720, 480, 360];
+
+/// Sound languages offered in Settings, each named in its own language.
+pub const LANGUAGES: [(&str, &str); 24] = [
+    ("en", "English"), ("de", "Deutsch"), ("es", "Español"), ("fr", "Français"), ("it", "Italiano"),
+    ("pt", "Português"), ("nl", "Nederlands"), ("sv", "Svenska"), ("da", "Dansk"), ("no", "Norsk"), ("fi", "Suomi"),
+    ("pl", "Polski"), ("cs", "Čeština"), ("el", "Ελληνικά"), ("tr", "Türkçe"), ("ru", "Русский"), ("uk", "Українська"),
+    ("ar", "العربية"), ("he", "עברית"), ("hi", "हिन्दी"), ("ja", "日本語"), ("ko", "한국어"), ("zh", "中文"),
+    ("id", "Bahasa Indonesia"),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Video,

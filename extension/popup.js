@@ -103,9 +103,38 @@ async function show() {
   };
 }
 
+// A stream's quality and sound pickers, when it offers a choice: "As in Settings" first, then each quality (picture
+// lines and bit rate) and each sound language. `chosen()` gives what to send with the stream.
+function pickers(item) {
+  const box = document.createElement("div");
+  box.className = "pickers";
+  const list = (label, options) => {
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", label);
+    select.title = label;
+    for (const [value, text] of options) select.append(new Option(text, value));
+    box.append(select);
+    return select;
+  };
+  const qualities = item.qualities || [];
+  const sounds = item.sounds || [];
+  const quality = qualities.length > 1 && list("Quality to download", [["", "Quality as in Settings"], ["highest", "Highest"],
+    ...qualities.map((q) => [String(q.lines), `${q.lines}p${q.bandwidth ? ` · ${(q.bandwidth / 1e6).toFixed(1)} Mb/s` : ""}`])]);
+  const sound = sounds.length > 1 && list("Sound to download", [["*", "Sound as in Settings"], ["", "The stream's own sound"],
+    ...sounds.map((s) => [s.language, s.name === s.language ? s.language : `${s.name} (${s.language})`])]);
+  const chosen = () => {
+    const c = {};
+    if (quality && quality.value) c.quality = quality.value;
+    if (sound && sound.value !== "*") c.sound = sound.value;
+    return c;
+  };
+  return { box: quality || sound ? box : null, chosen };
+}
+
 // One item: its name, what it is (kind, size, site), and a click that adds it to the queue.
 function row(tab, item, label, facts) {
   const li = document.createElement("li");
+  const pick = item.kind === "stream" ? pickers(item) : { box: null, chosen: () => ({}) };
   const button = document.createElement("button");
   button.className = "item";
   const name = document.createElement("span");
@@ -123,7 +152,7 @@ function row(tab, item, label, facts) {
       button.disabled = true;
       detail.className = "detail";
       detail.textContent = "Adding…";
-      const answer = await ask({ type: "add", tabId: tab.id, item });
+      const answer = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen() });
       if (answer && answer.ok) {
         detail.className = "detail ok";
         detail.textContent = "Added to the queue";
@@ -136,7 +165,7 @@ function row(tab, item, label, facts) {
           const opened = await ask({ type: "open" });
           if (!(opened && opened.ok)) return opened;
           detail.textContent = "Adding…";
-          const added = await ask({ type: "add", tabId: tab.id, item, start: true });
+          const added = await ask({ type: "add", tabId: tab.id, item, start: true, ...pick.chosen() });
           if (added && added.ok) {
             detail.className = "detail ok";
             detail.textContent = "Downloading";
@@ -151,6 +180,7 @@ function row(tab, item, label, facts) {
     };
   }
   li.append(button);
+  if (pick.box) li.append(pick.box);
   return li;
 }
 
