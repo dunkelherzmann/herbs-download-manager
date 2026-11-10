@@ -352,6 +352,11 @@ impl Host for DirectHost {
                 }
                 Ok(())
             }
+            // Resume with nothing selected starts the waiting downloads, as the apps' ▶ does.
+            "resume" if ids.is_empty() => {
+                m.start_queue();
+                Ok(())
+            }
             "resume" => {
                 m.resume(ids);
                 Ok(())
