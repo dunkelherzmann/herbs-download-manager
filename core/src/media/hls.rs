@@ -16,6 +16,8 @@ pub struct Variant {
     pub audio: Option<String>,
     /// High dynamic range (VIDEO-RANGE=PQ or HLG): left out when the stream also has a standard version.
     pub hdr: bool,
+    /// The SUBTITLES group its subtitles come from.
+    pub subtitles: Option<String>,
 }
 
 /// A separate sound track (EXT-X-MEDIA TYPE=AUDIO).
@@ -57,7 +59,8 @@ pub struct Segment {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Playlist {
-    Master { variants: Vec<Variant>, audio: Vec<Rendition> },
+    /// `subtitles`: EXT-X-MEDIA TYPE=SUBTITLES, each a playlist of WebVTT files.
+    Master { variants: Vec<Variant>, audio: Vec<Rendition>, subtitles: Vec<Rendition> },
     /// `ended`: EXT-X-ENDLIST, or a VOD playlist; otherwise a live stream that keeps growing.
     Media { segments: Vec<Segment>, ended: bool },
 }
@@ -122,6 +125,7 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
     }
     let join = |link: &str| base.join(link).map_err(|_| format!("A playlist link doesn't work: {link}"));
     let (mut variants, mut audio, mut segments) = (Vec::new(), Vec::new(), Vec::new());
+    let mut subtitles = Vec::new();
     let mut pending_variant: Option<Vec<(String, String)>> = None;
     let (mut duration, mut range, mut discontinuity) = (0.0, None, false);
     let mut key = Key::None;
@@ -132,7 +136,18 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
             pending_variant = Some(attributes(rest));
         } else if let Some(rest) = line.strip_prefix("#EXT-X-MEDIA:") {
             let a = attributes(rest);
-            if attr(&a, "TYPE") == Some("AUDIO") {
+            let kind = attr(&a, "TYPE");
+            if kind == Some("SUBTITLES") && attr(&a, "URI").is_some() {
+                subtitles.push(Rendition {
+                    group: attr(&a, "GROUP-ID").unwrap_or_default().to_string(),
+                    name: attr(&a, "NAME").unwrap_or_default().to_string(),
+                    language: attr(&a, "LANGUAGE").map(str::to_string),
+                    // Forced subtitles (signs, foreign lines only) aren't the whole text: kept out of a choice.
+                    default: attr(&a, "FORCED") == Some("YES"),
+                    url: attr(&a, "URI").map(join).transpose()?,
+                });
+            }
+            if kind == Some("AUDIO") {
                 audio.push(Rendition {
                     group: attr(&a, "GROUP-ID").unwrap_or_default().to_string(),
                     name: attr(&a, "NAME").unwrap_or_default().to_string(),
@@ -182,6 +197,7 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
                 codecs: attr(&a, "CODECS").map(str::to_string),
                 audio: attr(&a, "AUDIO").map(str::to_string),
                 hdr: matches!(attr(&a, "VIDEO-RANGE"), Some("PQ" | "HLG")),
+                subtitles: attr(&a, "SUBTITLES").map(str::to_string),
             });
         } else {
             if let Some((len, off)) = range {
@@ -201,7 +217,7 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
         }
     }
     if !variants.is_empty() {
-        return Ok(Playlist::Master { variants, audio });
+        return Ok(Playlist::Master { variants, audio, subtitles });
     }
     if segments.is_empty() {
         return Err("The playlist lists nothing to download".into());
@@ -238,6 +254,31 @@ impl Playlist {
     /// The separate sound track a variant plays with: the default of its group, else its first.
     pub fn audio_for(&self, variant: &Variant) -> Option<&Rendition> {
         self.audio_in(variant, &[])
+    }
+
+    /// The subtitles a variant plays with that S15 keeps (`languages`: codes in order, or `*` for all), one per
+    /// language, forced ones left out; `en` matches `en-US`.
+    pub fn subtitles_in(&self, variant: &Variant, languages: &[String]) -> Vec<&Rendition> {
+        let Playlist::Master { subtitles, .. } = self else { return Vec::new() };
+        let primary = |code: &str| code.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+        let pool: Vec<&Rendition> = subtitles
+            .iter()
+            .filter(|r| !r.default && variant.subtitles.as_ref().is_none_or(|g| *g == r.group))
+            .collect();
+        let lang = |r: &Rendition| r.language.as_deref().map(primary).unwrap_or_default();
+        let mut picked: Vec<&Rendition> = if languages.iter().any(|l| l == "*") {
+            pool.clone()
+        } else {
+            languages.iter().filter_map(|want| pool.iter().copied().find(|r| lang(r) == primary(want))).collect()
+        };
+        let mut seen = Vec::new();
+        picked.retain(|r| {
+            let l = lang(r);
+            let fresh = !seen.contains(&l);
+            seen.push(l);
+            fresh
+        });
+        picked
     }
 
     /// A variant that carries sound only (its codecs name no picture, and it has no size), the best of them: what a

@@ -324,7 +324,7 @@ impl Stream {
     pub fn timescale(&self) -> u32 {
         match self.kind() {
             Kind::Video => 90_000,
-            Kind::Audio => self.sound.map(|s| s.rate).unwrap_or(90_000),
+            Kind::Audio | Kind::Text => self.sound.map(|s| s.rate).unwrap_or(90_000),
         }
     }
 

@@ -263,7 +263,7 @@ fn first_pts(t: &Track) -> i64 {
 }
 
 /// Where a track starts on the timeline, in seconds: its edit list's empty time, or its first presentation time.
-fn start_of(t: &Track) -> f64 {
+pub(crate) fn start_of(t: &Track) -> f64 {
     match t.edit {
         Some((empty, _)) => empty,
         None => first_pts(t) as f64 / t.timescale as f64,
@@ -361,9 +361,11 @@ fn matrix(b: &mut Boxes) {
 fn trak(b: &mut Boxes, t: &Track, id: u32, offsets: &[u64], origin: f64, duration: u64) {
     let media_duration: u64 = t.samples.iter().map(|s| s.duration as u64).sum();
     let video = t.kind == Kind::Video;
+    let text = t.kind == Kind::Text;
     b.begin(b"trak");
     b.begin_full(b"tkhd", 1, 3).u64(0).u64(0).u32(id).u32(0).u64(duration).zeros(8);
-    b.u16(0).u16(0).u16(if video { 0 } else { 0x0100 }).u16(0);
+    // Layer, alternate group (subtitle tracks are alternatives to each other), volume.
+    b.u16(0).u16(if text { 2 } else { 0 }).u16(if video || text { 0 } else { 0x0100 }).u16(0);
     matrix(b);
     b.u32(t.width << 16).u32(t.height << 16).end();
     // The edit list: a pause before a track that starts later, then the track from its first presentation time (the
@@ -382,14 +384,18 @@ fn trak(b: &mut Boxes, t: &Track, id: u32, offsets: &[u64], origin: f64, duratio
     b.begin(b"mdia");
     let lang = t.language.bytes().chain(std::iter::repeat(b'a')).take(3).fold(0u16, |acc, c| (acc << 5) | ((c.wrapping_sub(0x60)) as u16 & 0x1f));
     b.begin_full(b"mdhd", 1, 0).u64(0).u64(0).u32(t.timescale).u64(media_duration).u16(lang).u16(0).end();
-    let (handler, name): (&[u8; 4], &[u8]) = if video { (b"vide", b"VideoHandler\0") } else { (b"soun", b"SoundHandler\0") };
+    let (handler, name): (&[u8; 4], &[u8]) = match t.kind {
+        Kind::Video => (b"vide", b"VideoHandler\0"),
+        Kind::Audio => (b"soun", b"SoundHandler\0"),
+        Kind::Text => (b"sbtl", b"SubtitleHandler\0"),
+    };
     b.begin_full(b"hdlr", 0, 0).u32(0).bytes(handler).zeros(12).bytes(name).end();
     b.begin(b"minf");
-    if video {
-        b.begin_full(b"vmhd", 0, 1).zeros(8).end();
-    } else {
-        b.begin_full(b"smhd", 0, 0).u32(0).end();
-    }
+    match t.kind {
+        Kind::Video => b.begin_full(b"vmhd", 0, 1).zeros(8).end(),
+        Kind::Audio => b.begin_full(b"smhd", 0, 0).u32(0).end(),
+        Kind::Text => b.begin_full(b"nmhd", 0, 0).end(),
+    };
     b.begin(b"dinf").begin_full(b"dref", 0, 0).u32(1).begin_full(b"url ", 0, 1).end().end().end();
     b.begin(b"stbl");
     b.begin_full(b"stsd", 0, 0).u32(1).bytes(&t.entry).end();

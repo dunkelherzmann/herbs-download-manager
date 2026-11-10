@@ -111,6 +111,7 @@ final class SettingsWindowController: NSWindowController {
     private let whenDone = NSPopUpButton()
     private let streamQuality = NSPopUpButton()
     private let soundLanguage = NSPopUpButton()
+    private let subtitles = NSPopUpButton()
     private static let qualities: [UInt32?] = [nil] + streamQualityChoices().map { Optional($0) }
     private static let languages = soundLanguageChoices()
     private let showExtension = NSButton(title: "Show Extension Folder", target: nil, action: nil)
@@ -229,6 +230,7 @@ final class SettingsWindowController: NSWindowController {
             [label("When the queue is done:"), whenDone],
             [label("Video stream quality:"), streamQuality],
             [label("Sound language:"), soundLanguage],
+            [label("Subtitles:"), subtitles],
             [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
             [label("Sign-ins:"), NSStackView(views: [signInsText, manageSignIns])],
             [label("Browser extension:"), showExtension],
@@ -243,7 +245,7 @@ final class SettingsWindowController: NSWindowController {
         grid.columnSpacing = 8
         grid.row(at: 7).topPadding = 6
         grid.row(at: 11).topPadding = 6
-        grid.row(at: 13).topPadding = 6
+        grid.row(at: 14).topPadding = 6
         grid.translatesAutoresizingMaskIntoConstraints = false
         let content = NSView()
         content.addSubview(grid)
@@ -288,10 +290,20 @@ final class SettingsWindowController: NSWindowController {
         } else {
             soundLanguage.selectItem(at: 0)
         }
+        // S15: None, All, or a language (one not offered here shown as its code).
+        switch s.subtitleLanguages.first {
+        case nil: subtitles.selectItem(at: 0)
+        case "*": subtitles.selectItem(at: 1)
+        case let code?:
+            if !Self.languages.contains(where: { $0.code == code }), subtitles.numberOfItems == Self.languages.count + 2 {
+                subtitles.addItem(withTitle: code)
+            }
+            subtitles.selectItem(at: Self.languages.firstIndex { $0.code == code }.map { $0 + 2 } ?? subtitles.numberOfItems - 1)
+        }
         enableScheduler()
     }
 
-    /// S13 and S14 (§15): what a stream added from now on downloads, unless the extension chose for it.
+    /// S13, S14 and S15 (§15): what a stream added from now on downloads, unless the extension chose for it.
     private func buildStreams() {
         streamQuality.addItems(withTitles: Self.qualities.map { $0.map { "\($0)p" } ?? "Highest" })
         streamQuality.target = self
@@ -307,6 +319,13 @@ final class SettingsWindowController: NSWindowController {
             + "have it, its own sound is taken"
         soundLanguage.setAccessibilityLabel("Sound language")
         soundLanguage.setAccessibilityIdentifier("settings-sound-language")
+        subtitles.addItems(withTitles: ["None", "All"] + Self.languages.map(\.name))
+        subtitles.target = self
+        subtitles.action = #selector(save(_:))
+        subtitles.toolTip = "Subtitles a streamed video's file keeps, as tracks a player can turn on: none, every language "
+            + "the stream has, or one language"
+        subtitles.setAccessibilityLabel("Subtitles")
+        subtitles.setAccessibilityIdentifier("settings-subtitles")
     }
 
     /// Q1–Q4 (§11.1). The days run Monday first, named as the Mac's language names them.
@@ -379,6 +398,10 @@ final class SettingsWindowController: NSWindowController {
         if (sender as? NSPopUpButton) === soundLanguage {
             let i = soundLanguage.indexOfSelectedItem
             s.soundLanguages = i <= 0 ? [] : i <= Self.languages.count ? [Self.languages[i - 1].code] : s.soundLanguages
+        }
+        if (sender as? NSPopUpButton) === subtitles {
+            let i = subtitles.indexOfSelectedItem
+            s.subtitleLanguages = i <= 0 ? [] : i == 1 ? ["*"] : i <= Self.languages.count + 1 ? [Self.languages[i - 2].code] : s.subtitleLanguages
         }
         enableScheduler()
         AppModel.shared.settings = s

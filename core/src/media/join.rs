@@ -23,6 +23,8 @@ pub struct Joiner {
     sound_only: bool,
     /// Only the first whole picture is kept: a still for a preview.
     still: bool,
+    /// Subtitles written as their own tracks beside the picture and sound.
+    subtitles: Vec<super::subtitles::Subtitles>,
 }
 
 /// What `finish` wrote.
@@ -40,12 +42,17 @@ const JUMP_SECONDS: f64 = 10.0;
 impl Joiner {
     /// The pieces' bytes wait in `spool_path` until `finish`.
     pub fn new(spool_path: &Path) -> Result<Joiner, JoinError> {
-        Ok(Joiner { spool: Spool::create(spool_path)?, sources: Vec::new(), sound_only: false, still: false })
+        Ok(Joiner { spool: Spool::create(spool_path)?, sources: Vec::new(), sound_only: false, still: false, subtitles: Vec::new() })
     }
 
     /// Keeps only the sound: the file is an `.m4a` (or `.mp3`), with no picture.
     pub fn sound_only(&mut self) {
         self.sound_only = true;
+    }
+
+    /// Subtitles to add as tracks, each labelled with its language (left out with sound only or a still).
+    pub fn subtitles(&mut self, subtitles: Vec<super::subtitles::Subtitles>) {
+        self.subtitles = subtitles;
     }
 
     /// Keeps only the first whole picture, with no sound: a still for a preview.
@@ -188,6 +195,20 @@ impl Joiner {
             for i in 1..t.samples.len() {
                 if t.samples[i - 1].duration == 0 {
                     t.samples[i - 1].duration = (t.samples[i].dts - t.samples[i - 1].dts).clamp(1, u32::MAX as i64) as u32;
+                }
+            }
+        }
+        if !self.still && !self.sound_only && !self.subtitles.is_empty() && !tracks.is_empty() {
+            // On the stream's own clock: from where the picture and sound start to where they end.
+            let from = tracks.iter().map(mp4::start_of).fold(f64::INFINITY, f64::min);
+            let to = tracks
+                .iter()
+                .map(|t| mp4::start_of(t) + t.samples.iter().map(|s| s.duration as f64).sum::<f64>() / t.timescale as f64)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let size = tracks.iter().find(|t| t.kind == Kind::Video).map(|t| (t.width, t.height)).unwrap_or((0, 0));
+            for subs in std::mem::take(&mut self.subtitles) {
+                if let Some(track) = super::subtitles::track(&subs, from, from, to, size, &mut self.spool)? {
+                    tracks.push(track);
                 }
             }
         }

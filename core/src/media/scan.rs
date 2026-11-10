@@ -263,7 +263,7 @@ async fn check(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault,
         let full = crate::transfer::signed(client.get(url.clone()), url, vault).header(reqwest::header::REFERER, referer);
         let text = tokio::time::timeout(Duration::from_secs(15), async { full.send().await.ok()?.text().await.ok() }).await.ok()??;
         match super::hls::parse(&text, url) {
-            Ok(super::hls::Playlist::Master { variants, audio }) => {
+            Ok(super::hls::Playlist::Master { variants, audio, .. }) => {
                 answer.variants = variants.iter().map(|v| v.url.to_string()).chain(audio.iter().filter_map(|a| a.url.as_ref().map(|u| u.to_string()))).collect();
             }
             Ok(super::hls::Playlist::Media { segments, .. }) if segments.iter().any(|s| matches!(s.key, super::hls::Key::Protected(_))) => return None,

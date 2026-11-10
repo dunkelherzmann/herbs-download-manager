@@ -51,6 +51,8 @@ pub struct Settings {
     pub stream_quality: Option<u32>,
     /// S14: sound languages for streams with several sound tracks, in order; empty is the stream's own.
     pub sound_languages: Vec<String>,
+    /// S15: subtitle languages a stream's file keeps; empty for none, `*` for all the stream has.
+    pub subtitle_languages: Vec<String>,
 }
 
 impl Default for Settings {
@@ -69,6 +71,7 @@ impl Default for Settings {
             schedule: crate::schedule::Schedule::default(),
             stream_quality: None,
             sound_languages: Vec::new(),
+            subtitle_languages: Vec::new(),
         }
     }
 }
@@ -76,7 +79,12 @@ impl Default for Settings {
 impl Settings {
     /// What a stream added now downloads, unless it was chosen for it (S13, S14).
     pub fn stream_choice(&self) -> crate::media::StreamChoice {
-        crate::media::StreamChoice { quality: self.stream_quality, sound: self.sound_languages.clone(), sound_only: false }
+        crate::media::StreamChoice {
+            quality: self.stream_quality,
+            sound: self.sound_languages.clone(),
+            sound_only: false,
+            subtitles: self.subtitle_languages.clone(),
+        }
     }
 
     /// Brings every number into its allowed range, so a hand-edited settings file can't break a download.
@@ -92,6 +100,7 @@ impl Settings {
             *crate::media::QUALITIES.iter().min_by_key(|o| o.abs_diff(q)).unwrap_or(&1080)
         });
         self.sound_languages.retain(|l| !l.trim().is_empty());
+        self.subtitle_languages.retain(|l| !l.trim().is_empty());
         if self.speed_limit == Some(0) {
             self.speed_limit = None;
         }

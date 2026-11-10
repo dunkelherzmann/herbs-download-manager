@@ -67,6 +67,8 @@ pub struct Settings {
     pub stream_quality: Option<u32>,
     /// S14: sound languages in order; empty is the stream's own sound.
     pub sound_languages: Vec<String>,
+    /// S15: subtitle languages kept in a stream's file; empty for none, `*` for all.
+    pub subtitle_languages: Vec<String>,
 }
 
 impl From<settings::Settings> for Settings {
@@ -93,6 +95,7 @@ impl From<settings::Settings> for Settings {
             when_done: s.schedule.when_done.into(),
             stream_quality: s.stream_quality,
             sound_languages: s.sound_languages,
+            subtitle_languages: s.subtitle_languages,
         }
     }
 }
@@ -123,6 +126,7 @@ impl From<Settings> for settings::Settings {
             },
             stream_quality: s.stream_quality,
             sound_languages: s.sound_languages,
+            subtitle_languages: s.subtitle_languages,
         }
     }
 }

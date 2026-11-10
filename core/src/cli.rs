@@ -16,6 +16,7 @@ hdm controls Herb's Download Manager while it runs.
 
   hdm list [--filter all|downloading|paused|finished|unfinished] [--search TEXT] [--json]
   hdm add LINK… [--folder FOLDER] [--queue] [--quality highest|1080|720…] [--sound LANGUAGE] [--sound-only]
+                              [--subtitles LANGUAGE|all|none]
   hdm pause ID…
   hdm resume ID…
   hdm remove ID… [--delete-files]
@@ -26,7 +27,7 @@ hdm controls Herb's Download Manager while it runs.
 add starts the downloads now, or with --queue leaves them waiting in the queue; they go to the folder set in
 Settings unless --folder gives another. For a streamed video, --quality and --sound (a language code such as de)
 choose its quality and sound track instead of Settings', and --sound-only saves just its sound (.m4a, or .mp3),
-never re-encoded. remove takes downloads off the list and leaves their files, or with
+never re-encoded; --subtitles keeps a language's subtitles (or all, or none) in the file. remove takes downloads off the list and leaves their files, or with
 --delete-files moves the files to the Trash too. IDs are the numbers hdm list shows.
 ";
 
@@ -121,6 +122,7 @@ pub fn parse(args: &[String]) -> Result<(Request, bool), String> {
             "--quality" if r.command == "add" => r.quality = Some(value("--quality")?),
             "--sound" if r.command == "add" => r.sound = Some(value("--sound")?),
             "--sound-only" if r.command == "add" => r.sound_only = true,
+            "--subtitles" if r.command == "add" => r.subtitles = Some(value("--subtitles")?),
             "--delete-files" if r.command == "remove" => r.delete_files = true,
             flag if flag.starts_with("--") => return Err(format!("{} doesn't take {flag}", r.command)),
             word => words.push(word.to_string()),
@@ -216,6 +218,7 @@ fn tools() -> Value {
              "queue": {"type": "boolean", "description": "Leave them waiting in the queue instead of starting now"},
              "quality": {"type": "string", "description": "A streamed video's quality: highest, or the most lines such as 1080 or 720 (default: Settings')"},
              "sound": {"type": "string", "description": "A streamed video's sound language, such as en or de (default: Settings')"},
+             "subtitles": {"type": "string", "description": "A streamed video's subtitles to keep in the file: a language such as en, all, or none (default: Settings')"},
              "sound_only": {"type": "boolean", "description": "Save only a streamed video's sound (.m4a, or .mp3), never re-encoded"}}},
          "annotations": {"readOnlyHint": false, "destructiveHint": false, "openWorldHint": true}},
         {"name": "pause_downloads", "title": "Pause downloads", "description": "Pauses downloads, keeping what's downloaded.",
@@ -257,6 +260,7 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
             quality: text("quality"),
             sound: text("sound"),
             sound_only: flag("sound_only"),
+            subtitles: text("subtitles"),
             ..Default::default()
         },
         "pause_downloads" => Request { command: "pause".into(), ids: ids(), ..Default::default() },

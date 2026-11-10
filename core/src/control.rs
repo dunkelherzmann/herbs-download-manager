@@ -63,6 +63,8 @@ pub struct Request {
     pub quality: Option<String>,
     /// add, a stream: its sound language (`de`); absent takes Settings' (S14), empty is the stream's own sound.
     pub sound: Option<String>,
+    /// add, a stream: its subtitle language (`de`), `all`, or `none`; absent takes Settings' (S15).
+    pub subtitles: Option<String>,
     /// add, a stream: download only its sound (`.m4a`, or `.mp3`), never re-encoded.
     pub sound_only: bool,
     /// add, from the browser extension: a DASH manifest a page carries in its data (Facebook's reels) instead of a
@@ -559,7 +561,7 @@ pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
 
 /// A stream's quality and sound track from an add request, over Settings' (S13, S14); `None` when it gives neither.
 fn stream_choice(settings: &crate::settings::Settings, r: &Request) -> Result<Option<crate::media::StreamChoice>, String> {
-    if r.quality.is_none() && r.sound.is_none() && !r.sound_only {
+    if r.quality.is_none() && r.sound.is_none() && r.subtitles.is_none() && !r.sound_only {
         return Ok(None);
     }
     let mut choice = settings.stream_choice();
@@ -568,6 +570,13 @@ fn stream_choice(settings: &crate::settings::Settings, r: &Request) -> Result<Op
         choice.quality = match q.trim_end_matches(['p', 'P']) {
             "" | "highest" | "best" => None,
             n => Some(n.parse().ok().filter(|n| *n > 0).ok_or(format!("“{q}” isn't a quality: give highest, or lines such as 1080"))?),
+        };
+    }
+    if let Some(subs) = r.subtitles.as_deref().map(str::trim) {
+        choice.subtitles = match subs.to_ascii_lowercase().as_str() {
+            "" | "none" => Vec::new(),
+            "all" | "*" => vec!["*".into()],
+            code => vec![code.to_string()],
         };
     }
     if let Some(sound) = r.sound.as_deref().map(str::trim) {

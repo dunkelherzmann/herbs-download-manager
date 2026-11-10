@@ -315,7 +315,7 @@ pub fn open(ctx: &Ctx) {
 fn streams_group(ctx: &Ctx) -> adw::PreferencesGroup {
     let s = ctx.manager.settings();
     let group = adw::PreferencesGroup::builder().title("Streamed video")
-        .description("The browser extension can choose otherwise for each video").build();
+        .description("The browser extension can choose the quality and sound for each video").build();
     let qualities: Vec<Option<u32>> = std::iter::once(None).chain(hd_core::media::QUALITIES.iter().copied().map(Some)).collect();
     let names: Vec<String> = qualities.iter().map(|q| q.map(|q| format!("{q}p")).unwrap_or_else(|| "Highest".into())).collect();
     let quality = adw::ComboRow::builder().title("Video stream quality").subtitle("The best one up to this size, or the smallest when every one is bigger")
@@ -349,8 +349,35 @@ fn streams_group(ctx: &Ctx) -> adw::PreferencesGroup {
             manager.set_settings(s);
         });
     }
+    // S15: None, All, or a language (one not offered here shown as its code).
+    let mut sub_languages: Vec<(String, String)> = hd_core::media::LANGUAGES.iter().map(|(c, n)| (c.to_string(), n.to_string())).collect();
+    if let Some(first) = s.subtitle_languages.first().filter(|f| *f != "*" && !sub_languages.iter().any(|(c, _)| c == *f)) {
+        sub_languages.push((first.clone(), first.clone()));
+    }
+    let sub_names: Vec<&str> = ["None", "All"].into_iter().chain(sub_languages.iter().map(|(_, n)| n.as_str())).collect();
+    let subtitles = adw::ComboRow::builder().title("Subtitles").subtitle("Kept in the file as tracks a player can turn on")
+        .model(&gtk::StringList::new(&sub_names)).build();
+    subtitles.set_selected(match s.subtitle_languages.first().map(String::as_str) {
+        None => 0,
+        Some("*") => 1,
+        Some(code) => sub_languages.iter().position(|(c, _)| c == code).map(|i| i as u32 + 2).unwrap_or(0),
+    });
+    crate::explain_row(&subtitles, "Subtitles a streamed video's file keeps, as tracks a player can turn on: none, every language the stream has, or one language");
+    {
+        let manager = ctx.manager.clone();
+        subtitles.connect_selected_notify(move |row| {
+            let mut s = manager.settings();
+            s.subtitle_languages = match row.selected() as usize {
+                0 => Vec::new(),
+                1 => vec!["*".into()],
+                i => sub_languages.get(i - 2).map(|(c, _)| vec![c.clone()]).unwrap_or_default(),
+            };
+            manager.set_settings(s);
+        });
+    }
     group.add(&quality);
     group.add(&sound);
+    group.add(&subtitles);
     group
 }
 

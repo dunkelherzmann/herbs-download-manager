@@ -19,7 +19,8 @@
 //!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off),
 //!                                  keep-server-date (on, off), schedule-start and schedule-stop (+MINUTES from the
 //!                                  scheduler's now, HH:MM, or off), when-done (nothing, quit, sleep, shut-down),
-//!                                  stream-quality (highest, or lines such as 1080), sound-language (a code, or own)
+//!                                  stream-quality (highest, or lines such as 1080), sound-language (a code, or own),
+//!                                  subtitles (a code, all, or none)
 //! clock +SECONDS                   moves the scheduler's clock forward
 //! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
 //! expect ROW CHECK [VALUE]         file-size N, file-date SECONDS, sources N, status-contains TEXT,
@@ -163,6 +164,13 @@ impl Run<'_> {
                         s.stream_quality = if value == "highest" { None } else { Some(value.parse().map_err(|_| "highest or lines".to_string())?) }
                     }
                     "sound-language" => s.sound_languages = if value == "own" { Vec::new() } else { vec![value] },
+                    "subtitles" => {
+                        s.subtitle_languages = match value.as_str() {
+                            "none" => Vec::new(),
+                            "all" => vec!["*".into()],
+                            _ => vec![value],
+                        }
+                    }
                     _ => return Err(format!("no setting {key}")),
                 }
                 self.manager.set_settings(s);

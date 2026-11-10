@@ -164,10 +164,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Subtitles kept with the video:** a stream's subtitles in the preferred languages (a list in Settings) go into the MP4 as subtitle tracks, labelled with their language, without touching the picture or sound. *Requested 2026-11-10, from studying Video DownloadHelper.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Subtitles kept with the video:** a stream's subtitles in the preferred languages (a list in Settings) go into the MP4 as subtitle tracks, labelled with their language, without touching the picture or sound. *Requested 2026-11-10, from studying Video DownloadHelper.* Built in #81: Settings ▸ Subtitles (None, All, or a language), `hdm add --subtitles`; HLS WebVTT and DASH WebVTT files. Not yet: subtitles inside MP4 pieces (DASH `wvtt`/`stpp`).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Download only the sound** of a found video or stream, from the extension's list and the app: its sound track saved as it is (`.m4a`, or `.mp3`/`.aac` when that's what the site sends), never re-encoded (Video DownloadHelper turns it into MP3). A site can be set to always give sound only. *Requested 2026-11-10, from studying Video DownloadHelper.* Done for streams (HLS and DASH): the extension's **Sound Only** button (extension 1.6), "Only the sound" in New Download and Add Links, `hdm add --sound-only` and the MCP tool; done in #78. Left for later: a whole video file's sound (it needs an MP4 reader for whole files), HLS sound sent as bare `.aac` pieces, and the per-site setting, which goes with the per-site default action in the naming-rules entry below.
   - [x] Mac
   - [x] Linux

@@ -37,6 +37,8 @@ pub struct Manifest {
     pub protected: bool,
     /// A live presentation (`type="dynamic"`).
     pub live: bool,
+    /// Subtitles kept as whole WebVTT files: (language, address).
+    pub subtitles: Vec<(String, Url)>,
 }
 
 /// "PT1H2M3.5S" → seconds.
@@ -148,8 +150,20 @@ pub fn parse(text: &str, base: &Url) -> Result<Manifest, String> {
             .or_else(|| set.attribute("mimeType").and_then(|t| t.split('/').next()))
             .or_else(|| children(set, "Representation").find_map(|r| r.attribute("mimeType")).and_then(|t| t.split('/').next()))
             .unwrap_or("");
+        if kind == "text" {
+            // WebVTT as one file per language (its BaseURL); subtitles in MP4 pieces aren't read yet.
+            for rep in children(set, "Representation") {
+                let mime = rep.attribute("mimeType").or(set.attribute("mimeType")).unwrap_or("");
+                let has_base = child(rep, "BaseURL").is_some() || child(set, "BaseURL").is_some();
+                if mime == "text/vtt" && has_base {
+                    let language = set.attribute("lang").or(rep.attribute("lang")).unwrap_or("").to_string();
+                    m.subtitles.push((language, base_of(rep, &set_base)));
+                }
+            }
+            continue;
+        }
         if kind != "video" && kind != "audio" {
-            continue; // subtitles, pictures
+            continue; // pictures
         }
         let set_protected = child(set, "ContentProtection").is_some();
         for rep in children(set, "Representation") {

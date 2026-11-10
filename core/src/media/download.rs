@@ -205,6 +205,32 @@ pub async fn preview(client: &reqwest::Client, url: &str, vault: &crate::vault::
     Ok(Preview { mp4: mp4?, seconds })
 }
 
+/// Where a language's subtitles are: an HLS playlist of WebVTT pieces, or one WebVTT file (DASH).
+enum SubtitleSource {
+    Hls(Url),
+    File(Url),
+}
+
+/// Reads one language's subtitles: every WebVTT piece, its cues one after another.
+async fn fetch_subtitles(client: &reqwest::Client, language: &str, source: &SubtitleSource, vault: &crate::vault::Vault) -> Result<super::subtitles::Subtitles, String> {
+    let files = match source {
+        SubtitleSource::File(u) => vec![u.clone()],
+        SubtitleSource::Hls(list) => match hls::parse(&text(client, list, vault).await?, list)? {
+            Playlist::Media { segments, .. } => segments.into_iter().map(|s| s.url).collect(),
+            Playlist::Master { .. } => return Err("A subtitle playlist lists other playlists".into()),
+        },
+    };
+    let mut subs = super::subtitles::Subtitles { language: language.to_string(), cues: Vec::new(), offset: None };
+    for file in files {
+        let (cues, offset) = super::subtitles::parse_vtt(&text(client, &file, vault).await?)?;
+        subs.offset = subs.offset.or(offset);
+        subs.cues.extend(cues);
+    }
+    // Pieces repeat a cue that runs across their edge.
+    subs.cues.dedup();
+    Ok(subs)
+}
+
 /// One track of a stream: an HLS playlist, or pieces listed by a DASH manifest.
 enum Track {
     Hls(Url),
@@ -299,12 +325,25 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     let first = text(client, &url, &req.vault).await?;
     let mut playlists = Vec::new();
     let sound_only = req.choice.sound_only;
+    // S15's subtitles: (language, where they are).
+    let mut subtitle_sources: Vec<(String, SubtitleSource)> = Vec::new();
     if first.contains("<MPD") {
         playlists = dash_tracks(client, &url, &first, sound_only, &req.vault).await?;
+        if let Ok(m) = super::dash::parse(&first, &url) {
+            let languages: Vec<String> = m.subtitles.iter().map(|(l, _)| l.clone()).collect();
+            for i in super::subtitles::pick(&languages, &req.choice.subtitles) {
+                subtitle_sources.push((m.subtitles[i].0.clone(), SubtitleSource::File(m.subtitles[i].1.clone())));
+            }
+        }
     } else {
         match hls::parse(&first, &url)? {
             p @ Playlist::Master { .. } => {
                 let video = p.pick_variant(req.choice.quality).ok_or("The stream lists no quality to download")?.clone();
+                for r in p.subtitles_in(&video, &req.choice.subtitles) {
+                    if let Some(list) = &r.url {
+                        subtitle_sources.push((r.language.clone().unwrap_or_default(), SubtitleSource::Hls(list.clone())));
+                    }
+                }
                 let sound = p.audio_in(&video, &req.choice.sound).and_then(|r| r.url.clone());
                 match (sound_only, sound) {
                     // Sound only, as its own playlist: the picture's isn't fetched at all.
@@ -385,10 +424,19 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
         }
     }
 
-    // Every piece is in (or the recording ended): join them.
+    // Every piece is in (or the recording ended): join them, with the subtitles (a stream's, not a recording's, and
+    // never with sound only). A language whose subtitles can't be read is left out rather than failing the video.
     progress.finishing.store(true, Ordering::SeqCst);
+    let mut subtitles = Vec::new();
+    if !sound_only && !recording {
+        for (language, source) in &subtitle_sources {
+            if let Ok(s) = fetch_subtitles(client, language, source, &req.vault).await {
+                subtitles.push(s);
+            }
+        }
+    }
     let (dest2, parts2) = (dest.clone(), parts.clone());
-    let joined = tokio::task::spawn_blocking(move || join_parts(&sources, &inits, &keys, &parts2, &dest2, sound_only))
+    let joined = tokio::task::spawn_blocking(move || join_parts(&sources, &inits, &keys, &parts2, &dest2, sound_only, subtitles))
         .await
         .map_err(|e| format!("Joining the pieces stopped: {e}"))??;
     progress.size.store(std::fs::metadata(&joined).map(|m| m.len()).unwrap_or(0), Ordering::SeqCst);
@@ -563,6 +611,7 @@ fn join_parts(
     parts: &Path,
     dest: &Path,
     sound_only: bool,
+    subtitles: Vec<super::subtitles::Subtitles>,
 ) -> Result<PathBuf, String> {
     let read = |file: &str| std::fs::read(parts.join(file)).map_err(|e| format!("A piece is missing: {e}"));
     let decrypted = |s: &Segment, data: Vec<u8>| -> Result<Vec<u8>, String> {
@@ -584,6 +633,7 @@ fn join_parts(
         if sound_only {
             joiner.sound_only();
         }
+        joiner.subtitles(subtitles.clone());
         for (si, segments) in sources.iter().enumerate() {
             let source = joiner.source();
             let mut current_map = None;

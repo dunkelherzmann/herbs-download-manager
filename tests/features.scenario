@@ -158,3 +158,10 @@ feature Only the sound of a streamed video is saved
 add-sound-only f19 $L/clip/index.m3u8
 wait f19/clip.m4a finished 30
 expect f19/clip.m4a file-size 28293
+
+feature A stream keeps the subtitles chosen in Settings
+setting subtitles en
+add f20 start $L/subs/master.m3u8
+wait f20/subs.mp4 finished 30
+expect f20/subs.mp4 file-size 79326
+setting subtitles none

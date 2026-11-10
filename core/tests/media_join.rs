@@ -260,3 +260,65 @@ fn sound_only_of_a_stream_with_no_sound_says_so() {
     let err = joiner.finish(&dir.join("out.m4a")).unwrap_err();
     assert_eq!(err.to_string(), "This stream has no sound to save");
 }
+
+/// The subtitles a master offers for `languages`, read from their WebVTT files, as the download does.
+fn subtitles_of(url: &Url, languages: &[&str]) -> Vec<hd_core::media::subtitles::Subtitles> {
+    let text = String::from_utf8(read(url)).unwrap();
+    let p = hls::parse(&text, url).unwrap();
+    let video = p.best_variant().unwrap().clone();
+    let languages: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
+    p.subtitles_in(&video, &languages)
+        .into_iter()
+        .map(|r| {
+            let list = r.url.clone().unwrap();
+            let Playlist::Media { segments, .. } = hls::parse(&String::from_utf8(read(&list)).unwrap(), &list).unwrap() else { panic!() };
+            let mut subs = hd_core::media::subtitles::Subtitles { language: r.language.clone().unwrap_or_default(), cues: Vec::new(), offset: None };
+            for s in segments {
+                let (cues, offset) = hd_core::media::subtitles::parse_vtt(&String::from_utf8(read(&s.url)).unwrap()).unwrap();
+                subs.cues.extend(cues);
+                subs.offset = subs.offset.or(offset);
+            }
+            subs
+        })
+        .collect()
+}
+
+/// A subtitle track of `file` as SRT, by ffmpeg.
+fn srt(ffmpeg: &Path, file: &Path, index: usize) -> String {
+    let out = Command::new(ffmpeg).args(["-hide_banner", "-loglevel", "error", "-i"]).arg(file)
+        .args(["-map", &format!("0:s:{index}"), "-f", "srt", "-"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn subtitles_join_the_video_as_labelled_tracks() {
+    let dir = scratch("subs");
+    let master = Url::from_file_path(fixtures().join("subs/master.m3u8")).unwrap();
+    let mut joiner = Joiner::new(&dir.join("spool")).unwrap();
+    let text = String::from_utf8(read(&master)).unwrap();
+    let p = hls::parse(&text, &master).unwrap();
+    let video = p.best_variant().unwrap().clone();
+    add_playlist(&mut joiner, &video.url);
+    add_playlist(&mut joiner, p.audio_for(&video).unwrap().url.as_ref().unwrap());
+    let subs = subtitles_of(&master, &["de", "en"]);
+    assert_eq!(subs.iter().map(|s| s.language.as_str()).collect::<Vec<_>>(), ["de", "en"], "in S15's order; forced left out");
+    joiner.subtitles(subs);
+    let out = dir.join("joined.mp4");
+    joiner.finish(&out).unwrap();
+    let Some(ffmpeg) = ffmpeg() else {
+        eprintln!("no ffmpeg here: subtitles joined but not compared");
+        return;
+    };
+    let probe = Command::new(ffmpeg.with_file_name("ffprobe")).args(["-v", "error", "-show_entries", "stream=codec_name:stream_tags=language", "-of", "csv=p=0"])
+        .arg(&out).output().unwrap();
+    let streams = String::from_utf8_lossy(&probe.stdout).to_string();
+    assert_eq!(streams.lines().collect::<Vec<_>>(), ["h264,und", "aac,und", "mov_text,deu", "mov_text,eng"], "{streams}");
+    // English carries X-TIMESTAMP-MAP (MPEGTS 133200 is the picture's first time): cue 0.5 s shows 0.5 s into the
+    // picture, which starts 23 ms into the file, after the sound. (ffmpeg's own HLS reader isn't the reference here:
+    // it drops the first WebVTT piece and mistimes the second.)
+    let english = srt(&ffmpeg, &out, 1);
+    assert_eq!(english, "1\n00:00:00,523 --> 00:00:02,023\nHello, world\n\n2\n00:00:03,023 --> 00:00:05,023\nSecond line & more\n\n");
+    // German has no map: its times count from the stream's start.
+    assert_eq!(srt(&ffmpeg, &out, 0), "1\n00:00:01,000 --> 00:00:04,000\nHallo, Welt\n\n");
+}

@@ -79,6 +79,7 @@ const S_DAY: u16 = 93;
 const S_EXTENSION: u16 = 100;
 const S_STREAM_QUALITY: u16 = 101;
 const S_SOUND: u16 = 102;
+const S_SUBTITLES: u16 = 103;
 const S_CLOSE: u16 = 2;
 
 const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
@@ -514,7 +515,7 @@ pub fn settings(ctx: &Ctx) {
     let sign_ins = crate::signins::summary(ctx);
     let start_text = schedule::time_text(s.schedule.start.unwrap_or(60));
     let stop_text = schedule::time_text(s.schedule.stop.unwrap_or(7 * 60));
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 826), &[
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 860), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -552,19 +553,21 @@ pub fn settings(ctx: &Ctx) {
         (S_STREAM_QUALITY, w!("COMBOBOX"), "", combo_style, 190, 436, 160, 220),
         (0, w!("STATIC"), "Sound language:", LABEL, 12, 474, 170, 20),
         (S_SOUND, w!("COMBOBOX"), "", combo_style, 190, 470, 230, 320),
-        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 506, 340, 24),
-        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 534, 340, 24),
-        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 562, 340, 24),
-        (0, w!("STATIC"), "Server limits:", LABEL, 12, 598, 170, 20),
-        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 598, 250, 20),
-        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 592, 95, 28),
-        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 632, 170, 20),
-        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 632, 250, 20),
-        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 626, 95, 28),
-        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 666, 170, 20),
-        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 660, 190, 28),
-        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 694, 350, 72),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 782, 85, 30),
+        (0, w!("STATIC"), "Subtitles:", LABEL, 12, 508, 170, 20),
+        (S_SUBTITLES, w!("COMBOBOX"), "", combo_style, 190, 504, 230, 320),
+        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 540, 340, 24),
+        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 568, 340, 24),
+        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 596, 340, 24),
+        (0, w!("STATIC"), "Server limits:", LABEL, 12, 632, 170, 20),
+        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 632, 250, 20),
+        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 626, 95, 28),
+        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 666, 170, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 666, 250, 20),
+        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 660, 95, 28),
+        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 700, 170, 20),
+        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 694, 190, 28),
+        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 728, 350, 72),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 816, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -598,6 +601,7 @@ pub fn settings(ctx: &Ctx) {
         (S_MANAGE, "Manage sign-ins", "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"),
         (S_STREAM_QUALITY, "", "The quality a streamed video is downloaded in: the best one up to this size, or the smallest when every one is bigger. The browser extension can choose another for each video"),
         (S_SOUND, "", "For a stream with sound in several languages: the one to download. When the stream doesn't have it, its own sound is taken"),
+        (S_SUBTITLES, "", "Subtitles a streamed video's file keeps, as tracks a player can turn on: none, every language the stream has, or one language"),
         (S_CLOSE, "", "Close Settings; changes are already saved"),
     ]);
     with_win(hwnd, |w| {
@@ -623,6 +627,14 @@ pub fn settings(ctx: &Ctx) {
         let names: Vec<&str> = std::iter::once("The stream's own").chain(languages.iter().map(|(_, n)| n.as_str())).collect();
         let at = s.sound_languages.first().and_then(|f| languages.iter().position(|(c, _)| c == f)).map(|i| i + 1).unwrap_or(0);
         combo(w.controls[&S_SOUND], &names, at);
+        let subs = subtitle_languages(&s);
+        let names: Vec<&str> = ["None", "All"].into_iter().chain(subs.iter().map(|(_, n)| n.as_str())).collect();
+        let at = match s.subtitle_languages.first().map(String::as_str) {
+            None => 0,
+            Some("*") => 1,
+            Some(code) => subs.iter().position(|(c, _)| c == code).map(|i| i + 2).unwrap_or(0),
+        };
+        combo(w.controls[&S_SUBTITLES], &names, at);
         set_checked(w.controls[&S_START_ON], s.schedule.start.is_some());
         set_checked(w.controls[&S_STOP_ON], s.schedule.stop.is_some());
         for (d, on) in s.schedule.days.iter().enumerate() {
@@ -653,7 +665,16 @@ fn sound_languages(s: &Settings) -> Vec<(String, String)> {
     all
 }
 
-/// S13 and S14, each saved on its own when its list changes, so a hand-edited list of several sound languages
+/// S15's languages (code, name); a first one not offered (a hand-edited settings file) is added as its code.
+fn subtitle_languages(s: &Settings) -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = hd_core::media::LANGUAGES.iter().map(|(c, n)| (c.to_string(), n.to_string())).collect();
+    if let Some(first) = s.subtitle_languages.first().filter(|f| *f != "*" && !all.iter().any(|(c, _)| c == *f)) {
+        all.push((first.clone(), first.clone()));
+    }
+    all
+}
+
+/// S13, S14 and S15, each saved on its own when its list changes, so a hand-edited list of several sound languages
 /// survives other changes.
 fn save_stream_setting(hwnd: HWND, id: u16) {
     with_win(hwnd, |w| {
@@ -661,6 +682,12 @@ fn save_stream_setting(hwnd: HWND, id: u16) {
         let i = selection(w.controls[&id]);
         if id == S_STREAM_QUALITY {
             s.stream_quality = stream_qualities().get(i).copied().flatten();
+        } else if id == S_SUBTITLES {
+            s.subtitle_languages = match i {
+                0 => Vec::new(),
+                1 => vec!["*".into()],
+                i => subtitle_languages(&s).get(i - 2).map(|(c, _)| vec![c.clone()]).unwrap_or_default(),
+            };
         } else {
             s.sound_languages = if i == 0 { Vec::new() } else { sound_languages(&s).get(i - 1).map(|(c, _)| vec![c.clone()]).unwrap_or_default() };
         }
@@ -888,7 +915,7 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             let _ = EnableWindow(w.controls[&S_FORGET], false);
                         })),
                         S_UNIT | S_EXISTS | S_WHEN_DONE if code == CBN_SELCHANGE => save_settings(hwnd),
-                        S_STREAM_QUALITY | S_SOUND if code == CBN_SELCHANGE => save_stream_setting(hwnd, id),
+                        S_STREAM_QUALITY | S_SOUND | S_SUBTITLES if code == CBN_SELCHANGE => save_stream_setting(hwnd, id),
                         _ => {}
                     },
                     _ => {}

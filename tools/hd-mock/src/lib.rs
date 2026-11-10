@@ -441,6 +441,29 @@ pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServe
             b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n/hevc/index.m3u8\n\
               #EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\n/clip/index.m3u8\n".to_vec(),
         ));
+        // A stream with a separate sound track and subtitles (S15): core/tests/media/split and subs.
+        for (path, bytes) in [
+            ("/split/0.m3u8", &include_bytes!("../../../core/tests/media/split/0.m3u8")[..]),
+            ("/split/0_s0.ts", &include_bytes!("../../../core/tests/media/split/0_s0.ts")[..]),
+            ("/split/0_s1.ts", &include_bytes!("../../../core/tests/media/split/0_s1.ts")[..]),
+            ("/split/0_s2.ts", &include_bytes!("../../../core/tests/media/split/0_s2.ts")[..]),
+            ("/split/1.m3u8", &include_bytes!("../../../core/tests/media/split/1.m3u8")[..]),
+            ("/split/1_s0.ts", &include_bytes!("../../../core/tests/media/split/1_s0.ts")[..]),
+            ("/split/1_s1.ts", &include_bytes!("../../../core/tests/media/split/1_s1.ts")[..]),
+            ("/split/1_s2.ts", &include_bytes!("../../../core/tests/media/split/1_s2.ts")[..]),
+            ("/split/1_s3.ts", &include_bytes!("../../../core/tests/media/split/1_s3.ts")[..]),
+            ("/split/master.m3u8", &include_bytes!("../../../core/tests/media/split/master.m3u8")[..]),
+            ("/subs/de.m3u8", &include_bytes!("../../../core/tests/media/subs/de.m3u8")[..]),
+            ("/subs/de.vtt", &include_bytes!("../../../core/tests/media/subs/de.vtt")[..]),
+            ("/subs/en-forced.m3u8", &include_bytes!("../../../core/tests/media/subs/en-forced.m3u8")[..]),
+            ("/subs/en.m3u8", &include_bytes!("../../../core/tests/media/subs/en.m3u8")[..]),
+            ("/subs/en0.vtt", &include_bytes!("../../../core/tests/media/subs/en0.vtt")[..]),
+            ("/subs/en1.vtt", &include_bytes!("../../../core/tests/media/subs/en1.vtt")[..]),
+            ("/subs/forced.vtt", &include_bytes!("../../../core/tests/media/subs/forced.vtt")[..]),
+            ("/subs/master.m3u8", &include_bytes!("../../../core/tests/media/subs/master.m3u8")[..]),
+        ] {
+            server.put(path, MockFile::new(bytes.to_vec()));
+        }
         server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
         servers.push(server);
     }

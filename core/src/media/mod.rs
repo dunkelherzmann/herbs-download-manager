@@ -10,6 +10,7 @@ pub mod download;
 pub mod join;
 pub mod mp4;
 pub mod scan;
+pub mod subtitles;
 pub mod ts;
 
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -29,6 +30,9 @@ pub struct StreamChoice {
     /// Only the sound track is downloaded and saved as it is (`.m4a`, or `.mp3`): the picture is left out.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub sound_only: bool,
+    /// Subtitle languages to keep in the file (S15): empty for none, `*` for every one the stream has.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subtitles: Vec<String>,
 }
 
 /// A stream's file name when only its sound is saved: `.mp4` becomes `.m4a` (an `.mp3` name stays).
@@ -56,6 +60,8 @@ pub const LANGUAGES: [(&str, &str); 24] = [
 pub enum Kind {
     Video,
     Audio,
+    /// Subtitles (`tx3g`).
+    Text,
 }
 
 /// One frame of video or block of sound, its bytes kept in the spool file.

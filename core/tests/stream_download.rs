@@ -279,3 +279,38 @@ fn sound_only_downloads_just_the_sound_track() {
     assert!(!dir.join("files/song.m4a").exists());
     assert!(m.quit(Duration::from_secs(5)));
 }
+
+/// The language of each subtitle track (`sbtl` handler) in an MP4, as ffprobe would list them.
+fn subtitle_languages(mp4: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = mp4[at..].windows(4).position(|w| w == b"sbtl").map(|i| i + at) {
+        // mdhd comes before hdlr in mdia: its language is the 2 bytes after the version-1 duration.
+        let mdhd = mp4[..i].windows(4).rposition(|w| w == b"mdhd").unwrap();
+        let packed = u16::from_be_bytes([mp4[mdhd + 4 + 4 + 28], mp4[mdhd + 4 + 4 + 29]]);
+        out.push((0..3).rev().map(|k| (((packed >> (5 * k)) & 0x1f) as u8 + 0x60) as char).collect());
+        at = i + 4;
+    }
+    out
+}
+
+#[test]
+fn a_stream_keeps_the_subtitles_chosen_for_it() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    serve(&s, "split", None);
+    serve(&s, "subs", None);
+    let dir = folder("subtitles");
+    let m = Manager::open(&dir).unwrap();
+    let add = |name: &str, subtitles: &[&str]| {
+        let choice = hd_core::media::StreamChoice { subtitles: subtitles.iter().map(|l| l.to_string()).collect(), ..Default::default() };
+        let id = m.add(NewDownload { url: s.url("/subs/master.m3u8"), folder: dir.join("files"), name: Some(name.into()), connections: 4,
+                                     start: true, stream: true, choice: Some(choice), ..NewDownload::default() });
+        wait_for(&m, id, "finished", |s| *s == Status::Finished);
+        std::fs::read(dir.join("files").join(name)).unwrap()
+    };
+    assert_eq!(subtitle_languages(&add("none.mp4", &[])), Vec::<String>::new(), "S15's default: none");
+    assert_eq!(subtitle_languages(&add("en.mp4", &["en"])), ["eng"]);
+    assert_eq!(subtitle_languages(&add("all.mp4", &["*"])), ["eng", "deu"], "all, forced ones left out");
+    assert!(m.quit(Duration::from_secs(5)));
+}

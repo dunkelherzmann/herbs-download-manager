@@ -343,6 +343,7 @@ as long as one source stays on.
 | S12 | Keep the server's date for finished files | Off | the file gets the server's `Last-Modified` date instead of the time it finished |
 | S13 | Video stream quality | Highest | Highest, 2160p, 1440p, 1080p, 720p, 480p, 360p (§15) |
 | S14 | Sound language | The stream's own | the stream's own, or one of 24 languages, each named in its own language (§15) |
+| S15 | Subtitles | None | None, All, or one of the same 24 languages: the stream's subtitles kept in its file (§15) |
 
 Settings opens with ⌘, (Ctrl+, on Linux and Windows) as one window, and each change applies at once, with no OK
 button. They are kept in `settings.json` in the app's data folder, the same file on every platform; a missing or
@@ -351,7 +352,7 @@ the chosen folder is missing (a disk not plugged in), new downloads go to Downlo
 Download and Add Links pickers. S3 and S6 apply to every download from its next start. S4 and S5 apply at once to
 running downloads. S5 is shared by all downloads together, whatever their number of connections, and a download's
 own limit (§6 Options) applies on top of it. With S7 other than Ask, the question in §5.6 isn't asked and that
-answer is used. S8 arrives with checksum verification and isn't shown until then. S13 and S14 apply to streams added
+answer is used. S8 arrives with checksum verification and isn't shown until then. S13, S14 and S15 apply to streams added
 from then on: a stream keeps the quality and sound it was added with, so a paused one goes on with the same pieces.
 `settings.json` keeps S14 as a list of language codes in order; Settings shows and sets the first, and leaves a longer
 hand-written list alone until it's changed there.
@@ -446,7 +447,7 @@ Linux Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
 | Command | What it does |
 |---|---|
 | `hdm list [--filter all\|downloading\|paused\|finished\|unfinished] [--search TEXT] [--json]` | id, status, size, name and note; `--json` gives every field |
-| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE] [--sound-only]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14, and `--sound-only` saves just its sound (§15; a link that isn't a stream is refused); the MCP tool `add_downloads` takes `quality`, `sound` and `sound_only` the same way |
+| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE] [--sound-only] [--subtitles LANGUAGE|all|none]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14, `--subtitles` keeps a language's subtitles (or `all`, or `none`) instead of S15, and `--sound-only` saves just its sound (§15; a link that isn't a stream is refused); the MCP tool `add_downloads` takes `quality`, `sound`, `subtitles` and `sound_only` the same way |
 | `hdm pause ID…` · `hdm resume ID…` | as Pause and Resume |
 | `hdm remove ID… [--delete-files]` | takes downloads off the list; with `--delete-files` their files go to the Trash (Recycle Bin) |
 | `hdm note ID TEXT…` | sets the note (§4.1); empty text removes it |
@@ -614,6 +615,14 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   with an init section; byte ranges, AES-128 encryption and discontinuities are handled. Protected streams
   (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused with "This stream is protected (DRM): it can't be
   saved", never broken.
+- **Subtitles (S15):** a stream keeps the subtitles S15 asks for (or `hdm add --subtitles`, MCP `subtitles`) as
+  subtitle tracks in its MP4 (`tx3g`, which QuickTime, VLC, IINA and ffmpeg's mov_text read), each labelled with its
+  language (ISO 639-2, `eng`, `deu`), alternatives to each other and off until a player turns one on. The picture and
+  sound are untouched. HLS: the variant's SUBTITLES group, WebVTT pieces, one track per language, forced subtitles
+  (signs only) left out; X-TIMESTAMP-MAP places cues on the picture's clock, and cues without it count from the
+  stream's start. DASH: WebVTT kept as one file per language (subtitles inside MP4 pieces aren't read yet). Cues
+  lose WebVTT's markup and styling; overlapping ones show on separate lines. A language whose subtitles can't be read
+  is left out without failing the video; live recordings and sound only keep none.
 - **Sound only:** a stream added with Only the sound (New Download A7, Add Links, the extension's **Sound Only**,
   `hdm add --sound-only`) downloads just its sound track and saves it as it came, never re-encoded: AAC as an `.m4a`
   file (MP4 with no picture), MP3 as an `.mp3` file (its frames one after the other). The name ends in `.m4a` from
