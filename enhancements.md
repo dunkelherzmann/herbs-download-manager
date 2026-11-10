@@ -152,10 +152,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Resume with nothing selected starts the downloads waiting in the queue,** instead of doing nothing. *Requested 2026-11-10* (the toolbar's ▶ was greyed out with no row highlighted).
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Resume with nothing selected starts the downloads waiting in the queue,** instead of doing nothing: oldest first, no more at once than Downloads at once (S4) allows, as Start Queue does (paused ones stay paused). *Requested 2026-11-10, again 2026-11-10* (the toolbar's ▶ was greyed out with no row highlighted). Feature test "Resume with nothing selected starts the waiting downloads, oldest first".
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **More detail on the media the browser extension finds,** as Video DownloadHelper shows it: a picture from the video, its length, its format and quality (each HLS quality listed to choose from: format, size in pixels, bit rate), a name that can be changed before downloading, and a Download button; the same stream listed once. *Requested 2026-11-10, with pictures of DownloadHelper's list.*
   - [ ] Mac
   - [ ] Linux
@@ -204,4 +204,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-
+- [x] **The browser extension offers Add to Queue and Download Now:** buttons under every item in its list, and both choices in the right-click menus (a link's, and each of "media on this page"). *Requested 2026-11-10.* Extension 1.12.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

@@ -29,7 +29,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         Button(id: "newDownload", label: "New Download", symbol: "link.badge.plus",
                help: "New Download: add a link to download (⌘N)", action: #selector(newDownload(_:))),
         Button(id: "resume", label: "Resume", symbol: "play.fill",
-               help: "Resume: continue the selected downloads (⌘R)", action: #selector(resumeSelected(_:))),
+               help: "Resume: continue the selected downloads, or with none selected start the waiting ones (⌘R)", action: #selector(resumeSelected(_:))),
         Button(id: "pause", label: "Pause", symbol: "pause.fill",
                help: "Pause: stop the selected downloads, keeping what's downloaded (⌘.)", action: #selector(pauseSelected(_:))),
         Button(id: "startQueue", label: "Start Queue", symbol: "text.line.first.and.arrowtriangle.forward",
@@ -231,7 +231,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         let selected = targets
         let rows = AppModel.shared.rows
         switch action {
-        case #selector(resumeSelected(_:)): return selected.contains { $0.status.canResume }
+        case #selector(resumeSelected(_:)):
+            // With nothing selected, ▶ starts what is waiting in the queue (oldest first).
+            if selected.isEmpty { return !AppModel.shared.queueRunning && rows.contains { $0.status.isWaiting } }
+            return selected.contains { $0.status.canResume }
         case #selector(pauseSelected(_:)): return selected.contains { $0.status.isRunning }
         case #selector(restartSelected(_:)): return !selected.isEmpty
         case #selector(stopAll(_:)): return rows.contains { $0.status.isRunning } || AppModel.shared.queueRunning
@@ -427,7 +430,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         confirmPause(running) { AppModel.shared.pause(running.map(\.id)) }
     }
 
+    /// Resume (⌘R): the selected downloads continue; with none selected, the waiting ones start as Start Queue does,
+    /// oldest first, no more at once than "Downloads at once" allows.
     @objc func resumeSelected(_ sender: Any?) {
+        if targets.isEmpty { return startQueue(sender) }
         AppModel.shared.resume(targets.filter { $0.status.canResume }.map(\.id))
     }
 

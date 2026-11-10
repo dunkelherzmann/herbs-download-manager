@@ -97,15 +97,25 @@ test("the list's order: Smart, Oldest and Newest", async () => {
   assert.equal(await order("newest"), "7 6 5 4 3 2 1");
 });
 
-test("the right-click menu lists the active tab's media, and choosing one adds it", async () => {
+test("the right-click menu lists the active tab's media, each to add to the queue or download now", async () => {
   const b = load({ tabs: [PAGE] });
   await b.chrome.storage.session.set({ "media-1": [{ url: "https://cdn.example.com/v/master.m3u8", kind: "stream", seen: 1, hidden: false, size: 0, qualities: [{ lines: 720 }] }] });
   await b.get("refreshMenu")();
   assert.equal(b.menus.get("hdm-media-0").title, "Song | Band · Video stream · 720p");
-  b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-media-0" }, PAGE);
+  assert.equal(b.menus.get("hdm-media-0-queue").title, "Add to Queue");
+  assert.equal(b.menus.get("hdm-media-0-now").title, "Download Now");
+  b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-media-0-queue" }, PAGE);
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(b.sent.length, 1);
   assert.deepEqual([b.sent[0].urls[0], b.sent[0].stream, b.sent[0].name, b.sent[0].queue], ["https://cdn.example.com/v/master.m3u8", true, "Song | Band.mp4", true]);
+  b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-media-0-now" }, PAGE);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(b.sent[1].queue, false, "Download Now starts it at once");
+  // A link: Download Now, or Add to Queue.
+  b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-link-queue", linkUrl: "https://www.example.com/a.zip", pageUrl: PAGE.url }, PAGE);
+  b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-link", linkUrl: "https://www.example.com/b.zip", pageUrl: PAGE.url }, PAGE);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(b.sent.slice(2).map((m) => [m.urls[0], m.queue === true]), [["https://www.example.com/a.zip", true], ["https://www.example.com/b.zip", false]]);
 });
 
 test("a site's naming rule names what's added, gives its sub-folder, and says what a click does", async () => {

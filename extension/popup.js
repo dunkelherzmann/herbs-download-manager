@@ -213,7 +213,8 @@ function thumbnail(tab, item, streamed) {
   return box;
 }
 
-// One item: its name, what it is (kind, size, site), and a click that adds it to the queue.
+// One item: its name, what it is (kind, size, site), a click that adds it to the queue, and Add to Queue and
+// Download Now buttons under it.
 function row(tab, item, label, facts) {
   const li = document.createElement("li");
   const pick = item.kind === "stream" ? pickers(item) : { box: null, chosen: () => ({}) };
@@ -234,17 +235,18 @@ function row(tab, item, label, facts) {
   if (streamed || item.kind === "video") button.append(thumbnail(tab, item, streamed));
   button.append(words);
   button.title = item.url || label;
-  let soundOnly = null;
-  // Adds it (`extra`: sound only), and says how that went in the item's second line.
+  // Everything that adds it, disabled while it is being added.
+  const controls = [button];
+  const enable = (on) => controls.forEach((c) => { c.disabled = !on; });
+  // Adds it (`extra`: start at once, sound only, a name), and says how that went in the item's second line.
   const add = async (extra) => {
-    button.disabled = true;
-    if (soundOnly) soundOnly.disabled = true;
+    enable(false);
     detail.className = "detail";
     detail.textContent = "Adding…";
     const answer = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen(), ...extra });
     if (answer && answer.ok) {
       detail.className = "detail ok";
-      detail.textContent = "Added to the queue";
+      detail.textContent = extra.start ? "Downloading" : "Added to the queue";
     } else if (answer && answer.not_running) {
       // The app isn't open: offer to open it, then download this at once.
       detail.className = "detail";
@@ -254,7 +256,7 @@ function row(tab, item, label, facts) {
         const opened = await ask({ type: "open" });
         if (!(opened && opened.ok)) return opened;
         detail.textContent = "Adding…";
-        const added = await ask({ type: "add", tabId: tab.id, item, start: true, ...pick.chosen(), ...extra });
+        const added = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen(), ...extra, start: true });
         if (added && added.ok) {
           detail.className = "detail ok";
           detail.textContent = "Downloading";
@@ -264,8 +266,7 @@ function row(tab, item, label, facts) {
     } else {
       detail.className = "detail bad";
       detail.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
-      button.disabled = false;
-      if (soundOnly) soundOnly.disabled = false;
+      enable(true);
     }
   };
   // A click does what the site's rule says: add it, ask for a name first, take only the sound, or copy the address.
@@ -277,15 +278,17 @@ function row(tab, item, label, facts) {
     sound: `Add only the sound of ${label} to the queue`,
     copy: `Copy the address of ${label}`,
   }[action] || `Add ${label} to the queue`);
-  button.onclick = async () => {
-    if (action === "sound") return add({ soundOnly: true });
+  // What a click does (`start`: Download Now rather than Add to Queue).
+  const choose = async (start) => {
+    const when = start ? { start: true } : {};
+    if (action === "sound") return add({ ...when, soundOnly: true });
     if (action === "copy") {
       await navigator.clipboard.writeText(item.url).catch(() => {});
       detail.className = "detail ok";
       detail.textContent = "Address copied";
       return;
     }
-    if (action !== "ask") return add({});
+    if (action !== "ask") return add(when);
     // A name first: the one it would get, to change, then Add.
     if (li.querySelector(".naming")) return;
     const { name: proposed } = await ask({ type: "name", tabId: tab.id, item });
@@ -295,7 +298,7 @@ function row(tab, item, label, facts) {
     field.value = proposed || "";
     field.setAttribute("aria-label", "Name to save it under");
     const ok = document.createElement("button");
-    ok.textContent = "Add";
+    ok.textContent = start ? "Download" : "Add";
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = "Cancel";
@@ -304,13 +307,33 @@ function row(tab, item, label, facts) {
     form.onsubmit = (e) => {
       e.preventDefault();
       form.remove();
-      add({ name: field.value.trim() || proposed });
+      add({ ...when, name: field.value.trim() || proposed });
     };
     button.after(form);
     field.focus();
     field.setSelectionRange(0, Math.max(0, field.value.lastIndexOf(".")));
   };
+  button.onclick = () => choose(false);
   li.append(button);
+  // Add to Queue waits its turn (or starts when the queue runs); Download Now starts it at once.
+  if (action !== "copy") {
+    const choices = document.createElement("div");
+    choices.className = "choices";
+    for (const [text, start, help] of [
+      ["Add to Queue", false, `Add ${label} to the queue`],
+      ["Download Now", true, `Download ${label} now`],
+    ]) {
+      const b = document.createElement("button");
+      b.textContent = text;
+      if (start) b.className = "now";
+      b.title = start ? "Start downloading it now" : "Add it to the queue, to download in its turn";
+      b.setAttribute("aria-label", help);
+      b.onclick = () => choose(start);
+      controls.push(b);
+      choices.append(b);
+    }
+    li.append(choices);
+  }
   // A streamed video's sound alone, as the site sends it (never re-encoded).
   let box = pick.box;
   // (A page's video known to have no sound gets none.)
@@ -319,12 +342,13 @@ function row(tab, item, label, facts) {
       box = document.createElement("div");
       box.className = "pickers";
     }
-    soundOnly = document.createElement("button");
+    const soundOnly = document.createElement("button");
     soundOnly.className = "sound-only";
     soundOnly.textContent = "Sound Only";
     soundOnly.title = "Add only its sound to the queue (.m4a, or .mp3), as the site sends it";
     soundOnly.setAttribute("aria-label", `Add only the sound of ${label} to the queue`);
     soundOnly.onclick = () => add({ soundOnly: true });
+    controls.push(soundOnly);
     box.append(soundOnly);
   }
   if (box) li.append(box);

@@ -78,16 +78,19 @@ api.downloads.onCreated.addListener(async (item) => {
   }
 });
 
-// Right-click a link: Download with Herb's Download Manager.
+// Right-click a link: download it now with Herb's Download Manager, or add it to the queue.
 async function makeMenu() {
   await api.contextMenus.removeAll();
-  api.contextMenus.create({ id: "hdm-link", title: `Download with ${NAME}`, contexts: ["link", "image", "video", "audio"] });
+  const contexts = ["link", "image", "video", "audio"];
+  api.contextMenus.create({ id: "hdm-link", title: `Download Now with ${NAME}`, contexts });
+  api.contextMenus.create({ id: "hdm-link-queue", title: `Add to Queue in ${NAME}`, contexts });
 }
 api.runtime.onInstalled.addListener(() => { makeMenu(); showState(); applyPanel(); });
 api.runtime.onStartup.addListener(() => { makeMenu(); showState(); applyPanel(); });
 
 api.contextMenus.onClicked.addListener(async (info) => {
-  const pick = /^hdm-media-(\d+)$/.exec(String(info.menuItemId));
+  // A listed item's Download Now (…-now) or Add to Queue (…-queue).
+  const pick = /^hdm-media-(\d+)-(now|queue)$/.exec(String(info.menuItemId));
   if (pick) {
     const chosen = menuItems[Number(pick[1])];
     if (!chosen) return;
@@ -98,14 +101,14 @@ api.contextMenus.onClicked.addListener(async (info) => {
       await api.scripting.executeScript({ target: { tabId: chosen.tab.id }, func: (t) => navigator.clipboard.writeText(t), args: [chosen.item.url] }).catch(() => {});
       return;
     }
-    const answer = await addItem(chosen.tab, chosen.item, { soundOnly: action === "sound" });
+    const answer = await addItem(chosen.tab, chosen.item, { soundOnly: action === "sound", start: pick[2] === "now" });
     if (!(answer && answer.ok)) await tell((answer && answer.error) || `${NAME} didn't answer.`);
     return;
   }
-  if (info.menuItemId !== "hdm-link") return;
+  if (info.menuItemId !== "hdm-link" && info.menuItemId !== "hdm-link-queue") return;
   const url = info.linkUrl || info.srcUrl;
   if (!web(url)) return;
-  const answer = await send(url, info.pageUrl);
+  const answer = await send(url, info.pageUrl, info.menuItemId === "hdm-link-queue" ? { queue: true } : {});
   if (!(answer && answer.ok)) await tell((answer && answer.error) || `${NAME} didn't answer.`);
 });
 
@@ -615,7 +618,7 @@ async function listed(tabId, tab, order, page = true) {
 }
 
 // The right-click menu's list of the active tab's media, in the list's order (its first 20; videos a page carries in
-// its data are read only when the list opens, so they aren't here): choosing one adds it to the queue.
+// its data are read only when the list opens, so they aren't here): each one's Download Now or Add to Queue.
 let menuItems = [];
 async function refreshMenu() {
   if (!api.contextMenus) return;
@@ -632,6 +635,8 @@ async function refreshMenu() {
     const kind = { stream: "Video stream", dash: "Video stream", "page-dash": "Video", video: "Video", audio: "Sound" }[item.kind] || "File";
     const quality = item.quality || (item.qualities && item.qualities[0] ? `${item.qualities[0].lines}p` : "");
     api.contextMenus.create({ id: `hdm-media-${i}`, parentId: "hdm-media", title: [name.slice(0, 60), kind, quality].filter(Boolean).join(" · "), contexts });
+    api.contextMenus.create({ id: `hdm-media-${i}-now`, parentId: `hdm-media-${i}`, title: "Download Now", contexts });
+    api.contextMenus.create({ id: `hdm-media-${i}-queue`, parentId: `hdm-media-${i}`, title: "Add to Queue", contexts });
   });
 }
 

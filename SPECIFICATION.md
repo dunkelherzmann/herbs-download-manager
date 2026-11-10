@@ -95,7 +95,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | Id | Button | Hover text | Shortcut (macOS / Linux, Windows) |
 |---|---|---|---|
 | T1 | New Download | "New Download: add a link to download" | ⌘N / Ctrl+N |
-| T2 | Resume | "Resume: continue the selected downloads" | ⌘R / Ctrl+R |
+| T2 | Resume. With nothing selected it starts the waiting downloads as Start Queue does (oldest first, no more at once than S4) | "Resume: continue the selected downloads, or with none selected start the waiting ones" | ⌘R / Ctrl+R |
 | T3 | Pause | "Pause: stop the selected downloads, keeping what's downloaded" | ⌘. / Ctrl+. |
 | T4 | Start Queue | "Start Queue: download waiting items one after another" | ⇧⌘R / Ctrl+Shift+R |
 | T5 | Stop Queue | "Stop Queue: stop starting new items from the queue" | — |
@@ -474,9 +474,10 @@ downloads to the app. The browser keeps a download the app doesn't take.
   shows "!" with the reason in its hover text for 15 seconds: the app isn't running, isn't set up for this browser,
   or the server refused it.
 - Private (incognito) windows' downloads stay in the browser.
-- Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**. Right-clicking
-  a page whose tab played media also offers **Herb's Download Manager: media on this page**, listing them (up to 20,
-  in the list's order, as "name · kind · quality"); choosing one adds it to the queue as the list would.
+- Right-clicking a link, picture, video or sound offers **Download Now with Herb's Download Manager** (started at
+  once) and **Add to Queue in Herb's Download Manager**. Right-clicking a page whose tab played media also offers
+  **Herb's Download Manager: media on this page**, listing them (up to 20, in the list's order, as "name · kind ·
+  quality"), each with **Download Now** and **Add to Queue**, as the list's buttons.
 - **Naming Rules** (the list's **Naming Rules…** button, or the extension's options page) sets, per site, how its
   videos and sounds are named and saved and what a click in the list does. A rule's site covers its subdomains, and
   the most particular rule wins (video.example.com over example.com). Each rule has: **Name**, a pattern with
@@ -712,7 +713,9 @@ cookies: the first whole picture of its smallest quality's first piece, as a tin
 the playlist or manifest (none for a live stream). Three are made at a time and kept while the browser runs. A whole
 video file's picture and length are read by the browser. A video that can't be previewed (a DASH quality kept as one
 file with no index, a protected or broken stream) keeps an empty box; sounds have none.
-Every stream also has a **Sound Only** button there, which adds just its sound (see Sound only above). A stream is named after
+Every item has **Add to Queue** and **Download Now** buttons under it (a click on the item itself adds it to the
+queue, or does what its site's rule says; Download Now starts it at once, says "Downloading", and with Ask for a name
+first its field's button says Download). Every stream also has a **Sound Only** button there, which adds just its sound (see Sound only above). A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
   media extension. A file a player fetches in pieces by byte range in its address (`bytestart`, `byteend`,
   `range`) is never listed (one such piece was a reel's fragments without its beginning or sound). When the list

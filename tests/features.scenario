@@ -49,6 +49,20 @@ wait q/sum.bin finished 30
 do stop-queue
 setting downloads-at-once 3
 
+feature Resume with nothing selected starts the waiting downloads, oldest first
+setting downloads-at-once 1
+add r queue $L/slow.bin
+add r queue $L/small.bin
+wait r/slow.bin waiting 5
+wait r/small.bin waiting 5
+do resume
+wait r/slow.bin running 10
+expect r/small.bin status-contains Waiting
+wait r/small.bin finished 120
+wait r/slow.bin finished 1
+do stop-queue
+setting downloads-at-once 3
+
 feature A checksum file next to the link
 add f6 start $L/sum.bin
 wait f6/sum.bin finished 30

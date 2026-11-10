@@ -188,7 +188,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         tool("media-seek-forward-symbolic", "start-queue", "Start Queue", "Start Queue: download waiting items one after another (Ctrl+Shift+R)").upcast(),
         separator().upcast(),
         tool("media-playback-pause-symbolic", "pause", "Pause", "Pause: stop the selected downloads, keeping what's downloaded (Ctrl+.)").upcast(),
-        tool("media-playback-start-symbolic", "resume", "Resume", "Resume: continue the selected downloads (Ctrl+R)").upcast(),
+        tool("media-playback-start-symbolic", "resume", "Resume", "Resume: continue the selected downloads, or with none selected start the waiting ones (Ctrl+R)").upcast(),
         separator().upcast(),
         tool("list-add-symbolic", "new-download", "New Download", "New Download: add a link to download (Ctrl+N)").upcast(),
     ];
@@ -494,7 +494,8 @@ fn enable(window: &adw::ApplicationWindow, selected: &[Row], rows: &[Row]) {
     let running = selected.iter().any(|r| r.status.is_running());
     let resumable = selected.iter().any(|r| matches!(r.status, Status::Waiting | Status::Paused | Status::Failed(_)));
     let unfinished = selected.iter().any(|r| r.status != Status::Finished);
-    set("resume", resumable);
+    // With nothing selected, Resume starts what is waiting in the queue (oldest first).
+    set("resume", resumable || (selected.is_empty() && rows.iter().any(|r| r.status == Status::Waiting)));
     set("pause", running);
     set("restart", unfinished);
     set("stop-all", rows.iter().any(|r| r.status.is_running()));
@@ -545,7 +546,10 @@ fn add_actions(
             }));
         }};
     }
-    on!("resume", &["<Control>r"], |ui| ui.manager.resume(&ids(&ui)));
+    on!("resume", &["<Control>r"], |ui| {
+        let ids = ids(&ui);
+        if ids.is_empty() { ui.manager.start_queue() } else { ui.manager.resume(&ids) }
+    });
     on!("pause", &["<Control>period"], |ui| ui.manager.pause(&ids(&ui)));
     on!("restart", &[], |ui| ui.manager.restart(&ids(&ui)));
     on!("start-queue", &["<Control><Shift>r"], |ui| ui.manager.start_queue());

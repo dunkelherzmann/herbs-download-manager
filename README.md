@@ -43,7 +43,7 @@ claude mcp add herbs-download-manager -- "/Applications/Herb's Download Manager.
 
 The extension in `extension/` hands Chrome's, Edge's, Brave's, Vivaldi's and Firefox's downloads to the app, with the
 browser's cookies for them; the browser keeps any download the app doesn't take (it isn't running, or the link doesn't
-work for it). Right-click a link for **Download with Herb's Download Manager**; the toolbar button turns it off and on.
+work for it). Right-click a link for **Download Now** or **Add to Queue**; the toolbar button turns it off and on.
 
 The app registers itself with the browsers each time it opens. To load the extension, open Settings ▸ Browser
 extension ▸ **Show Extension Folder**, then:

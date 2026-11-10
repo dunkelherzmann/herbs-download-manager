@@ -101,6 +101,8 @@ impl Run<'_> {
                 let command = arg(1)?;
                 let (ids, rest) = match command.as_str() {
                     "start-queue" | "stop-queue" | "stop-all" => (vec![], &words[2..]),
+                    // Resume with nothing selected (starts the waiting downloads).
+                    "resume" if words.len() == 2 => (vec![], &words[2..]),
                     // The app sees the queue is done within half a second; give it time to ask.
                     "cancel-when-done" => {
                         let until = Instant::now() + Duration::from_secs(10);

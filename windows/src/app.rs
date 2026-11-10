@@ -109,7 +109,7 @@ const COLUMN_ORDER: [i32; 11] = [0, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const TOOLS: [(u16, char, &str, &str); 14] = [
     (C_NEW, '\u{E710}', "New Download", "New Download: add a link to download (Ctrl+N)"),
     (0, ' ', "", ""),
-    (C_RESUME, '\u{E768}', "Resume", "Resume: continue the selected downloads (Ctrl+R)"),
+    (C_RESUME, '\u{E768}', "Resume", "Resume: continue the selected downloads, or with none selected start the waiting ones (Ctrl+R)"),
     (C_PAUSE, '\u{E769}', "Pause", "Pause: stop the selected downloads, keeping what's downloaded (Ctrl+.)"),
     (0, ' ', "", ""),
     (C_START_QUEUE, '\u{E893}', "Start Queue", "Start Queue: download waiting items one after another (Ctrl+Shift+R)"),
@@ -836,6 +836,8 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
     let unfinished = selected.iter().any(|r| r.status != Status::Finished);
     match id {
         _ if LATER.contains(&id) => false,
+        // With nothing selected, Resume starts what is waiting in the queue (oldest first).
+        C_RESUME if selected.is_empty() => rows.iter().any(|r| r.status == Status::Waiting),
         C_RESUME => selected.iter().any(|r| matches!(r.status, Status::Waiting | Status::Paused | Status::Failed(_))),
         C_PAUSE => selected.iter().any(|r| r.status.is_running()),
         C_RESTART => unfinished,
@@ -1219,6 +1221,7 @@ fn command(hwnd: HWND, id: u16) {
                     crate::detail::settings(&ctx);
                 }
             }
+            C_RESUME if ids.is_empty() => drop(with(|s| s.manager.start_queue())),
             C_RESUME => drop(with(|s| s.manager.resume(&ids))),
             C_PAUSE => drop(with(|s| s.manager.pause(&ids))),
             C_RESTART => drop(with(|s| s.manager.restart(&ids))),

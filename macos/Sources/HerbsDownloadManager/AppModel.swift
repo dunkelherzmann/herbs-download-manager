@@ -239,6 +239,7 @@ extension DownloadStatus {
     }
 
     var isFinished: Bool { if case .finished = self { true } else { false } }
+    var isWaiting: Bool { if case .waiting = self { true } else { false } }
 }
 
 /// The message of an error from the core ("404 Not Found"), without the Swift wrapping.
