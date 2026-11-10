@@ -247,3 +247,27 @@ fn the_extension_adds_a_stream_by_its_type_named_after_its_page() {
     assert_eq!(&bytes[4..8], b"ftyp", "joined into an MP4 although its address had no .m3u8");
     assert!(m.quit(Duration::from_secs(5)));
 }
+
+#[test]
+fn a_naming_rules_subfolder_is_made_inside_the_save_folder() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    s.put("/song.mp3", MockFile::new(pattern(3000, 4)));
+    let dir = folder("subfolder");
+    let m = Manager::open(&dir).unwrap();
+    control::serve(&m, dir.join("files")).unwrap();
+    let mut out = Vec::new();
+    let message = json!({"command": "add", "urls": [s.url("/song.mp3")], "check": true, "name": "Band - Song.mp3",
+                         "subfolder": "../Music/Live"});
+    assert_eq!(cli::native(&mut framed(&[message]).as_slice(), &mut out, &dir), 0);
+    assert_eq!(unframed(&out)[0]["ok"], true, "{}", unframed(&out)[0]);
+    let id = m.rows()[0].id;
+    let until = Instant::now() + Duration::from_secs(30);
+    while m.rows()[0].status != hd_core::manager::Status::Finished {
+        assert!(Instant::now() < until, "never finished");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row.path.as_deref(), Some(dir.join("files/Music/Live/Band - Song.mp3").as_path()), "“..” can't leave the folder");
+    assert!(m.quit(Duration::from_secs(5)));
+}

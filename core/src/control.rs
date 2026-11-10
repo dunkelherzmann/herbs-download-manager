@@ -65,6 +65,8 @@ pub struct Request {
     pub sound: Option<String>,
     /// add, a stream: its subtitle language (`de`), `all`, or `none`; absent takes Settings' (S15).
     pub subtitles: Option<String>,
+    /// add: a sub-folder of the folder (`Music/Live`), made if need be; its parts are made safe and can't leave it.
+    pub subfolder: Option<String>,
     /// add, a stream: download only its sound (`.m4a`, or `.mp3`), never re-encoded.
     pub sound_only: bool,
     /// add, from the browser extension: a DASH manifest a page carries in its data (Facebook's reels) instead of a
@@ -240,6 +242,11 @@ fn save_manifest(manager: &Manager, text: &str) -> Result<String, String> {
 
 /// A name from a page's title made fit for a file: no folder separators or characters Windows refuses, at most 120
 /// characters.
+/// A sub-folder's parts, each made safe for a folder name; `.`, `..` and empty parts are left out, so it stays inside.
+fn subfolder_parts(text: &str) -> Vec<String> {
+    text.split(['/', '\\']).map(safe_name).filter(|p| !p.is_empty() && p != "." && p != "..").collect()
+}
+
 fn safe_name(name: &str) -> String {
     let clean: String = name.chars().map(|c| if "/\\:*?\"<>|".contains(c) || c.is_control() { ' ' } else { c }).collect();
     let words: Vec<&str> = clean.split_whitespace().collect();
@@ -398,6 +405,17 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                     }
                     f
                 }
+            };
+            // A naming rule's sub-folder (§13): inside the folder, whatever it says.
+            let folder = match r.subfolder.as_deref().map(subfolder_parts).filter(|p| !p.is_empty()) {
+                Some(parts) => {
+                    let f = parts.iter().fold(folder, |f, p| f.join(p));
+                    if let Err(e) = std::fs::create_dir_all(&f) {
+                        return Answer::error(format!("Can't use the folder {}: {e}", f.display()));
+                    }
+                    f
+                }
+                None => folder,
             };
             browser_sign_ins(manager, &r);
             if r.check {
@@ -588,6 +606,14 @@ fn stream_choice(settings: &crate::settings::Settings, r: &Request) -> Result<Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_subfolder_stays_inside_the_folder() {
+        assert_eq!(subfolder_parts("Music/Live"), ["Music", "Live"]);
+        assert_eq!(subfolder_parts("../../etc/./x:y"), ["etc", "x y"]);
+        assert_eq!(subfolder_parts(" / .. / "), Vec::<String>::new());
+        assert_eq!(subfolder_parts("a\\b"), ["a", "b"]);
+    }
 
     #[test]
     fn an_add_request_chooses_a_streams_quality_and_sound_over_settings() {

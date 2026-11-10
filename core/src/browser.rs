@@ -11,12 +11,16 @@ pub const FIREFOX_ID: &str = "hdm@herbsdownloadmanager.org";
 /// The extension's id in Chrome and its kin, fixed by the public key in its manifest.
 pub const CHROME_ID: &str = "clhikpnhhffblbcgfcpebhiholmchidg";
 
-const FILES: [(&str, &[u8]); 9] = [
+const FILES: [(&str, &[u8]); 13] = [
     ("manifest.json", include_bytes!("../../extension/manifest.json")),
     ("background.js", include_bytes!("../../extension/background.js")),
     ("popup.html", include_bytes!("../../extension/popup.html")),
     ("popup.js", include_bytes!("../../extension/popup.js")),
     ("popup.css", include_bytes!("../../extension/popup.css")),
+    ("naming.js", include_bytes!("../../extension/naming.js")),
+    ("options.html", include_bytes!("../../extension/options.html")),
+    ("options.js", include_bytes!("../../extension/options.js")),
+    ("options.css", include_bytes!("../../extension/options.css")),
     ("icons/icon-16.png", include_bytes!("../../extension/icons/icon-16.png")),
     ("icons/icon-32.png", include_bytes!("../../extension/icons/icon-32.png")),
     ("icons/icon-48.png", include_bytes!("../../extension/icons/icon-48.png")),
@@ -161,6 +165,20 @@ mod tests {
         let names: Vec<&str> = FILES.iter().map(|(n, _)| *n).collect();
         for named in [manifest["action"]["default_popup"].as_str().unwrap(), "popup.js", "popup.css"] {
             assert!(names.contains(&named), "{named} missing from FILES");
+        }
+        // And every file of the extension's folder: one left out would be missing from the copy the app writes.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../extension");
+        let mut stack = vec![root.clone()];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+                    assert!(names.contains(&name.as_str()), "extension/{name} isn't in FILES");
+                }
+            }
         }
     }
 

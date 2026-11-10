@@ -47,6 +47,8 @@ if (inPanel) document.body.classList.add("panel");
 
 // The items as last shown, so a refresh that changes nothing leaves the list (and its pickers) alone.
 let shownKey = "";
+// What a click on an item does on this site (its naming rule's action, §13).
+let siteAction = "download";
 
 async function show() {
   const tab = await currentTab();
@@ -56,6 +58,8 @@ async function show() {
   $("on").onchange = async () => {
     $("on").checked = (await ask({ type: "toggle", tabId: tab.id })).on;
   };
+  siteAction = state.action || "download";
+  $("rules").onclick = () => ask({ type: "rules", site: state.site }).then(() => window.close());
   $("order").value = state.order;
   $("order").onchange = async () => {
     await ask({ type: "set-order", order: $("order").value });
@@ -76,7 +80,7 @@ async function show() {
       $("again").textContent = "Look Again";
     }, 3000);
   };
-  const key = `${tab.id}|${state.order}|${state.items.map((i) => i.url || i.manifest.length).join("|")}`;
+  const key = `${tab.id}|${state.order}|${siteAction}|${state.items.map((i) => i.url || i.manifest.length).join("|")}`;
   if (key === shownKey) return;
   shownKey = key;
   const list = $("items");
@@ -262,8 +266,48 @@ function row(tab, item, label, facts) {
       if (soundOnly) soundOnly.disabled = false;
     }
   };
-  button.setAttribute("aria-label", `Add ${label} to the queue`);
-  button.onclick = () => add({});
+  // A click does what the site's rule says: add it, ask for a name first, take only the sound, or copy the address.
+  const streamedItem = ["stream", "dash", "page-dash"].includes(item.kind);
+  const action = siteAction === "sound" && !streamedItem ? "download" : siteAction === "copy" && !item.url ? "download" : siteAction;
+  button.setAttribute("aria-label", {
+    download: `Add ${label} to the queue`,
+    ask: `Name ${label}, then add it to the queue`,
+    sound: `Add only the sound of ${label} to the queue`,
+    copy: `Copy the address of ${label}`,
+  }[action] || `Add ${label} to the queue`);
+  button.onclick = async () => {
+    if (action === "sound") return add({ soundOnly: true });
+    if (action === "copy") {
+      await navigator.clipboard.writeText(item.url).catch(() => {});
+      detail.className = "detail ok";
+      detail.textContent = "Address copied";
+      return;
+    }
+    if (action !== "ask") return add({});
+    // A name first: the one it would get, to change, then Add.
+    if (li.querySelector(".naming")) return;
+    const { name: proposed } = await ask({ type: "name", tabId: tab.id, item });
+    const form = document.createElement("form");
+    form.className = "naming";
+    const field = document.createElement("input");
+    field.value = proposed || "";
+    field.setAttribute("aria-label", "Name to save it under");
+    const ok = document.createElement("button");
+    ok.textContent = "Add";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.onclick = () => form.remove();
+    form.append(field, ok, cancel);
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      form.remove();
+      add({ name: field.value.trim() || proposed });
+    };
+    button.after(form);
+    field.focus();
+    field.setSelectionRange(0, Math.max(0, field.value.lastIndexOf(".")));
+  };
   li.append(button);
   // A streamed video's sound alone, as the site sends it (never re-encoded).
   let box = pick.box;

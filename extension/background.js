@@ -3,6 +3,9 @@
 // doesn't take: when the app isn't open, the link doesn't work for it, or the window is private. It also notes the
 // videos and sounds each tab plays (§15), which the toolbar button's list (popup.js) adds to the app's queue.
 
+// The naming rules (naming.js): loaded first by Firefox from the manifest, here by Chrome's service worker.
+if (typeof nameByRule === "undefined" && typeof importScripts === "function") importScripts("naming.js");
+
 const api = globalThis.browser ?? chrome;
 const HOST = "org.herbsdownloadmanager.hdm";
 const NAME = "Herb's Download Manager";
@@ -87,7 +90,14 @@ api.contextMenus.onClicked.addListener(async (info) => {
   if (pick) {
     const chosen = menuItems[Number(pick[1])];
     if (!chosen) return;
-    const answer = await addItem(chosen.tab, chosen.item, {});
+    // The site's rule says what choosing it does; "ask" has no field here, so it adds under the rule's name.
+    const rule = ruleFor(await rulesSetting(), chosen.tab.url);
+    const action = (rule && rule.action) || "download";
+    if (action === "copy" && chosen.item.url) {
+      await api.scripting.executeScript({ target: { tabId: chosen.tab.id }, func: (t) => navigator.clipboard.writeText(t), args: [chosen.item.url] }).catch(() => {});
+      return;
+    }
+    const answer = await addItem(chosen.tab, chosen.item, { soundOnly: action === "sound" });
     if (!(answer && answer.ok)) await tell((answer && answer.error) || `${NAME} didn't answer.`);
     return;
   }
@@ -317,7 +327,21 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type === "state") {
       const tab = await api.tabs.get(message.tabId).catch(() => null);
       const order = await orderSetting();
-      reply({ on: await isOn(), items: await listed(message.tabId, tab, order), order, panel: await panelSetting(), panelOffered: !!api.sidePanel });
+      const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
+      reply({ on: await isOn(), items: await listed(message.tabId, tab, order), order, panel: await panelSetting(), panelOffered: !!api.sidePanel,
+              action: (rule && rule.action) || "download", site: tab && web(tab.url) ? new URL(tab.url).hostname.replace(/^www\./, "") : "" });
+    } else if (message.type === "name") {
+      // The name an item would get, for "Ask for a name first".
+      const tab = await api.tabs.get(message.tabId).catch(() => null);
+      const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
+      const item = message.item;
+      const last = decodeURIComponent(pathOf(item.url || "").split("/").pop() || "");
+      reply({ name: item.name || (rule ? await ruleName(rule, item, tab) : nameFor(item, tab && tab.title) || last || "video.mp4") });
+    } else if (message.type === "rules") {
+      // "Naming Rules…": the page opens on this site's rule.
+      if (message.site) await api.storage.local.set({ newRuleSite: message.site });
+      await api.runtime.openOptionsPage();
+      reply({ ok: true });
     } else if (message.type === "set-order") {
       await api.storage.local.set({ order: message.order });
       await refreshMenu();
@@ -392,8 +416,10 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
 // Adds a listed item to the app (from the list or the right-click menu): `message` carries start, quality, sound
 // and soundOnly.
 async function addItem(tab, item, message) {
-  // A file the app found on the page comes with its name; what the tab played is named here.
-  const name = item.name || nameFor(item, tab && tab.title);
+  // A file the app found on the page comes with its name; what the tab played is named here, by the site's rule when
+  // it has one, or as asked in the list.
+  const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
+  const name = message.name ? cleanName(message.name) : item.name || (rule ? await ruleName(rule, item, tab) : nameFor(item, tab && tab.title));
   // Added to the queue; right after opening the app ("Open and Download"), started at once.
   const options = { queue: !message.start, stream: ["stream", "dash", "page-dash"].includes(item.kind) || item.stream === true, name };
   // A stream's quality and sound chosen in the list (S13, S14 otherwise).
@@ -401,6 +427,8 @@ async function addItem(tab, item, message) {
   if (message.sound !== undefined) options.sound = message.sound;
   // Only its sound, saved as it is (.m4a, or .mp3).
   if (message.soundOnly && options.stream) options.sound_only = true;
+  // The rule's sub-folder, inside the folder Settings saves to.
+  if (rule && rule.folder) options.subfolder = rule.folder;
   let answer;
   if (item.kind === "page-dash") {
     // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.
@@ -413,6 +441,37 @@ async function addItem(tab, item, message) {
     answer = await send(item.url, tab && tab.url, options);
   }
   return answer || { ok: false, error: `${NAME} didn't answer.` };
+}
+
+// ---- naming rules (§13) -------------------------------------------------------------------------------------
+
+const rulesSetting = async () => (await api.storage.local.get({ rules: [] })).rules;
+
+// The extension a name gets: a stream's MP4, or the file's own (from its link, else its type).
+function extensionFor(item) {
+  if (["stream", "dash", "page-dash"].includes(item.kind)) return "mp4";
+  const last = decodeURIComponent(pathOf(item.url || "").split("/").pop() || "");
+  const own = /\.([a-z0-9]{2,5})$/i.exec(last);
+  if (own && MEDIA_EXT.test(last)) return own[1].toLowerCase();
+  return /webm/.test(item.mime || "") ? "webm" : item.kind === "audio" ? (/mpeg/.test(item.mime || "") ? "mp3" : "m4a") : "mp4";
+}
+
+// The name a site's rule gives an item, the selector's text read from the page when the pattern uses it.
+async function ruleName(rule, item, tab) {
+  let selected = "";
+  if (rule.selector && /%selector/.test(rule.pattern || "")) {
+    try {
+      const [result] = await api.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (selector) => (document.querySelector(selector)?.textContent || "").trim().slice(0, 300),
+        args: [rule.selector],
+      });
+      selected = (result && result.result) || "";
+    } catch {
+      selected = "";
+    }
+  }
+  return `${nameByRule(rule, { title: tab.title, url: tab.url, selected })}.${extensionFor(item)}`;
 }
 
 // ---- the list's order, the right-click menu and the side panel (§13, §15) -------------------------------------

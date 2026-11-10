@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Naming Rules · Herb's Download Manager</title>
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon-32.png" alt="" width="24" height="24">
+    <h1>Naming Rules</h1>
+  </header>
+  <p class="intro">How the videos and sounds a site plays are named and saved, and what a click in the list does there.
+    Without a rule, a video is named after its page's title.</p>
+  <div id="rules"></div>
+  <p id="none" class="dim" hidden>No rules yet.</p>
+  <button id="add" type="button">Add Rule</button>
+  <p class="dim help">In the name: <code>%title</code> the page's title, <code>%site</code> the site's name
+    (<code>youtube</code>), <code>%selector</code> the text of the page element the selector finds (such as
+    <code>h1</code> or <code>.channel-name</code>). The extension (<code>.mp4</code>, <code>.mp3</code>…) is added.</p>
+  <template id="rule">
+    <fieldset class="rule">
+      <div class="row"><label>Site <input name="site" placeholder="youtube.com" required></label>
+        <button type="button" class="remove" title="Delete this rule">Delete</button></div>
+      <div class="row"><label>Name <input name="pattern" placeholder="%title"></label></div>
+      <div class="row"><label>Selector <input name="selector" placeholder="h1"></label></div>
+      <div class="row"><label>Replace <textarea name="replace" rows="2" placeholder="Official Video => (one pair a line, with =>)"></textarea></label></div>
+      <div class="row two"><label>Longest name <input name="max" type="number" min="0" placeholder="no limit"></label>
+        <label>Sub-folder <input name="folder" placeholder="none"></label></div>
+      <div class="row"><label>A click in the list <select name="action"></select></label></div>
+      <p class="example dim"></p>
+    </fieldset>
+  </template>
+  <script src="naming.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

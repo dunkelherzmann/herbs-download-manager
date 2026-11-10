@@ -168,7 +168,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [x] **Download only the sound** of a found video or stream, from the extension's list and the app: its sound track saved as it is (`.m4a`, or `.mp3`/`.aac` when that's what the site sends), never re-encoded (Video DownloadHelper turns it into MP3). A site can be set to always give sound only. *Requested 2026-11-10, from studying Video DownloadHelper.* Done for streams (HLS and DASH): the extension's **Sound Only** button (extension 1.6), "Only the sound" in New Download and Add Links, `hdm add --sound-only` and the MCP tool; done in #78. Left for later: a whole video file's sound (it needs an MP4 reader for whole files), HLS sound sent as bare `.aac` pieces, and the per-site setting, which goes with the per-site default action in the naming-rules entry below.
+- [x] **Download only the sound** of a found video or stream, from the extension's list and the app: its sound track saved as it is (`.m4a`, or `.mp3`/`.aac` when that's what the site sends), never re-encoded (Video DownloadHelper turns it into MP3). A site can be set to always give sound only. *Requested 2026-11-10, from studying Video DownloadHelper.* Done for streams (HLS and DASH): the extension's **Sound Only** button (extension 1.6), "Only the sound" in New Download and Add Links, `hdm add --sound-only` and the MCP tool; done in #78. Left for later: a whole video file's sound (it needs an MP4 reader for whole files), HLS sound sent as bare `.aac` pieces, and the per-site setting, which came with the naming rules' Sound only action (#83).
   - [x] Mac
   - [x] Linux
   - [x] Windows
@@ -176,10 +176,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Naming rules for found media:** a name pattern (`%title`, `%site`, and text taken from the page by a CSS selector), find-and-replace pairs, a length limit and a sub-folder, set per site, with the page's title as the default; and a default action per site (download, ask for a name, sound only, copy the address). *Requested 2026-11-10, from studying Video DownloadHelper.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Naming rules for found media:** a name pattern (`%title`, `%site`, and text taken from the page by a CSS selector), find-and-replace pairs, a length limit and a sub-folder, set per site, with the page's title as the default; and a default action per site (download, ask for a name, sound only, copy the address). *Requested 2026-11-10, from studying Video DownloadHelper.* Done in #83 (extension 1.9): the Naming Rules page, applied in the list and the right-click menu, sub-folders kept inside the save folder by `hdm`. Checked with a stand-in for the browser's extension API, the naming code in Node, and the sub-folder end to end; needs a try in a real browser.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **Finer media detection in the extension,** from Video DownloadHelper's rules: a file's name from its `Content-Disposition` when it has one; on a page that plays a DASH stream, files under 20 MB are left out as its pieces; an address that only names a stream (`/api/playlist/master/`, `hls` in the path) is read to see whether it is one; and a stream is fetched again with the page's own request headers. Left out on purpose: site-specific scripts (YouTube, Facebook, Vimeo…), which break often and depend on each site's terms, and anything that gets round a site's protection; protected (DRM) video stays refused. *Requested 2026-11-10, from studying Video DownloadHelper.*
   - [ ] Mac
   - [ ] Linux

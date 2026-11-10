@@ -472,6 +472,20 @@ downloads to the app. The browser keeps a download the app doesn't take.
 - Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**. Right-clicking
   a page whose tab played media also offers **Herb's Download Manager: media on this page**, listing them (up to 20,
   in the list's order, as "name · kind · quality"); choosing one adds it to the queue as the list would.
+- **Naming Rules** (the list's **Naming Rules…** button, or the extension's options page) sets, per site, how its
+  videos and sounds are named and saved and what a click in the list does. A rule's site covers its subdomains, and
+  the most particular rule wins (video.example.com over example.com). Each rule has: **Name**, a pattern with
+  `%title` (the page's title), `%site` (the site's name without www or its ending: `youtube`, `bbc` for bbc.co.uk)
+  and `%selector` (the text of the first page element its **Selector** finds, read when the item is added); its
+  **Replace** pairs (`find => with`, one a line, applied in order, plain text); **Longest name** (characters, before
+  the extension); a **Sub-folder** inside the folder S1 saves to (`hdm` makes it, and its `..` parts are left out so
+  it can't leave that folder); and **A click in the list**: Download (add it to the queue), Ask for a name first (a
+  field under the item with the rule's name, to change, then Add), Sound only (streams; files are added as they
+  are), or Copy the address. The right-click menu follows the action too (Ask adds under the rule's name). The
+  name is made fit for a file (characters files can't hold become spaces, spaces gathered, no leading dots,
+  "no-name" when nothing is left) and gets the item's extension: `.mp4` for a stream, else the file's own. Without a
+  rule nothing changes: a stream is named after its page's title, a file after its link. The page shows each rule's
+  result on an example page, and saves as you type.
 - **Alt+Shift+H** (Control+Shift+H on the Mac) opens the list; the browser's extension shortcuts page can change it.
 - **Open in the side panel** (Chrome and Edge, under the first switch) opens the list in the browser's side panel
   instead of a popup when the toolbar button is clicked; there it follows the window's active tab.
