@@ -251,7 +251,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
             return selected.count == 1 && !selected[0].status.isFinished && selected[0].allowedConnections > 1
         case #selector(toggleSidebar(_:)), #selector(focusSearch(_:)), #selector(toggleSearch(_:)),
              #selector(toggleKeepOnTop(_:)): return true
-        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
+        case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(paste(_:)), #selector(batchDownload(_:)),
              #selector(importLinks(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
         case #selector(addMirror(_:)), #selector(editNote(_:)): return selected.count == 1
@@ -316,6 +316,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         _ = window
         openLinks(links)
     }
+
+    /// Edit ▸ Paste (⌘V) in the main window, when no text field has the cursor (one that has takes the paste
+    /// itself): the clipboard's links open Add Links, as Add from Clipboard does (§5.2).
+    @objc func paste(_ sender: Any?) { addFromClipboard(sender) }
 
     /// Batch Download (§5.5).
     @objc func batchDownload(_ sender: Any?) {

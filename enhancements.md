@@ -188,3 +188,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [ ] **Paste a link into the main window to add it:** ⌘V on the Mac, Ctrl+V on Linux and Windows, opens Add Links with the clipboard's links, as Add from Clipboard does. *Requested 2026-11-10.* Built in #80; the find field keeps its own paste (on Linux its Ctrl+A and Ctrl+C too, which the list's shortcuts used to take). Tried with real keys on Linux and Windows; the Mac's ⌘V wasn't pressed in a test (no keystrokes on the Mac), so it waits for Herbert's try.
+  - [ ] Mac
+  - [x] Linux
+  - [x] Windows

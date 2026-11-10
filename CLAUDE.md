@@ -43,6 +43,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). See the
   window with `--capture FILE` inside `kwin_wayland --virtual --socket <name> --exit-with-session "flatpak run
   --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (set `XDG_RUNTIME_DIR` over ssh), never the desktop.
+  App shortcuts (`set_accels_for_action`) fire before the focused text field sees the key: a plain Ctrl+A, Ctrl+C or
+  Ctrl+V shortcut stole the find field's own until its actions were switched off while the field has the cursor
+  (#80). Check such a key in a field with real input, not only in the list.
   Paths given to the Flatpak (`--capture`, `HD_DATA_DIR`) must be under the home folder: the sandbox has its own
   `/tmp`, so a picture "saved" to `/tmp` never appears on the host.
 - Windows tests over ssh with several steps: write a `.ps1` file, copy it over and run it with `-ExecutionPolicy Bypass

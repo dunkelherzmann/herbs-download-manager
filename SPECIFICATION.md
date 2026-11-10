@@ -184,9 +184,11 @@ folder and name chosen (copied to another drive if need be) and continues, or is
 is. **Cancel**, closing the window, changing the link, Skip in §5.6, the link becoming a mirror, or quitting discards
 what was fetched.
 
-### 5.2 Add from Clipboard (⇧⌘V)
+### 5.2 Add from Clipboard (⇧⌘V, or ⌘V in the main window)
 
-Every link in the clipboard's text opens the Add Links window (§5.3).
+Every link in the clipboard's text opens the Add Links window (§5.3). Pasting in the main window does the same: ⌘V
+(Edit ▸ Paste) on the Mac, Ctrl+V on Linux and Windows, whenever no text field (the find bar's) has the cursor; one
+that has takes the paste as usual.
 
 ### 5.3 Add Links window (several links)
 

@@ -558,6 +558,23 @@ fn add_actions(
         ui.manager.set_connections(r.id, r.allowed_connections.saturating_sub(1).max(1));
     });
     on!("select-all", &["<Control>a"], |ui| ui.list.selection.select_all());
+    // The app's shortcuts are seen before the focused widget, so while the find bar's field has the cursor, the
+    // ones a text field has too (Ctrl+A, Ctrl+C, Ctrl+V) are switched off and the field selects, copies and pastes.
+    {
+        let focus = gtk::EventControllerFocus::new();
+        let set = |window: &adw::ApplicationWindow, on: bool| {
+            for name in ["select-all", "copy-link", "add-from-clipboard"] {
+                if let Some(action) = window.lookup_action(name).and_then(|a| a.downcast::<gio::SimpleAction>().ok()) {
+                    action.set_enabled(on);
+                }
+            }
+        };
+        let w = window.clone();
+        focus.connect_enter(move |_| set(&w, false));
+        let w = window.clone();
+        focus.connect_leave(move |_| set(&w, true));
+        search.add_controller(focus);
+    }
     {
         let (ui, window2) = (ui.clone(), window.clone());
         add("copy-link", &["<Control>c"], Box::new(move || {
@@ -716,7 +733,8 @@ fn add_actions(
     for (name, accels, run) in [
         ("new-download", &["<Control>n"][..], crate::add::new_download_from_clipboard as fn(&crate::add::Ctx)),
         ("import-links", &["<Control><Shift>o"], crate::add::import),
-        ("add-from-clipboard", &["<Control><Shift>v"], crate::add::from_clipboard),
+        // Ctrl+V too, in the main window: a text field with the cursor takes its own paste first.
+        ("add-from-clipboard", &["<Control><Shift>v", "<Control>v"], crate::add::from_clipboard),
         ("batch-download", &["<Control><Shift>n"], crate::add::batch),
     ] {
         let ctx = ctx.clone();

@@ -546,8 +546,14 @@ pub fn run() {
                 close_find();
                 continue;
             }
-            // While typing in the find bar, Delete, Ctrl+A and Ctrl+C are the field's own.
-            if !in_find && TranslateAcceleratorW(hwnd, accelerators, &msg) != 0 {
+            // While typing in the find bar, or any text field (a name being edited in the list), Delete, Ctrl+A,
+            // Ctrl+C and Ctrl+V are the field's own.
+            let typing = in_find || {
+                let mut class = [0u16; 16];
+                let n = GetClassNameW(GetFocus(), &mut class);
+                String::from_utf16_lossy(&class[..n.max(0) as usize]).eq_ignore_ascii_case("Edit")
+            };
+            if !typing && TranslateAcceleratorW(hwnd, accelerators, &msg) != 0 {
                 continue;
             }
             let _ = TranslateMessage(&msg);
@@ -576,12 +582,14 @@ unsafe fn insert_tree(tree: HWND, parent: HTREEITEM, text: &str, data: isize) ->
 /// The Mac's shortcuts with Ctrl (§3, §4).
 unsafe fn accelerator_table() -> HACCEL {
     let ctrl = FCONTROL | FVIRTKEY;
-    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 20] = [
+    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 21] = [
         (ctrl, b'O' as u16, C_DOWNLOAD_WINDOW),
         (ctrl | FALT, b'M' as u16, C_ADD_MIRROR),
         (ctrl, b'N' as u16, C_NEW),
         (ctrl | FSHIFT, b'O' as u16, C_IMPORT),
         (ctrl | FSHIFT, b'V' as u16, C_CLIPBOARD),
+        // Ctrl+V too (§5.2); the find bar's field keeps its own paste, as accelerators aren't used while typing there.
+        (ctrl, b'V' as u16, C_CLIPBOARD),
         (ctrl | FSHIFT, b'N' as u16, C_BATCH),
         (ctrl, b'Q' as u16, C_QUIT),
         (ctrl, b'W' as u16, C_QUIT),
