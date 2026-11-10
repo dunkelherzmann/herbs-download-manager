@@ -143,7 +143,7 @@ async function setItems(tabId, items) {
 async function countFor(tabId, items) {
   if (!(await isOn())) return;
   items = items || (await itemsOf(tabId));
-  const n = items.filter((i) => !i.hidden).length;
+  const n = items.filter((i) => !i.hidden && !i.removed).length;
   await api.action.setBadgeText({ tabId, text: n ? String(n) : "" }).catch(() => {});
 }
 
@@ -459,7 +459,7 @@ async function refresh(tabId) {
         items.push({ url: p.src, kind: p.width ? "video" : "audio", size: 0, seen: Date.now(), hidden: false });
       }
     }
-    const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url && !i.hidden);
+    const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url && !i.hidden && !i.removed);
     const close = (a, b) => a > 0 && b > 0 && Math.abs(a - b) < 0.5;
     // The file a player plays: its own address, else the one as long and as big.
     const fileOf = (p) => {
@@ -542,13 +542,14 @@ if (api.webRequest && api.webRequest.onResponseStarted) {
 }
 api.tabs.onRemoved.addListener((id) => {
   probes.delete(id);
-  api.storage.session.remove(`media-${id}`).catch(() => {});
+  api.storage.session.remove([`media-${id}`, `removed-${id}`]).catch(() => {});
 });
 // Another page in the tab: what the last one played goes.
 api.tabs.onUpdated.addListener((id, change) => {
   if (change.url) {
     probes.delete(id);
     noting = noting.then(() => setItems(id, [])).catch(() => {});
+    api.storage.session.remove(`removed-${id}`).catch(() => {});
   }
 });
 api.tabs.onActivated.addListener(({ tabId }) => {
@@ -642,6 +643,9 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       await api.storage.local.set({ panel: !!message.on });
       await applyPanel();
       reply({ ok: true, panel: await panelSetting() });
+    } else if (message.type === "remove") {
+      await remove(message.tabId, message.item);
+      reply({ ok: true });
     } else if (message.type === "refresh") {
       reply(await refresh(message.tabId));
     } else if (message.type === "media-access") {
@@ -787,14 +791,41 @@ function siteOf(url) {
   }
 }
 
+// ---- Removing an item from the list (×) ---------------------------------------------------------------------------
+//
+// A removed item stays out of the list while the tab shows the page (fetched again, it isn't listed again); a video
+// read from the page's own data, which is read afresh each time the list opens, is noted by its manifest.
+
+const manifestKey = (manifest) => `${manifest.length}:${manifest.slice(0, 200)}:${manifest.slice(-200)}`;
+
+async function removedOf(tabId) {
+  const key = `removed-${tabId}`;
+  return (await api.storage.session.get({ [key]: [] }))[key];
+}
+
+async function remove(tabId, item) {
+  if (item.kind === "page-dash" && item.manifest) {
+    const gone = await removedOf(tabId);
+    gone.push(manifestKey(item.manifest));
+    await api.storage.session.set({ [`removed-${tabId}`]: gone.slice(-40) });
+    return;
+  }
+  await (noting = noting.then(async () => {
+    const items = await itemsOf(tabId);
+    for (const i of items) if (i.url === item.url) i.removed = true;
+    await setItems(tabId, items);
+  }).catch(() => {}));
+}
+
 // The tab's items as the list shows them, in the order chosen: Smart puts DASH, then HLS streams, then video files,
 // then sounds; a finished stream before a live one; the page's own site before others; else the order found.
 // Oldest and Newest go by when each was found.
 async function listed(tabId, tab, order, page = true) {
-  const items = (await itemsOf(tabId)).filter((i) => !i.hidden);
+  const items = (await itemsOf(tabId)).filter((i) => !i.hidden && !i.removed);
+  const gone = page ? await removedOf(tabId) : [];
   for (const manifest of page ? await pageManifests(tabId) : []) {
     const about = describeManifest(manifest);
-    if (!about.protected) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
+    if (!about.protected && !gone.includes(manifestKey(manifest))) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
   }
   const found = (i) => i.seen || 0;
   // What a Refresh found playing comes first, whatever the order.

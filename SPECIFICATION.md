@@ -746,6 +746,9 @@ video file's picture and length are read by the browser, which asks for it as it
 and the page as Referer, set by a browser rule for that address for two minutes: TikTok's server refuses its files to
 anyone without its `tt_chain_token` cookie). A video that can't be previewed (a DASH quality kept as one
 file with no index, a protected or broken stream) keeps an empty box; sounds have none.
+Each item has a **×** in its corner that removes it from the list. It stays out while the tab shows that page, even
+when the page fetches it again; a video read from the page's own data is noted by its manifest. Another page in the
+tab starts a fresh list.
 **Refresh** (beside the list's heading) finds what the page plays now, for sites that change videos as you scroll
 and fetch the next ones before they're shown (TikTok, reels): it asks the page's video and sound players what they
 play, and the one playing (the biggest on screen) goes first, marked "Playing now". A player playing a file's own

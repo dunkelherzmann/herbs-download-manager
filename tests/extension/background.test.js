@@ -245,3 +245,30 @@ test("a file's preview in the list is asked for with the page's cookies and addr
   assert.deepEqual(plain(rule.condition), { urlFilter: `|${clip("a")}|`, resourceTypes: ["media"] });
   assert.deepEqual(plain(rule.action.requestHeaders).map((h) => h.header), ["cookie", "referer"]);
 });
+
+// ---- Removing from the list (×) ---------------------------------------------------------------------------------
+
+test("a removed item stays out of the list, even when the page fetches it again, until the tab goes elsewhere", async () => {
+  const b = load({ tabs: [PAGE] });
+  await b.chrome.storage.session.set({ "media-1": [
+    { url: "https://cdn.example.com/a.mp4", kind: "video", size: 5e6, seen: 1, hidden: false },
+    { url: "https://cdn.example.com/b.mp4", kind: "video", size: 5e6, seen: 2, hidden: false },
+  ] });
+  await b.ask({ type: "remove", tabId: 1, item: { kind: "video", url: "https://cdn.example.com/a.mp4" } });
+  const shown = async () => plain((await b.get("listed")(1, PAGE, "oldest", false)).map((i) => i.url));
+  assert.deepEqual(await shown(), ["https://cdn.example.com/b.mp4"]);
+  await b.respond({ url: "https://cdn.example.com/a.mp4", type: "media", responseHeaders: headers({ "content-type": "video/mp4", "content-length": "5000000" }) });
+  assert.deepEqual(await shown(), ["https://cdn.example.com/b.mp4"], "fetched again: still out");
+  b.chrome.tabs.onUpdated.fire(1, { url: "https://www.example.com/next" });
+  await b.get("noting");
+  assert.deepEqual(await b.items(), [], "another page: a fresh list");
+});
+
+test("a video from the page's own data can be removed too", async () => {
+  const mpd = (n) => `<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT${n}S"><Period><AdaptationSet contentType="video"><Representation id="v" bandwidth="1" width="1280" height="720" codecs="avc1"><BaseURL>https://cdn.example.com/v${n}.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>`;
+  const b = load({ tabs: [PAGE], script: () => [mpd(24), mpd(1239)] });
+  const shown = async () => plain((await b.get("listed")(1, PAGE, "smart")).filter((i) => i.kind === "page-dash").map((i) => i.seconds));
+  assert.deepEqual(await shown(), [1239, 24]);
+  await b.ask({ type: "remove", tabId: 1, item: { kind: "page-dash", manifest: mpd(24) } });
+  assert.deepEqual(await shown(), [1239]);
+});

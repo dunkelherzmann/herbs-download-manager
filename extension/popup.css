@@ -18,7 +18,11 @@ body.panel { width: auto; }
 body.panel ul { max-height: none; }
 .switch { display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer; }
 ul { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
-li { border-top: 1px solid var(--line); }
+li { border-top: 1px solid var(--line); position: relative; }
+button.remove { position: absolute; top: 4px; right: 2px; width: 20px; height: 20px; padding: 0; border: none; border-radius: 4px; background: transparent; color: var(--dim); font: 16px/20px system-ui, sans-serif; cursor: pointer; }
+button.remove:hover { background: var(--hover); color: var(--fg); }
+button.remove:focus-visible { outline: 2px solid var(--accent); }
+button.item { padding-right: 24px !important; }
 li:first-child { border-top: none; }
 button.item { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 7px 6px; border-radius: 6px; cursor: pointer; }
 button.item:hover, button.item:focus-visible { background: var(--hover); outline: none; }

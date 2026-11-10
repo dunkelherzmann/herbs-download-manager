@@ -220,3 +220,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Remove results from the browser extension's list:** a × on each item, as Video DownloadHelper has. *Requested 2026-11-10.* A removed item stays out while the tab shows that page, even when the page fetches it again; videos from the page's own data (Facebook's) too. Extension 1.15.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

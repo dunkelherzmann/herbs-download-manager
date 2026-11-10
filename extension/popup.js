@@ -330,6 +330,18 @@ function row(tab, item, label, facts) {
   };
   button.onclick = () => choose(false);
   li.append(button);
+  // ×: out of the list (until the tab goes to another page).
+  const close = document.createElement("button");
+  close.className = "remove";
+  close.textContent = "×";
+  close.title = "Remove from this list";
+  close.setAttribute("aria-label", `Remove ${label} from this list`);
+  close.onclick = async () => {
+    li.remove();
+    await ask({ type: "remove", tabId: tab.id, item: { kind: item.kind, url: item.url, manifest: item.manifest } });
+    if (!document.querySelector("#items li")) $("empty").hidden = false;
+  };
+  li.append(close);
   // Add to Queue waits its turn (or starts when the queue runs); Download Now starts it at once.
   if (action !== "copy") {
     const choices = document.createElement("div");
