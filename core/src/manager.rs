@@ -80,6 +80,9 @@ pub struct Entry {
     /// own sound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choice: Option<crate::media::StreamChoice>,
+    /// How the browser asked for it (its User-Agent and page), when the extension handed it over.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dress: Option<transfer::Dress>,
 }
 
 /// What the list shows for one download.
@@ -152,6 +155,8 @@ pub struct NewDownload {
     pub stream: bool,
     /// A stream's quality and sound track; `None` takes Settings' (S13, S14).
     pub choice: Option<crate::media::StreamChoice>,
+    /// How the browser asked for it (the extension): its User-Agent and page.
+    pub dress: Option<transfer::Dress>,
 }
 
 /// The first id of an early download.
@@ -525,6 +530,7 @@ impl Manager {
                     resume_at_launch: false,
                     stream,
                     choice,
+                    dress: new.dress.clone(),
                     speed_limit: None,
                     checksum: None,
                     verified: None,
@@ -578,6 +584,7 @@ impl Manager {
                 keep_server_date: settings.keep_server_date,
                 learned: self.inner.learned.clone(),
                 vault: self.inner.vault.clone(),
+                dress: e.dress.clone(),
             };
             let stream = e.stream.then(|| crate::media::download::StreamRequest {
                 url: e.url.clone(),
@@ -588,6 +595,7 @@ impl Manager {
                 limits: vec![self.inner.limiter.clone(), limiter.clone()],
                 vault: self.inner.vault.clone(),
                 choice: e.choice.clone().unwrap_or_default(),
+                dress: e.dress.clone(),
             });
             let progress = Progress::new();
             // A stream counts the pieces already in its parts folder itself.
@@ -820,6 +828,7 @@ impl Manager {
                     resume_at_launch: false,
                     stream: false,
                     choice: None,
+                    dress: None,
                     speed_limit: None,
                     checksum: None,
                     verified: None,
@@ -939,6 +948,7 @@ impl Manager {
                     resume_at_launch: false,
                     stream: false,
                     choice: None,
+                    dress: None,
                     speed_limit: None,
                     checksum: None,
                     verified: e.verified,

@@ -49,7 +49,8 @@ async function cookiesFor(url) {
 const previews = new Map();
 
 async function send(url, referer, extra = {}) {
-  const message = { command: "add", urls: [url], referer: referer || "", cookies: await cookiesFor(url), check: true, ...extra };
+  // As the browser asks: its User-Agent and the page, which guarded streams want with every piece.
+  const message = { command: "add", urls: [url], referer: referer || "", cookies: await cookiesFor(url), check: true, user_agent: navigator.userAgent, ...extra };
   try {
     return await api.runtime.sendNativeMessage(HOST, message);
   } catch {
@@ -492,7 +493,7 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       }
       try {
         const cookies = await cookiesFor(tab.url);
-        reply(await api.runtime.sendNativeMessage(HOST, { command: "scan", urls: [tab.url], cookies, referer: tab.url }));
+        reply(await api.runtime.sendNativeMessage(HOST, { command: "scan", urls: [tab.url], cookies, referer: tab.url, user_agent: navigator.userAgent }));
       } catch {
         reply({ ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` });
       }

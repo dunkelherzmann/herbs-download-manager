@@ -72,6 +72,8 @@ pub struct Request {
     /// add, from the browser extension: a DASH manifest a page carries in its data (Facebook's reels) instead of a
     /// link. Saved in the app's data folder and downloaded from there; `urls` may then be empty.
     pub manifest: Option<String>,
+    /// add and scan, from the browser extension: the browser's User-Agent, sent with the download's requests.
+    pub user_agent: Option<String>,
 }
 
 /// One download as `list` reports it.
@@ -438,10 +440,13 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
             {
                 return Answer::error(format!("Sound only works for streamed video (.m3u8, .mpd), and “{url}” isn't one"));
             }
+            // Asked for as the browser asked: its User-Agent and the page.
+            let dress = (r.user_agent.is_some() || r.referer.is_some())
+                .then(|| crate::transfer::Dress { user_agent: r.user_agent.clone(), referer: r.referer.clone() });
             let links = r
                 .urls
                 .iter()
-                .map(|u| PendingLink { url: u.clone(), name: name.clone(), stream: r.stream, choice: choice.clone(), ..Default::default() })
+                .map(|u| PendingLink { url: u.clone(), name: name.clone(), stream: r.stream, choice: choice.clone(), dress: dress.clone(), ..Default::default() })
                 .collect();
             let mut session = AddSession::new(manager, links, &folder, manager.settings().connections, !r.queue);
             loop {

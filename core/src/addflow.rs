@@ -23,6 +23,8 @@ pub struct PendingLink {
     pub stream: bool,
     /// A stream's quality and sound track, chosen in the extension; `None` takes Settings'.
     pub choice: Option<crate::media::StreamChoice>,
+    /// How the browser asked for it (the extension): its User-Agent and page.
+    pub dress: Option<crate::transfer::Dress>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,6 +269,7 @@ impl AddSession {
             early: link.early,
             stream: link.stream,
             choice: link.choice,
+            dress: link.dress,
         });
         match added {
             Added::MirrorOf(_) => self.summary.mirrored += 1,

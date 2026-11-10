@@ -249,6 +249,51 @@ fn the_extension_adds_a_stream_by_its_type_named_after_its_page() {
 }
 
 #[test]
+fn a_stream_whose_pieces_want_the_browser_downloads_as_the_browser_asked() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let media = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/media/h264-ts");
+    s.put("/guarded/index.m3u8", MockFile::new(std::fs::read(media.join("index.m3u8")).unwrap()));
+    // The pieces are only given to a browser on the film's page (as guarded streams do): its User-Agent and Referer.
+    for n in 0..3 {
+        let mut piece = MockFile::new(std::fs::read(media.join(format!("s{n}.ts"))).unwrap());
+        piece.requires = vec![("user-agent".into(), "Mozilla/5.0 (Test) Browser/1".into()), ("referer".into(), "https://films.example/movie/feed".into())];
+        s.put(&format!("/guarded/s{n}.ts"), piece);
+    }
+    let dir = folder("dressed");
+    let m = Manager::open(&dir).unwrap();
+    control::serve(&m, dir.join("files")).unwrap();
+    let add = |extra: Value| {
+        let mut message = json!({"command": "add", "urls": [s.url("/guarded/index.m3u8")], "check": true, "stream": true});
+        message.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let mut out = Vec::new();
+        assert_eq!(cli::native(&mut framed(&[message]).as_slice(), &mut out, &dir), 0);
+        unframed(&out)[0].clone()
+    };
+    let wait = |name: &str| -> hd_core::manager::Status {
+        let until = Instant::now() + Duration::from_secs(30);
+        loop {
+            let row = m.rows().into_iter().find(|r| r.name == name).unwrap();
+            if matches!(row.status, hd_core::manager::Status::Finished | hd_core::manager::Status::Failed(_)) || Instant::now() > until {
+                return row.status;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    // Plainly: the pieces are refused.
+    assert_eq!(add(json!({"name": "plain.mp4"}))["ok"], true);
+    assert!(matches!(wait("plain.mp4"), hd_core::manager::Status::Failed(_)), "a guarded piece refused a downloader");
+    // (The same link added again would join it as a mirror: it goes first.)
+    let plain = m.rows().into_iter().find(|r| r.name == "plain.mp4").unwrap().id;
+    m.remove(&[plain], false);
+    // As the browser asked: it downloads.
+    let answer = add(json!({"name": "dressed.mp4", "user_agent": "Mozilla/5.0 (Test) Browser/1", "referer": "https://films.example/movie/feed"}));
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(wait("dressed.mp4"), hd_core::manager::Status::Finished);
+    assert!(m.quit(Duration::from_secs(5)));
+}
+
+#[test]
 fn a_naming_rules_subfolder_is_made_inside_the_save_folder() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let s = rt.block_on(MockServer::start()).unwrap();

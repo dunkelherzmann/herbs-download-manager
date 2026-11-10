@@ -196,3 +196,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **One bad mirror never stops a file from downloading when other sources are fine.** *Requested 2026-11-10.* Already so (§7: a source that fails is marked and its ranges go to the others), now proven by tests with a good source and a mirror of every bad kind at once (missing, behind a login, stalling midway on every request, refusing every connection, a different file), and with the stalling one as the link itself: the file finishes, right, without waiting on them (#87).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

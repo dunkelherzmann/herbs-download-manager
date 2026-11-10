@@ -611,6 +611,7 @@ fn submit(hwnd: HWND, start: bool) {
                         early: if sound_only { None } else { f.early.take() },
                         stream: sound_only,
                         choice: sound_only.then(|| hd_core::addflow::sound_only_choice(&f.ctx.manager)),
+                        dress: None,
                     }],
                     f.folder.clone(),
                     connections,

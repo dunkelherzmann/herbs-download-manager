@@ -433,6 +433,7 @@ impl DownloadManager {
             early,
             stream,
             choice,
+            dress: None,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }

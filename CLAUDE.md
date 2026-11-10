@@ -116,5 +116,7 @@ reinstall your build (theirs may have replaced it) and run again.
 - A test that moves the scheduler's clock (`advance_clock`) must move it to exact times worked out from
   `scheduler_now()`, never by fixed amounts: real time keeps running under the offset, so a test that starts late in a
   minute overshoots the next event (the scheduler test failed on Linux, #59).
+- A core test that removes downloads with their files must give its Manager a Trash folder of its own
+  (`use_trash_folder`), or their files go to Herbert's real Trash (one test's empty pieces folder did, #87).
 - A test that fails now and then: run it 30–60 times on the machine where it fails to get the real error first
   (Windows "access denied" on a name being deleted, #30).

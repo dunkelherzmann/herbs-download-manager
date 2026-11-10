@@ -48,6 +48,19 @@ pub struct Request {
     pub learned: Arc<crate::hosts::Learned>,
     /// Sign-ins for links that need a login: each request gets its host's user name, password, cookies and referer.
     pub vault: Arc<crate::vault::Vault>,
+    /// How the browser asked for it, when the browser extension handed it over: sent with every request.
+    pub dress: Option<Dress>,
+}
+
+/// A download handed over by the browser extension is asked for as the browser asked for it (§13): its User-Agent,
+/// and the page it was on as Referer, with that page's Origin when the request goes to another site (as a web
+/// player's fetches do). Servers that guard streams answer 403 to a downloader that introduces itself otherwise.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Dress {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub referer: Option<String>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -475,6 +488,7 @@ struct Job {
     keep_server_date: bool,
     learned: Arc<crate::hosts::Learned>,
     vault: Arc<crate::vault::Vault>,
+    dress: Option<Dress>,
     sequential: bool,
     /// What gets saved; `segments` and `sources` are filled in at each save.
     state: ResumeState,
@@ -563,7 +577,7 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
             }
             let Ok(url) = reqwest::Url::parse(&s.url) else { continue };
             let host = url.host_str().unwrap_or("").to_string();
-            let sent = signed(client.get(url.clone()), &url, &req.vault).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
+            let sent = signed_as(client.get(url.clone()), &url, &req.vault, req.dress.as_ref()).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
             let result = tokio::select! {
                 r = sent => r,
                 _ = stopped(stop.clone()) => return outcome_for_stop(&stop),
@@ -920,6 +934,7 @@ impl Job {
             keep_server_date: req.keep_server_date,
             learned: req.learned.clone(),
             vault: req.vault.clone(),
+            dress: req.dress.clone(),
             sequential,
             state,
             state_file: req.state_file.clone(),
@@ -1171,7 +1186,7 @@ impl Job {
     /// Opens a request on `src` for the rest of the range this connection owns.
     async fn open(&self, id: usize, src: usize) -> Result<(reqwest::Response, Vec<u8>), Problem> {
         let source = self.source(src);
-        let mut req = signed(self.client.get(source.url.clone()), &source.url, &self.vault).header(ACCEPT_ENCODING, "identity");
+        let mut req = signed_as(self.client.get(source.url.clone()), &source.url, &self.vault, self.dress.as_ref()).header(ACCEPT_ENCODING, "identity");
         let (start, end, written_from) = if self.sequential {
             // Without ranges a failed download starts over.
             let mut segs = self.segs.lock().unwrap();
@@ -1359,7 +1374,7 @@ impl Job {
         let source = self.source(idx);
         let mut attempt = 0usize;
         loop {
-            let req = signed(self.client.get(source.url.clone()), &source.url, &self.vault)
+            let req = signed_as(self.client.get(source.url.clone()), &source.url, &self.vault, self.dress.as_ref())
                 .header(RANGE, "bytes=0-0")
                 .header(ACCEPT_ENCODING, "identity");
             let mut stop = self.stop.clone();
@@ -1674,9 +1689,31 @@ fn write_at(file: &File, mut data: &[u8], mut offset: u64) -> std::io::Result<()
 /// A request with the sign-in for its link's host, if there is one (enhancements.md: links that need a login).
 /// reqwest drops the Authorization and Cookie headers when a redirect leads to another host.
 pub(crate) fn signed(rb: reqwest::RequestBuilder, url: &reqwest::Url, vault: &crate::vault::Vault) -> reqwest::RequestBuilder {
-    let Some(host) = url.host_str() else { return rb };
-    let crate::vault::Lookup::Found(s) = vault.for_host(host) else { return rb };
+    signed_as(rb, url, vault, None)
+}
+
+/// `signed`, asked for as the browser asked (`Dress`): its User-Agent, the page as Referer (unless the sign-in gives
+/// one) and the page's Origin for another site.
+pub(crate) fn signed_as(rb: reqwest::RequestBuilder, url: &reqwest::Url, vault: &crate::vault::Vault, dress: Option<&Dress>) -> reqwest::RequestBuilder {
     let mut rb = rb;
+    let sign_in = url.host_str().and_then(|host| match vault.for_host(host) {
+        crate::vault::Lookup::Found(s) => Some(s),
+        _ => None,
+    });
+    if let Some(d) = dress {
+        if let Some(agent) = d.user_agent.as_deref().filter(|a| !a.is_empty()) {
+            rb = rb.header(reqwest::header::USER_AGENT, agent);
+        }
+        if let Some(page) = d.referer.as_deref().and_then(|r| reqwest::Url::parse(r).ok()) {
+            if sign_in.as_ref().is_none_or(|s| s.referer.is_empty()) {
+                rb = rb.header(REFERER, page.as_str());
+            }
+            if page.origin() != url.origin() {
+                rb = rb.header(reqwest::header::ORIGIN, page.origin().ascii_serialization());
+            }
+        }
+    }
+    let Some(s) = sign_in else { return rb };
     if !s.user.is_empty() || !s.password.is_empty() {
         rb = rb.basic_auth(&s.user, Some(&s.password));
     }

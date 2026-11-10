@@ -30,6 +30,8 @@ pub struct StreamRequest {
     pub vault: Arc<crate::vault::Vault>,
     /// The quality and sound track to take from a master playlist.
     pub choice: super::StreamChoice,
+    /// How the browser asked for it: its User-Agent and page, sent with every request (§13).
+    pub dress: Option<transfer::Dress>,
 }
 
 /// The most pieces fetched at once: servers that stream rarely like more from one viewer.
@@ -88,6 +90,41 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// What a JSON Web Token in a link's query says: when it expires (seconds since 1970) and whether it's tied to a
+/// network address (`ip_cidr`, `ip`).
+fn link_token(url: &Url) -> Option<(Option<i64>, bool)> {
+    use base64::Engine;
+    url.query_pairs().find_map(|(_, value)| {
+        let mut parts = value.split('.');
+        let (_, payload, _) = (parts.next()?, parts.next()?, parts.next()?);
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+        let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        let exp = claims.get("exp").and_then(|e| e.as_i64());
+        let tied = claims.get("ip_cidr").or(claims.get("ip")).is_some();
+        (exp.is_some() || tied).then_some((exp, tied))
+    })
+}
+
+/// More words for a refusal (401, 403, 410) when the stream's links say why: their token expired, or is tied to the
+/// browser's network address.
+fn refusal_hint(reason: &str, urls: &[Url]) -> String {
+    if !["401", "403", "410"].iter().any(|code| reason.starts_with(code)) {
+        return String::new();
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    for url in urls {
+        let Some((exp, tied)) = link_token(url) else { continue };
+        if let Some(exp) = exp.filter(|&e| e <= now) {
+            let at = chrono::TimeZone::timestamp_opt(&chrono::Local, exp, 0).earliest().map(|t| t.format("%H:%M").to_string()).unwrap_or_default();
+            return format!(". The stream's link expired at {at}: open its page again and add it anew");
+        }
+        if tied {
+            return ". The site ties the stream's link to the browser's network address: add it from the browser extension, on the same network".into();
+        }
+    }
+    String::new()
+}
+
 /// Where a stream's pieces wait while it downloads.
 pub fn parts_folder(dest: &Path) -> PathBuf {
     let mut name = dest.file_name().unwrap_or_default().to_os_string();
@@ -122,13 +159,13 @@ pub async fn download(client: &reqwest::Client, req: StreamRequest, progress: Ar
     }
 }
 
-async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault) -> Result<String, String> {
+async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<String, String> {
     // A manifest the browser extension found in a page, saved by the app (§15).
     if url.scheme() == "file" {
         let path = url.to_file_path().map_err(|_| "Not a valid link".to_string())?;
         return std::fs::read_to_string(&path).map_err(|e| format!("Can't read {}: {e}", path.display()));
     }
-    let response = transfer::signed(client.get(url.clone()), url, vault)
+    let response = transfer::signed_as(client.get(url.clone()), url, vault, dress)
         .send()
         .await
         .map_err(|e| transfer::error_text(&e))?;
@@ -154,7 +191,7 @@ pub struct Preview {
 /// browser's cookies), reduced to its first whole picture. Nothing is saved.
 pub async fn preview(client: &reqwest::Client, url: &str, vault: &crate::vault::Vault) -> Result<Preview, String> {
     let url = Url::parse(url).map_err(|_| "Not a valid link".to_string())?;
-    let first = text(client, &url, vault).await?;
+    let first = text(client, &url, vault, None).await?;
     let (pieces, seconds): (Vec<Segment>, Option<f64>) = if first.contains("<MPD") {
         let m = super::dash::parse(&first, &url)?;
         let rep = m.video.iter().min_by_key(|r| (r.width as u64 * r.height as u64, r.bandwidth)).ok_or("This stream has no picture")?;
@@ -162,7 +199,7 @@ pub async fn preview(client: &reqwest::Client, url: &str, vault: &crate::vault::
             // One whole file per quality with no index: its first picture isn't reachable without fetching it all.
             return Err("This stream can't be previewed".into());
         }
-        (dash_pieces(client, rep, vault).await?, m.duration.filter(|_| !m.live))
+        (dash_pieces(client, rep, vault, None).await?, m.duration.filter(|_| !m.live))
     } else {
         let playlist = match hls::parse(&first, &url)? {
             p @ Playlist::Master { .. } => {
@@ -178,7 +215,7 @@ pub async fn preview(client: &reqwest::Client, url: &str, vault: &crate::vault::
             }
             Playlist::Media { .. } => url.clone(),
         };
-        let (segments, ended) = media_playlist(client, &playlist, vault).await?;
+        let (segments, ended) = media_playlist(client, &playlist, vault, None).await?;
         let seconds = ended.then(|| segments.iter().map(|s| s.duration).sum::<f64>()).filter(|s| *s > 0.0);
         (segments, seconds)
     };
@@ -188,12 +225,12 @@ pub async fn preview(client: &reqwest::Client, url: &str, vault: &crate::vault::
     joiner.still();
     let source = joiner.source();
     if let Some((map_url, map_range)) = &piece.map {
-        let init = fetch_bytes(client, map_url, *map_range, vault).await?;
+        let init = fetch_bytes(client, map_url, *map_range, vault, None).await?;
         joiner.init(source, &init).map_err(|e| e.to_string())?;
     }
-    let mut data = fetch_bytes(client, &piece.url, piece.range, vault).await?;
+    let mut data = fetch_bytes(client, &piece.url, piece.range, vault, None).await?;
     if let Key::Aes128 { url: key_url, iv } = &piece.key {
-        let key: [u8; 16] = fetch_bytes(client, key_url, None, vault).await?.as_slice().try_into().map_err(|_| "The stream's key isn't 16 bytes")?;
+        let key: [u8; 16] = fetch_bytes(client, key_url, None, vault, None).await?.as_slice().try_into().map_err(|_| "The stream's key isn't 16 bytes")?;
         data = decrypt_aes128(&data, &key, &iv.unwrap_or_else(|| hls::sequence_iv(piece.sequence))).map_err(|e| e.to_string())?;
     }
     joiner.piece(source, &data, false).map_err(|e| e.to_string())?;
@@ -212,17 +249,17 @@ enum SubtitleSource {
 }
 
 /// Reads one language's subtitles: every WebVTT piece, its cues one after another.
-async fn fetch_subtitles(client: &reqwest::Client, language: &str, source: &SubtitleSource, vault: &crate::vault::Vault) -> Result<super::subtitles::Subtitles, String> {
+async fn fetch_subtitles(client: &reqwest::Client, language: &str, source: &SubtitleSource, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<super::subtitles::Subtitles, String> {
     let files = match source {
         SubtitleSource::File(u) => vec![u.clone()],
-        SubtitleSource::Hls(list) => match hls::parse(&text(client, list, vault).await?, list)? {
+        SubtitleSource::Hls(list) => match hls::parse(&text(client, list, vault, dress).await?, list)? {
             Playlist::Media { segments, .. } => segments.into_iter().map(|s| s.url).collect(),
             Playlist::Master { .. } => return Err("A subtitle playlist lists other playlists".into()),
         },
     };
     let mut subs = super::subtitles::Subtitles { language: language.to_string(), cues: Vec::new(), offset: None };
     for file in files {
-        let (cues, offset) = super::subtitles::parse_vtt(&text(client, &file, vault).await?)?;
+        let (cues, offset) = super::subtitles::parse_vtt(&text(client, &file, vault, dress).await?)?;
         subs.offset = subs.offset.or(offset);
         subs.cues.extend(cues);
     }
@@ -238,7 +275,7 @@ enum Track {
 }
 
 /// A DASH manifest's best video and its best sound, as pieces like HLS's (an init section, then MP4 fragments).
-async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, sound_only: bool, vault: &crate::vault::Vault) -> Result<Vec<Track>, String> {
+async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, sound_only: bool, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<Vec<Track>, String> {
     let m = super::dash::parse(text, url)?;
     if m.live {
         return Err("This is a live DASH stream: recording those isn't supported yet".into());
@@ -251,7 +288,7 @@ async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, sound_only
         _ => vec![m.best_video(), m.best_audio()],
     };
     for rep in wanted.into_iter().flatten() {
-        tracks.push(Track::Listed(dash_pieces(client, rep, vault).await?));
+        tracks.push(Track::Listed(dash_pieces(client, rep, vault, dress).await?));
     }
     if tracks.is_empty() {
         return Err("This stream is protected (DRM): it can't be saved".into());
@@ -261,7 +298,7 @@ async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, sound_only
 
 /// A DASH quality's pieces. One file per quality (`SegmentBase`) is read through its index (`sidx`): each
 /// subsegment is a piece, after the init section.
-async fn dash_pieces(client: &reqwest::Client, rep: &super::dash::Representation, vault: &crate::vault::Vault) -> Result<Vec<Segment>, String> {
+async fn dash_pieces(client: &reqwest::Client, rep: &super::dash::Representation, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<Vec<Segment>, String> {
     use super::dash::Addressing;
     // DASH ranges are inclusive (first-last); HLS's are (length, offset).
     let hls_range = |r: (u64, u64)| (r.1 - r.0 + 1, r.0);
@@ -280,7 +317,7 @@ async fn dash_pieces(client: &reqwest::Client, rep: &super::dash::Representation
             Ok(media.iter().enumerate().map(|(n, (u, r))| piece(u.clone(), *r, map.clone(), n)).collect())
         }
         Addressing::Base { url, init, index: Some((first, last)) } => {
-            let bytes = fetch_bytes(client, url, Some((last - first + 1, *first)), vault).await?;
+            let bytes = fetch_bytes(client, url, Some((last - first + 1, *first)), vault, dress).await?;
             let subsegments = super::dash::sidx_ranges(&bytes, *first).ok_or("The video's index can't be read")?;
             let init = init.unwrap_or((0, first.saturating_sub(1)));
             let map = Some((url.clone(), Some(hls_range(init))));
@@ -295,8 +332,8 @@ async fn dash_pieces(client: &reqwest::Client, rep: &super::dash::Representation
 }
 
 /// A media playlist's pieces and whether it has ended (a live stream hasn't), after checking it can be downloaded.
-async fn media_playlist(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault) -> Result<(Vec<Segment>, bool), String> {
-    match hls::parse(&text(client, url, vault).await?, url)? {
+async fn media_playlist(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<(Vec<Segment>, bool), String> {
+    match hls::parse(&text(client, url, vault, dress).await?, url)? {
         Playlist::Media { segments, ended } => {
             if segments.iter().any(|s| matches!(s.key, Key::Protected(_))) {
                 return Err("This stream is protected (DRM): it can't be saved".into());
@@ -322,13 +359,13 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     let url = Url::parse(&req.url).map_err(|_| "Not a valid link".to_string())?;
     // The tracks: HLS playlists (the chosen quality and its sound, read again each round, for live streams), or a DASH manifest's best video and its
     // sound, whose pieces are known at once.
-    let first = text(client, &url, &req.vault).await?;
+    let first = text(client, &url, &req.vault, req.dress.as_ref()).await?;
     let mut playlists = Vec::new();
     let sound_only = req.choice.sound_only;
     // S15's subtitles: (language, where they are).
     let mut subtitle_sources: Vec<(String, SubtitleSource)> = Vec::new();
     if first.contains("<MPD") {
-        playlists = dash_tracks(client, &url, &first, sound_only, &req.vault).await?;
+        playlists = dash_tracks(client, &url, &first, sound_only, &req.vault, req.dress.as_ref()).await?;
         if let Ok(m) = super::dash::parse(&first, &url) {
             let languages: Vec<String> = m.subtitles.iter().map(|(l, _)| l.clone()).collect();
             for i in super::subtitles::pick(&languages, &req.choice.subtitles) {
@@ -375,7 +412,7 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
         let mut round_seconds: f64 = 6.0;
         for (si, track) in playlists.iter().enumerate() {
             let (segments, done) = match track {
-                Track::Hls(playlist) => media_playlist(client, playlist, &req.vault).await?,
+                Track::Hls(playlist) => media_playlist(client, playlist, &req.vault, req.dress.as_ref()).await?,
                 Track::Listed(segments) => (segments.clone(), true),
             };
             ended &= done;
@@ -401,7 +438,7 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
         }
         recording |= !ended;
         for (key_url, key) in keys.iter_mut().filter(|(_, k)| k.is_none()) {
-            let bytes = fetch_bytes(client, key_url, None, &req.vault).await?;
+            let bytes = fetch_bytes(client, key_url, None, &req.vault, req.dress.as_ref()).await?;
             *key = Some(bytes.as_slice().try_into().map_err(|_| "The stream's key isn't 16 bytes".to_string())?);
         }
         let total: usize = sources.iter().map(Vec::len).sum::<usize>() + inits.len();
@@ -430,7 +467,7 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     let mut subtitles = Vec::new();
     if !sound_only && !recording {
         for (language, source) in &subtitle_sources {
-            if let Ok(s) = fetch_subtitles(client, language, source, &req.vault).await {
+            if let Ok(s) = fetch_subtitles(client, language, source, &req.vault, req.dress.as_ref()).await {
                 subtitles.push(s);
             }
         }
@@ -524,8 +561,8 @@ async fn fetch_all(
     }
 }
 
-async fn fetch_bytes(client: &reqwest::Client, url: &Url, range: Option<(u64, u64)>, vault: &crate::vault::Vault) -> Result<Vec<u8>, String> {
-    let mut rb = transfer::signed(client.get(url.clone()), url, vault);
+async fn fetch_bytes(client: &reqwest::Client, url: &Url, range: Option<(u64, u64)>, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<Vec<u8>, String> {
+    let mut rb = transfer::signed_as(client.get(url.clone()), url, vault, dress);
     if let Some((len, off)) = range {
         rb = rb.header(reqwest::header::RANGE, format!("bytes={off}-{}", off + len.max(1) - 1));
     }
@@ -545,7 +582,7 @@ async fn fetch_piece(client: &reqwest::Client, piece: &Piece, req: &StreamReques
         }
         let mut got = 0u64;
         let attempt: Result<Vec<u8>, (bool, String)> = async {
-            let mut rb = transfer::signed(client.get(piece.url.clone()), &piece.url, &req.vault);
+            let mut rb = transfer::signed_as(client.get(piece.url.clone()), &piece.url, &req.vault, req.dress.as_ref());
             if let Some((len, off)) = piece.range {
                 rb = rb.header(reqwest::header::RANGE, format!("bytes={off}-{}", off + len.max(1) - 1));
             }
@@ -595,7 +632,7 @@ async fn fetch_piece(client: &reqwest::Client, piece: &Piece, req: &StreamReques
                 }
                 tries += 1;
                 if !retry || tries > req.retries {
-                    return Fetch::Failed(format!("A piece of the stream failed: {reason}"));
+                    return Fetch::Failed(format!("A piece of the stream failed: {reason}{}", refusal_hint(&reason, &std::iter::once(piece.url.clone()).chain(Url::parse(&req.url).ok()).collect::<Vec<_>>())));
                 }
                 tokio::time::sleep(Duration::from_secs((1u64 << tries.min(4)).min(10))).await;
             }
@@ -683,6 +720,18 @@ fn join_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refusal_says_when_the_link_expired_or_is_tied_to_an_address() {
+        use base64::Engine;
+        let token = |claims: &str| format!("e30.{}.sig", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims));
+        let expired = Url::parse(&format!("https://x/pl/master.m3u8?token={}", token(r#"{"exp":1000,"ip_cidr":"2a0c::/64"}"#))).unwrap();
+        assert!(refusal_hint("403 Forbidden", &[expired.clone()]).contains("expired at"));
+        let tied = Url::parse(&format!("https://x/a.ts?t={}", token(r#"{"exp":99999999999,"ip_cidr":"2a0c::/64"}"#))).unwrap();
+        assert!(refusal_hint("403 Forbidden", &[tied]).contains("network address"));
+        assert_eq!(refusal_hint("404 Not Found", &[expired]), "", "only refusals");
+        assert_eq!(refusal_hint("403 Forbidden", &[Url::parse("https://x/a.ts").unwrap()]), "");
+    }
 
     #[test]
     fn stream_links_and_their_names() {

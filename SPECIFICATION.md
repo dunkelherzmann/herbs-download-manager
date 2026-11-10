@@ -495,6 +495,12 @@ downloads to the app. The browser keeps a download the app doesn't take.
   ("Downloading"). Find Files on This Page offers **Open and Look Again** the same way.
 - The toolbar button opens the extension's list: **Take the browser's downloads** (a switch: when off, the browser
   keeps its downloads and the button's badge says "off"), and **On this page**, the media the tab played (§15).
+- A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer, and
+  the page's Origin when the request goes to another site (as a web player's fetches do), with every request of
+  that download (a stream's playlists, keys and pieces too). Guarded streams refuse pieces to a downloader that
+  introduces itself otherwise (403). When a stream is still refused, its failure says why if its links tell: a
+  token that expired ("The stream's link expired at 15:26: open its page again and add it anew") or one tied to the
+  browser's network address.
 - The cookies and page arrive as a sign-in for the link's site for this session only (§9.1): they're never written
   to disk, and they keep a saved sign-in's user name and password.
 - The extension talks to `hdm` (§12) by native messaging, which passes on only `add` and `ping`. At each launch the

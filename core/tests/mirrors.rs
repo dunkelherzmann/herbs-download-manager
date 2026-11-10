@@ -306,3 +306,66 @@ async fn a_mirror_removed_while_running_stops_serving_and_isnt_saved() {
     let urls: Vec<String> = progress.sources().into_iter().map(|i| i.url).collect();
     assert_eq!(urls, vec![s[0].url("/f.bin")]);
 }
+
+/// One file served badly in every way a mirror goes wrong (Herbert: "one bad mirror doesn't stop a file from
+/// downloading if the other mirrors are fine"): missing, behind a login, stalling midway on every request, refusing
+/// every connection, and a different file of another size.
+async fn bad_mirrors(data: &[u8]) -> (Vec<String>, Vec<MockServer>) {
+    let mut servers = Vec::new();
+    let mut urls = Vec::new();
+    let missing = MockServer::start().await.unwrap();
+    urls.push(missing.url("/f.bin"));
+    servers.push(missing);
+    let login = MockServer::start().await.unwrap();
+    let mut f = MockFile::new(data.to_vec());
+    f.requires = vec![("authorization".into(), "Basic secret".into())];
+    login.put("/f.bin", f);
+    urls.push(login.url("/f.bin"));
+    servers.push(login);
+    let stalls = MockServer::start().await.unwrap();
+    let mut f = MockFile::new(data.to_vec());
+    f.stall_after = Some(64 * 1024);
+    stalls.put("/f.bin", f);
+    urls.push(stalls.url("/f.bin"));
+    servers.push(stalls);
+    let refuses = MockServer::start().await.unwrap();
+    let mut f = MockFile::new(data.to_vec());
+    f.max_connections = Some(0);
+    refuses.put("/f.bin", f);
+    urls.push(refuses.url("/f.bin"));
+    servers.push(refuses);
+    let other = MockServer::start().await.unwrap();
+    other.put("/f.bin", MockFile::new(pattern(data.len() / 2, 99)));
+    urls.push(other.url("/f.bin"));
+    servers.push(other);
+    (urls, servers)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bad_mirrors_never_stop_a_file_a_good_source_serves() {
+    let data = pattern(8 * MIB, 11);
+    let good = servers(1, &data, None).await;
+    let (bad, _keep) = bad_mirrors(&data).await;
+    let dir = folder("badmirrors");
+    let started = std::time::Instant::now();
+    let (_c, progress, task) = spawn(request(good[0].url("/f.bin"), bad.clone(), &dir, 8), fast());
+    assert_eq!(std::fs::read(finished(&finish(task).await)).unwrap(), data, "the whole file, right, from the good source");
+    assert!(started.elapsed() < Duration::from_secs(20), "it didn't wait on the bad ones: {:?}", started.elapsed());
+    // Each bad one is marked, none is used.
+    for url in &bad[..2] {
+        assert!(matches!(status_of(&progress, url), SourceStatus::Failed(_)), "{url}: {:?}", status_of(&progress, url));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bad_link_with_good_mirrors_still_downloads() {
+    let data = pattern(8 * MIB, 12);
+    let good = servers(2, &data, None).await;
+    let (bad, _keep) = bad_mirrors(&data).await;
+    // The stalling one is the link itself; the good ones and the rest of the bad ones are its mirrors.
+    let mut mirrors = vec![good[0].url("/f.bin"), bad[0].clone(), bad[1].clone(), good[1].url("/f.bin"), bad[3].clone(), bad[4].clone()];
+    mirrors.retain(|m| m != &bad[2]);
+    let dir = folder("badlink");
+    let (_c, _p, task) = spawn(request(bad[2].clone(), mirrors, &dir, 8), fast());
+    assert_eq!(std::fs::read(finished(&finish(task).await)).unwrap(), data);
+}

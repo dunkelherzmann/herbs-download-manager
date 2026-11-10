@@ -271,6 +271,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                 early: if sound_only { None } else { early.take() },
                 stream: sound_only,
                 choice: sound_only.then(|| hd_core::addflow::sound_only_choice(&ctx.manager)),
+                dress: None,
             };
             add_all(&ctx, vec![link], folder.borrow().clone(), connections.value() as u32, start);
             window.close();
