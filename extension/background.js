@@ -144,6 +144,28 @@ async function countFor(tabId, items) {
 }
 
 // What a response is: {kind: "stream" | "dash" | "video" | "audio", size}, or null.
+// A file's name from its Content-Disposition (`filename*=UTF-8''…` before `filename="…"`), or "".
+function dispositionName(header) {
+  if (!header) return "";
+  const star = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[2].trim().replace(/^"|"$/g, ""));
+    } catch {
+      // a broken encoding: the plain name below
+    }
+  }
+  const plain = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(header);
+  return plain ? (plain[2] ?? plain[1]).trim() : "";
+}
+
+// An address that names a stream without saying so: a playlist API (`/api/playlist/master/`), `hls` as a part of
+// its path, or `m3u8` in its query. Read once to see whether it is one (at most 20 a page).
+const MAYBE_STREAM = (url) => {
+  const [path, query = ""] = url.split(/[?#]/);
+  return /\/api\/playlist\/master\//i.test(path) || /(^|[/_.-])hls([/_.-]|$)/i.test(new URL(path).pathname) || /m3u8/i.test(query);
+};
+
 function kindOf(d) {
   if (d.tabId < 0 || !web(d.url) || d.url.length > 8192) return null;
   // A piece of a file a player fetches by byte range in its address (Facebook's bytestart/byteend) is never a file
@@ -157,15 +179,18 @@ function kindOf(d) {
   if (SEGMENT.test(path) || /^(video\/mp2t|video\/iso\.segment|audio\/iso\.segment)$/.test(mime)) return null;
   const typed = /^(video|audio)\//.test(mime) || mime === "application/ogg";
   const untyped = !mime || /^(application|binary)\/octet-stream$/.test(mime);
-  if (!typed && !(MEDIA_EXT.test(path) && untyped)) return null;
+  const named = dispositionName(headerOf(d, "content-disposition"));
+  if (!typed && !untyped && MAYBE_STREAM(d.url) && !/^(image|font)\//.test(mime) && d.type !== "media") return { kind: "stream", size: 0, maybe: true };
+  if (!typed && untyped && MAYBE_STREAM(d.url) && !MEDIA_EXT.test(path) && !MEDIA_EXT.test(named)) return { kind: "stream", size: 0, maybe: true };
+  if (!typed && !((MEDIA_EXT.test(path) || MEDIA_EXT.test(named)) && untyped)) return null;
   const range = headerOf(d, "content-range");
   const total = /\/\s*(\d+)\s*$/.exec(range);
   const size = total ? Number(total[1]) : d.statusCode === 206 ? 0 : Number(headerOf(d, "content-length")) || 0;
   // A <video>'s or <audio>'s own file comes in ranges; a script's fetch of a range or a small file is a piece.
   if (d.type !== "media" && (d.statusCode === 206 || range || size < FETCHED_MIN)) return null;
   if (d.type === "media" && size > 0 && size < SOUND_MIN) return null;
-  const audio = mime.startsWith("audio/") || (!mime.startsWith("video/") && /\.(mp3|m4a|ogg|oga|opus|flac|wav)$/i.test(path));
-  return { kind: audio ? "audio" : "video", size, mime };
+  const audio = mime.startsWith("audio/") || (!mime.startsWith("video/") && /\.(mp3|m4a|ogg|oga|opus|flac|wav)$/i.test(named || path));
+  return { kind: audio ? "audio" : "video", size, mime, name: named };
 }
 
 // A tag's attribute, quoted or not: RESOLUTION=1920x1080, LANGUAGE="de".
@@ -176,7 +201,7 @@ const attrOf = (line, name) => (new RegExp(`[:,]${name}=("([^"]*)"|[^,]*)`).exec
 // HDR left out when a standard version exists) and its sound languages. `null` when it isn't a playlist.
 async function variantsOf(url) {
   try {
-    const r = await fetch(url, { credentials: "include" });
+    const r = await fetchAsPage(url);
     const text = (await r.text()).slice(0, 256 * 1024);
     if (!text.trimStart().startsWith("#EXTM3U")) return null;
     const lines = text.split(/\r?\n/).map((l) => l.trim());
@@ -208,7 +233,7 @@ async function variantsOf(url) {
     let live = !variants.length && !ended(text);
     if (variants.length) {
       try {
-        const first = await fetch(urls[0], { credentials: "include", signal: AbortSignal.timeout(5000) });
+        const first = await fetchAsPage(urls[0], AbortSignal.timeout(5000));
         live = !ended((await first.text()).slice(0, 256 * 1024));
       } catch {
         live = false;
@@ -220,13 +245,80 @@ async function variantsOf(url) {
   }
 }
 
+// The headers the page sent for a stream's playlist, kept 10 minutes: a playlist fetched again is asked for as the
+// page asked (its tokens, its Referer and Origin), or a site that checks them answers with an error.
+const pageHeaders = new Map();
+const SKIP_HEADERS = /^(cookie|host|content-length|connection|accept-encoding|sec-|priority|upgrade-insecure-requests|range)/i;
+const FORBIDDEN = /^(referer|origin|user-agent)$/i;
+if (api.webRequest && api.webRequest.onSendHeaders) {
+  const spec = ["requestHeaders"];
+  // Chrome hides Referer and Origin from extensions unless asked with "extraHeaders"; Firefox has no such option.
+  if (api.webRequest.OnSendHeadersOptions && api.webRequest.OnSendHeadersOptions.EXTRA_HEADERS) spec.push("extraHeaders");
+  api.webRequest.onSendHeaders.addListener(
+    (d) => {
+      if (d.tabId < 0 || !web(d.url)) return;
+      const path = pathOf(d.url).toLowerCase();
+      if (!/\.(m3u8|mpd)$/.test(path) && !MAYBE_STREAM(d.url)) return;
+      const now = Date.now();
+      for (const [k, v] of pageHeaders) if (now - v.at > 10 * 60 * 1000) pageHeaders.delete(k);
+      pageHeaders.set(d.url, { at: now, headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)) });
+    },
+    { urls: ["<all_urls>"], types: ["xmlhttprequest", "media", "other"] },
+    spec,
+  );
+}
+
+// Fetches a playlist with the site's cookies and the headers its page sent for it. Headers a script may set go with
+// the request; Referer, Origin and User-Agent, which it may not, are set by a browser rule for this one address,
+// taken away again after.
+let ruleId = 9000;
+async function fetchAsPage(url, signal) {
+  const kept = pageHeaders.get(url);
+  const headers = {};
+  const forced = [];
+  for (const h of (kept && kept.headers) || []) {
+    if (FORBIDDEN.test(h.name)) forced.push({ header: h.name, operation: "set", value: h.value });
+    else headers[h.name] = h.value;
+  }
+  const dnr = api.declarativeNetRequest;
+  const id = (ruleId = ruleId >= 9999 ? 9000 : ruleId + 1);
+  if (forced.length && dnr && dnr.updateSessionRules) {
+    await dnr.updateSessionRules({
+      removeRuleIds: [id],
+      addRules: [{ id, priority: 1, action: { type: "modifyHeaders", requestHeaders: forced },
+                   condition: { urlFilter: `|${url}|`, resourceTypes: ["xmlhttprequest"] } }],
+    }).catch(() => {});
+  }
+  try {
+    return await fetch(url, { credentials: "include", headers, signal });
+  } finally {
+    if (forced.length && dnr && dnr.updateSessionRules) await dnr.updateSessionRules({ removeRuleIds: [id] }).catch(() => {});
+  }
+}
+
+// How many addresses each tab had read to see whether they're streams (MAYBE_STREAM), at most 20.
+const probes = new Map();
+
+// A DASH page's own pieces: on a page that plays a DASH stream, files under 20 MB are left out.
+const DASH_PIECE = 20 << 20;
+const pieceOfDash = (i) => (i.kind === "video" || i.kind === "audio") && i.size > 0 && i.size < DASH_PIECE;
+
 let noting = Promise.resolve();
 function note(d, found) {
   // One at a time: two answers at once would both read the old list.
   noting = noting.then(async () => {
     const items = await itemsOf(d.tabId);
     if (items.some((i) => i.url === d.url)) return;
+    if (found.maybe) {
+      const n = probes.get(d.tabId) || 0;
+      if (n >= 20) return;
+      probes.set(d.tabId, n + 1);
+    }
     const item = { url: d.url, kind: found.kind, size: found.size || 0, mime: found.mime || "", hidden: false, seen: Date.now() };
+    if (found.name) item.name = found.name;
+    const dashPage = found.kind === "dash" || items.some((i) => i.kind === "dash");
+    if (dashPage && pieceOfDash(item)) item.hidden = true;
+    if (found.kind === "dash") for (const i of items) if (pieceOfDash(i)) i.hidden = true;
     if (found.kind === "stream") {
       const found = await variantsOf(d.url);
       if (found === null) return; // not a playlist after all
@@ -254,10 +346,16 @@ if (api.webRequest && api.webRequest.onResponseStarted) {
     ["responseHeaders"],
   );
 }
-api.tabs.onRemoved.addListener((id) => api.storage.session.remove(`media-${id}`).catch(() => {}));
+api.tabs.onRemoved.addListener((id) => {
+  probes.delete(id);
+  api.storage.session.remove(`media-${id}`).catch(() => {});
+});
 // Another page in the tab: what the last one played goes.
 api.tabs.onUpdated.addListener((id, change) => {
-  if (change.url) noting = noting.then(() => setItems(id, [])).catch(() => {});
+  if (change.url) {
+    probes.delete(id);
+    noting = noting.then(() => setItems(id, [])).catch(() => {});
+  }
 });
 api.tabs.onActivated.addListener(({ tabId }) => {
   countFor(tabId).catch(() => {});
@@ -336,7 +434,7 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
       const item = message.item;
       const last = decodeURIComponent(pathOf(item.url || "").split("/").pop() || "");
-      reply({ name: item.name || (rule ? await ruleName(rule, item, tab) : nameFor(item, tab && tab.title) || last || "video.mp4") });
+      reply({ name: rule ? await ruleName(rule, item, tab) : item.name || nameFor(item, tab && tab.title) || last || "video.mp4" });
     } else if (message.type === "rules") {
       // "Naming Rules…": the page opens on this site's rule.
       if (message.site) await api.storage.local.set({ newRuleSite: message.site });
@@ -419,7 +517,8 @@ async function addItem(tab, item, message) {
   // A file the app found on the page comes with its name; what the tab played is named here, by the site's rule when
   // it has one, or as asked in the list.
   const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
-  const name = message.name ? cleanName(message.name) : item.name || (rule ? await ruleName(rule, item, tab) : nameFor(item, tab && tab.title));
+  // A site's rule wins over the server's own name (Content-Disposition) or the one a page scan found.
+  const name = message.name ? cleanName(message.name) : rule ? await ruleName(rule, item, tab) : item.name || nameFor(item, tab && tab.title);
   // Added to the queue; right after opening the app ("Open and Download"), started at once.
   const options = { queue: !message.start, stream: ["stream", "dash", "page-dash"].includes(item.kind) || item.stream === true, name };
   // A stream's quality and sound chosen in the list (S13, S14 otherwise).

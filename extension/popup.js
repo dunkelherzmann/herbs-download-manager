@@ -28,6 +28,8 @@ function size(bytes) {
 }
 
 function title(item) {
+  // The server's own name for it (Content-Disposition) when it gave one.
+  if (item.name) return item.name;
   const last = decodeURIComponent(item.url.split(/[?#]/)[0].split("/").pop() || "");
   return last || new URL(item.url).hostname;
 }

@@ -680,7 +680,14 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   seen: stream playlists (HLS by an `.m3u8` address or an `mpegurl` type; DASH by `.mpd` or `dash+xml`) and whole
   video and sound files (by a `video/` or `audio/` type, or a media file's extension with no type). Left out:
   stream pieces (`.ts`, `.m4s`, `video/mp2t`…), ranges and files under 1 MB that a page's script fetched (pieces
-  of a player's stream), sounds under 64 KB a page plays (clicks, chimes), scripts, styles and pages. A master
+  of a player's stream), sounds under 64 KB a page plays (clicks, chimes), scripts, styles and pages. On a page
+  that plays a DASH stream, video and sound files under 20 MB are left out too (its pieces), those seen before the
+  manifest included. A file is named by its Content-Disposition (`filename*=` first, then `filename=`) when the
+  server gives one, and counts as media by that name when its link says nothing (`/dl?id=7` sent as
+  `Talk.mp3`). An address that only hints at a stream (`/api/playlist/master/`, `hls` as a part of its path, `m3u8`
+  in its query) is read once to see whether it is one, at most 20 a page. A playlist is read again as its page asked
+  for it: with the headers the page sent (kept 10 minutes), Referer, Origin and User-Agent set by a browser rule for
+  that one address and removed after. A master
   playlist is read once and its quality and sound playlists are left out of the list. The button shows how many
   items the tab has; the list is forgotten when the tab goes to another page. Each item shows its name (a stream:
   the page's title), its kind ("Video stream", "Video", "Sound"), size and site; a click adds it to the app's

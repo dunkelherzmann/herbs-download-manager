@@ -180,10 +180,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Finer media detection in the extension,** from Video DownloadHelper's rules: a file's name from its `Content-Disposition` when it has one; on a page that plays a DASH stream, files under 20 MB are left out as its pieces; an address that only names a stream (`/api/playlist/master/`, `hls` in the path) is read to see whether it is one; and a stream is fetched again with the page's own request headers. Left out on purpose: site-specific scripts (YouTube, Facebook, Vimeo…), which break often and depend on each site's terms, and anything that gets round a site's protection; protected (DRM) video stays refused. *Requested 2026-11-10, from studying Video DownloadHelper.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Finer media detection in the extension,** from Video DownloadHelper's rules: a file's name from its `Content-Disposition` when it has one; on a page that plays a DASH stream, files under 20 MB are left out as its pieces; an address that only names a stream (`/api/playlist/master/`, `hls` in the path) is read to see whether it is one; and a stream is fetched again with the page's own request headers. Left out on purpose: site-specific scripts (YouTube, Facebook, Vimeo…), which break often and depend on each site's terms, and anything that gets round a site's protection; protected (DRM) video stays refused. *Requested 2026-11-10, from studying Video DownloadHelper.* Done in #84 (extension 1.10). Checked on sample responses in Node; needs a try in a real browser.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **A preview of each video in the extension's list:** a still picture with the video's length (and its site's icon), so several sources found on one page can be told apart before downloading, as Video DownloadHelper shows. *Requested 2026-11-10.* Done in #79, extension 1.7: one picture of each stream's smallest quality (made by `hdm`, no app needed) or of a whole video file, with its length. The site's icon is left out: every item in the list comes from the same page.
   - [x] Mac
   - [x] Linux
