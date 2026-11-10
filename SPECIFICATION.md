@@ -460,6 +460,10 @@ downloads to the app. The browser keeps a download the app doesn't take.
   or the server refused it.
 - Private (incognito) windows' downloads stay in the browser.
 - Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**.
+- When the app isn't running, an item the list can't add says "Herb's Download Manager isn't running." with an
+  **Open and Download** button: `hdm` opens the app (from beside itself, apart from the browser so it stays open
+  when the browser closes), waits up to 30 seconds for it to answer, and the item is added and started at once
+  ("Downloading"). Find Files on This Page offers **Open and Look Again** the same way.
 - The toolbar button opens the extension's list: **Take the browser's downloads** (a switch: when off, the browser
   keeps its downloads and the button's badge says "off"), and **On this page**, the media the tab played (§15).
 - The cookies and page arrive as a sign-in for the link's site for this session only (§9.1): they're never written

@@ -148,3 +148,15 @@ A box is ticked once the change has shipped. A request that covers several platf
 - [x] **Feature tests watch what the app does in the background** (asked 2026-11-10, Linux and Windows). The feature test run goes through the master-control skill: a crash, a hang, a write outside the test folder (Linux), or a change to the real app's data, the browsers' native-host folders and registry keys, or the startup programs (Windows) fails the run. `HD_NO_OBSERVE=1` turns it off.
   - [x] Linux (`linux/scripts/features.sh`)
   - [x] Windows (`windows/scripts/features.ps1`)
+- [x] **When the app isn't running, the browser extension offers to open it,** then adds what was clicked to the queue and starts downloading it. *Requested 2026-11-10* (the list said "Herb's Download Manager isn't running. Open it, then try again."). Done in #72: Open and Download, and Open and Look Again for Find Files (extension 1.3).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [ ] **Resume with nothing selected starts the downloads waiting in the queue,** instead of doing nothing. *Requested 2026-11-10* (the toolbar's ▶ was greyed out with no row highlighted).
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **More detail on the media the browser extension finds,** as Video DownloadHelper shows it: a picture from the video, its length, its format and quality (each HLS quality listed to choose from: format, size in pixels, bit rate), a name that can be changed before downloading, and a Download button; the same stream listed once. *Requested 2026-11-10, with pictures of DownloadHelper's list.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

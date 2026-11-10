@@ -23,3 +23,5 @@ button.item[disabled] { cursor: default; opacity: 0.6; }
 button.scan { margin: 12px 0 6px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
 button.scan:hover { background: var(--hover); }
 button.scan:focus-visible { outline: 2px solid var(--accent); }
+button.open { margin: 2px 6px 8px; background: var(--accent); color: white; border-color: var(--accent); }
+button.open:hover { background: var(--accent); filter: brightness(1.1); }

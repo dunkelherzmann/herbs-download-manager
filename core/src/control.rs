@@ -125,6 +125,9 @@ pub struct Answer {
     /// scan: the page's files and media.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub found: Option<Vec<FoundFile>>,
+    /// The app isn't running (the browser extension then offers to open it).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub not_running: bool,
 }
 
 /// One file `scan` found on a page (§15).
@@ -140,6 +143,11 @@ pub struct FoundFile {
 }
 
 impl Answer {
+    /// What `send` failing becomes: the app isn't running, or another problem.
+    pub fn failed(e: String) -> Answer {
+        Answer { not_running: e == NOT_RUNNING, error: Some(e), ..Default::default() }
+    }
+
     fn error(e: impl Into<String>) -> Answer {
         Answer { error: Some(e.into()), ..Default::default() }
     }
@@ -425,4 +433,64 @@ pub fn send(dir: &Path, request: &Request) -> Result<Answer, String> {
 /// Removes `control.json` (the app is quitting).
 pub fn close(manager: &Manager) {
     let _ = std::fs::remove_file(manager.data_dir().join(FILE));
+}
+
+/// The app's program, beside `hdm`: in the Mac app bundle, the Flatpak (or a Linux install), or the Windows folder.
+fn app_program() -> Result<PathBuf, String> {
+    let hdm = std::env::current_exe().map_err(|e| e.to_string())?;
+    let dir = hdm.parent().ok_or("hdm has no folder")?;
+    let names: &[&str] = if cfg!(windows) {
+        &["HerbsDownloadManager.exe", "Herbs Download Manager.exe"]
+    } else if cfg!(target_os = "macos") {
+        &["HerbsDownloadManager"]
+    } else {
+        &["herbs-download-manager"]
+    };
+    names.iter().map(|n| dir.join(n)).find(|p| p.is_file()).ok_or_else(|| format!("Herb's Download Manager isn't next to hdm in {}", dir.display()))
+}
+
+/// Opens the app (the browser extension's "Open and Download"), apart from `hdm` so it keeps running when the browser
+/// closes `hdm`, and waits up to `wait` for it to answer. The app gets hdm's environment (a test copy's data folder).
+pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
+    if send(dir, &Request { command: "list".into(), filter: Some("downloading".into()), ..Default::default() }).is_ok() {
+        return Ok(());
+    }
+    let program = app_program()?;
+    let mut command = std::process::Command::new(&program);
+    command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // A session of its own: closing hdm's doesn't close the app.
+        unsafe {
+            command.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+    }
+    #[cfg(windows)]
+    let started = {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x8;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x200;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        // Out of the browser's job too, when it allows that, so closing the browser doesn't close the app.
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB);
+        command.spawn().or_else(|_| {
+            command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+            command.spawn()
+        })
+    };
+    #[cfg(not(windows))]
+    let started = command.spawn();
+    started.map_err(|e| format!("Herb's Download Manager couldn't be opened: {e}"))?;
+    let until = std::time::Instant::now() + wait;
+    while std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(250));
+        if send(dir, &Request { command: "list".into(), filter: Some("downloading".into()), ..Default::default() }).is_ok() {
+            return Ok(());
+        }
+    }
+    Err("Herb's Download Manager was opened but didn't answer in time".into())
 }

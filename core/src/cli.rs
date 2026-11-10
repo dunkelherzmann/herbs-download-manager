@@ -263,7 +263,8 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
 }
 
 /// The browser extension's side (§13): native messaging, one message at a time, each a 32-bit length in the
-/// computer's byte order followed by that many bytes of JSON. Only `add`, `scan` and `ping` are passed on to the app, which
+/// computer's byte order followed by that many bytes of JSON. Only `add`, `scan`, `ping` and `open` (which opens the
+/// app) are passed on to the app, which
 /// answers as for the command line ({ok, error, message}). Ends when the browser closes the pipe.
 pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32 {
     /// Browsers send at most 4 GB, but a link and its cookies are far less.
@@ -285,16 +286,21 @@ pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32
             Err(_) => Answer { error: Some("The browser's message wasn't understood.".into()), ..Default::default() },
             Ok(r) if r.command == "ping" => match control::send(dir, &Request { command: "list".into(), filter: Some("downloading".into()), ..Default::default() }) {
                 Ok(_) => Answer { ok: true, message: Some(crate::version().into()), ..Default::default() },
+                Err(e) => Answer::failed(e),
+            },
+            // The extension's "Open and Download": the app, opened and answering.
+            Ok(r) if r.command == "open" => match control::open_app(dir, std::time::Duration::from_secs(30)) {
+                Ok(()) => Answer { ok: true, message: Some("Herb's Download Manager is open.".into()), ..Default::default() },
                 Err(e) => Answer { error: Some(e), ..Default::default() },
             },
             Ok(r) if r.command == "add" => {
                 let request = Request { command: "add".into(), ids: vec![], text: String::new(), delete_files: false, ..r };
-                control::send(dir, &request).unwrap_or_else(|e| Answer { error: Some(e), ..Default::default() })
+                control::send(dir, &request).unwrap_or_else(Answer::failed)
             }
             // The extension's "Find Files on This Page": the app reads the page with the browser's cookies.
             Ok(r) if r.command == "scan" => {
                 let request = Request { command: "scan".into(), urls: r.urls, cookies: r.cookies, referer: r.referer, ..Default::default() };
-                control::send(dir, &request).unwrap_or_else(|e| Answer { error: Some(e), ..Default::default() })
+                control::send(dir, &request).unwrap_or_else(Answer::failed)
             }
             Ok(r) => Answer { error: Some(format!("The browser can't ask for “{}”.", r.command)), ..Default::default() },
         };

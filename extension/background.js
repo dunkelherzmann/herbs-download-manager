@@ -233,12 +233,20 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       } catch {
         reply({ ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` });
       }
+    } else if (message.type === "open") {
+      // "Open and Download": the app is opened by hdm, which waits until it answers.
+      try {
+        reply(await api.runtime.sendNativeMessage(HOST, { command: "open" }));
+      } catch {
+        reply({ ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` });
+      }
     } else if (message.type === "add") {
       const tab = await api.tabs.get(message.tabId).catch(() => null);
       const item = message.item;
       // A file the app found on the page comes with its name; what the tab played is named here.
       const name = item.name || nameFor(item, tab && tab.title);
-      const answer = await send(item.url, tab && tab.url, { queue: true, stream: item.kind === "stream" || item.stream === true, name });
+      // Added to the queue; right after opening the app ("Open and Download"), started at once.
+      const answer = await send(item.url, tab && tab.url, { queue: !message.start, stream: item.kind === "stream" || item.stream === true, name });
       reply(answer || { ok: false, error: `${NAME} didn't answer.` });
     }
   })();
