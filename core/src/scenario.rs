@@ -9,6 +9,7 @@
 //! feature NAME                     starts a feature; its steps stop at the first failure
 //! add FOLDER [start|queue] URL…    the app's add flow, each link its own download (names in use follow S7)
 //! add-as-mirrors FOLDER URL…       Add Links' "Treat as mirrors of one file", started
+//! add-sound-only FOLDER URL…       Add Links' "Only the sound of streamed videos", started
 //! do COMMAND [ROW] [ARG…]          an app command with ROW selected: resume, pause, restart, delete,
 //!                                  delete-files, add-mirror (ARG: links), set-checksum (ARG: algorithm, value),
 //!                                  rename (ARG: new name), move (ARG: a folder under $DL), note (ARG: text),
@@ -84,7 +85,7 @@ impl Run<'_> {
     fn step(&self, words: &[String]) -> Result<(), String> {
         let arg = |i: usize| words.get(i).cloned().ok_or_else(|| format!("“{}” needs more", words.join(" ")));
         match words[0].as_str() {
-            "add" | "add-as-mirrors" => {
+            "add" | "add-as-mirrors" | "add-sound-only" => {
                 let folder = self.dl.join(arg(1)?);
                 std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
                 let (mode, links) = match words.get(2).map(String::as_str) {
@@ -324,13 +325,16 @@ impl Host for DirectHost {
     fn command(&self, name: &str, ids: &[u64], args: &[String]) -> Result<(), String> {
         let m = &self.0;
         match name {
-            "add" | "add-as-mirrors" => {
+            "add" | "add-as-mirrors" | "add-sound-only" => {
                 let folder = Path::new(&args[0]);
                 let start = args[1] == "start";
-                let links: Vec<crate::addflow::PendingLink> = if name == "add" {
-                    args[2..].iter().map(|u| crate::addflow::PendingLink { url: u.clone(), ..Default::default() }).collect()
-                } else {
-                    vec![crate::addflow::PendingLink { url: args[2].clone(), mirrors: args[3..].to_vec(), ..Default::default() }]
+                let links: Vec<crate::addflow::PendingLink> = match name {
+                    "add" => args[2..].iter().map(|u| crate::addflow::PendingLink { url: u.clone(), ..Default::default() }).collect(),
+                    "add-sound-only" => args[2..]
+                        .iter()
+                        .map(|u| crate::addflow::PendingLink { url: u.clone(), stream: true, choice: Some(crate::addflow::sound_only_choice(m)), ..Default::default() })
+                        .collect(),
+                    _ => vec![crate::addflow::PendingLink { url: args[2].clone(), mirrors: args[3..].to_vec(), ..Default::default() }],
                 };
                 let mut session = crate::addflow::AddSession::new(m, links, folder, m.settings().connections, start);
                 while let crate::addflow::Step::Ask(_) = session.step(m) {

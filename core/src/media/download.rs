@@ -11,7 +11,7 @@ use std::time::Duration;
 use reqwest::Url;
 
 use super::hls::{self, Key, Playlist, Segment};
-use super::join::{Joiner, decrypt_aes128};
+use super::join::{Joiner, Written, decrypt_aes128};
 use super::JoinError;
 use crate::limit::Limiter;
 use crate::transfer::{self, Control, Outcome, Progress};
@@ -149,13 +149,19 @@ enum Track {
 }
 
 /// A DASH manifest's best video and its best sound, as pieces like HLS's (an init section, then MP4 fragments).
-async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, vault: &crate::vault::Vault) -> Result<Vec<Track>, String> {
+async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, sound_only: bool, vault: &crate::vault::Vault) -> Result<Vec<Track>, String> {
     let m = super::dash::parse(text, url)?;
     if m.live {
         return Err("This is a live DASH stream: recording those isn't supported yet".into());
     }
     let mut tracks = Vec::new();
-    for rep in [m.best_video(), m.best_audio()].into_iter().flatten() {
+    // Sound only: just the sound's pieces (the picture's too only when the manifest has no separate sound, and it's
+    // left out when they're joined).
+    let wanted = match (sound_only, m.best_audio()) {
+        (true, Some(audio)) => vec![Some(audio)],
+        _ => vec![m.best_video(), m.best_audio()],
+    };
+    for rep in wanted.into_iter().flatten() {
         tracks.push(Track::Listed(dash_pieces(client, rep, vault).await?));
     }
     if tracks.is_empty() {
@@ -229,15 +235,24 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     // sound, whose pieces are known at once.
     let first = text(client, &url, &req.vault).await?;
     let mut playlists = Vec::new();
+    let sound_only = req.choice.sound_only;
     if first.contains("<MPD") {
-        playlists = dash_tracks(client, &url, &first, &req.vault).await?;
+        playlists = dash_tracks(client, &url, &first, sound_only, &req.vault).await?;
     } else {
         match hls::parse(&first, &url)? {
             p @ Playlist::Master { .. } => {
                 let video = p.pick_variant(req.choice.quality).ok_or("The stream lists no quality to download")?.clone();
-                playlists.push(Track::Hls(video.url.clone()));
-                if let Some(sound) = p.audio_in(&video, &req.choice.sound).and_then(|r| r.url.clone()) {
-                    playlists.push(Track::Hls(sound));
+                let sound = p.audio_in(&video, &req.choice.sound).and_then(|r| r.url.clone());
+                match (sound_only, sound) {
+                    // Sound only, as its own playlist: the picture's isn't fetched at all.
+                    (true, Some(sound)) => playlists.push(Track::Hls(sound)),
+                    // Sound only, inside the variants' pieces: a sound-only variant when the stream lists one,
+                    // else the chosen quality's pieces, whose picture is left out when they're joined.
+                    (true, None) => playlists.push(Track::Hls(p.sound_variant().unwrap_or(&video).url.clone())),
+                    (false, sound) => {
+                        playlists.push(Track::Hls(video.url.clone()));
+                        playlists.extend(sound.map(Track::Hls));
+                    }
                 }
             }
             Playlist::Media { .. } => playlists.push(Track::Hls(url.clone())),
@@ -310,7 +325,7 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     // Every piece is in (or the recording ended): join them.
     progress.finishing.store(true, Ordering::SeqCst);
     let (dest2, parts2) = (dest.clone(), parts.clone());
-    let joined = tokio::task::spawn_blocking(move || join_parts(&sources, &inits, &keys, &parts2, &dest2))
+    let joined = tokio::task::spawn_blocking(move || join_parts(&sources, &inits, &keys, &parts2, &dest2, sound_only))
         .await
         .map_err(|e| format!("Joining the pieces stopped: {e}"))??;
     progress.size.store(std::fs::metadata(&joined).map(|m| m.len()).unwrap_or(0), Ordering::SeqCst);
@@ -484,6 +499,7 @@ fn join_parts(
     keys: &HashMap<Url, Option<[u8; 16]>>,
     parts: &Path,
     dest: &Path,
+    sound_only: bool,
 ) -> Result<PathBuf, String> {
     let read = |file: &str| std::fs::read(parts.join(file)).map_err(|e| format!("A piece is missing: {e}"));
     let decrypted = |s: &Segment, data: Vec<u8>| -> Result<Vec<u8>, String> {
@@ -500,8 +516,11 @@ fn join_parts(
         n.push(".hdpart");
         dest.with_file_name(n)
     };
-    let attempt = || -> Result<(), JoinError> {
+    let attempt = || -> Result<Written, JoinError> {
         let mut joiner = Joiner::new(&parts.join("spool"))?;
+        if sound_only {
+            joiner.sound_only();
+        }
         for (si, segments) in sources.iter().enumerate() {
             let source = joiner.source();
             let mut current_map = None;
@@ -520,9 +539,15 @@ fn join_parts(
         joiner.finish(&hdpart)
     };
     match attempt() {
-        Ok(()) => {
-            std::fs::rename(&hdpart, dest).map_err(|e| format!("Can't name the file {}: {e}", dest.display()))?;
-            Ok(dest.to_path_buf())
+        Ok(written) => {
+            // MP3 sound is saved as it came, under its own extension.
+            let dest = if written == Written::Mp3 { dest.with_extension("mp3") } else { dest.to_path_buf() };
+            std::fs::rename(&hdpart, &dest).map_err(|e| format!("Can't name the file {}: {e}", dest.display()))?;
+            Ok(dest)
+        }
+        Err(JoinError::Unsupported(what)) if sound_only => {
+            let _ = std::fs::remove_file(&hdpart);
+            Err(format!("The sound can't be saved on its own: {what}"))
         }
         Err(JoinError::Unsupported(what)) => {
             // MP4 can't hold it: the video playlist's pieces, decrypted, one after the other, as MPEG-TS.

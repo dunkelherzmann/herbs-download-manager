@@ -76,7 +76,7 @@ impl Default for Settings {
 impl Settings {
     /// What a stream added now downloads, unless it was chosen for it (S13, S14).
     pub fn stream_choice(&self) -> crate::media::StreamChoice {
-        crate::media::StreamChoice { quality: self.stream_quality, sound: self.sound_languages.clone() }
+        crate::media::StreamChoice { quality: self.stream_quality, sound: self.sound_languages.clone(), sound_only: false }
     }
 
     /// Brings every number into its allowed range, so a hand-edited settings file can't break a download.

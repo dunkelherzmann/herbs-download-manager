@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use hd_core::media::hls::{self, Key, Playlist};
-use hd_core::media::join::{Joiner, decrypt_aes128};
+use hd_core::media::join::{Joiner, Written, decrypt_aes128};
 use reqwest::Url;
 
 fn fixtures() -> PathBuf {
@@ -48,23 +48,35 @@ fn add_playlist(joiner: &mut Joiner, url: &Url) {
 
 /// Joins `name`'s playlist in a scratch folder of the test's own (`test`), so tests running at once never share one.
 fn join(test: &str, name: &str, playlist: &str) -> PathBuf {
+    join_as(test, name, playlist, false).0
+}
+
+/// `join`, or with `sound_only` only the sound (from the separate sound playlist when there is one, as the download
+/// does): the file and what was written.
+fn join_as(test: &str, name: &str, playlist: &str, sound_only: bool) -> (PathBuf, Written) {
     let dir = scratch(test);
     let url = Url::from_file_path(fixtures().join(name).join(playlist)).unwrap();
     let mut joiner = Joiner::new(&dir.join("spool")).unwrap();
+    if sound_only {
+        joiner.sound_only();
+    }
     let text = String::from_utf8(read(&url)).unwrap();
     match hls::parse(&text, &url).unwrap() {
         p @ Playlist::Master { .. } => {
             let video = p.best_variant().unwrap().clone();
-            add_playlist(&mut joiner, &video.url);
-            if let Some(sound) = p.audio_for(&video) {
-                add_playlist(&mut joiner, sound.url.as_ref().unwrap());
+            let sound = p.audio_for(&video).and_then(|r| r.url.clone());
+            if !(sound_only && sound.is_some()) {
+                add_playlist(&mut joiner, &video.url);
+            }
+            if let Some(sound) = sound {
+                add_playlist(&mut joiner, &sound);
             }
         }
         Playlist::Media { .. } => add_playlist(&mut joiner, &url),
     }
     let out = dir.join("joined.mp4");
-    joiner.finish(&out).unwrap();
-    out
+    let written = joiner.finish(&out).unwrap();
+    (out, written)
 }
 
 fn ffmpeg() -> Option<PathBuf> {
@@ -184,4 +196,67 @@ fn the_joined_file_starts_with_its_index() {
     let bytes = std::fs::read(&joined).unwrap();
     let kinds: Vec<[u8; 4]> = hd_core::media::mp4::boxes(&bytes).into_iter().map(|(k, _)| k).collect();
     assert_eq!(kinds, [*b"ftyp", *b"moov", *b"mdat"], "moov before mdat: it plays before it's read to the end");
+}
+
+/// Sound only: ours holds just the sound, frame for frame what ffmpeg copies out of the stream with `-vn -c copy`
+/// (MP3 sound as an .mp3 file, AAC as MP4 sound).
+fn sound_only_same_as_ffmpeg(name: &str, playlist: &str, expected: Written) {
+    let (joined, written) = join_as(&format!("{name}-sound"), name, playlist, true);
+    assert_eq!(written, expected, "{name}: written as");
+    let Some(ffmpeg) = ffmpeg() else {
+        eprintln!("no ffmpeg here: {name}'s sound saved but not compared");
+        return;
+    };
+    let ours = decoded(&ffmpeg, &joined);
+    let reference = joined.with_file_name(if expected == Written::Mp3 { "ffmpeg.mp3" } else { "ffmpeg.m4a" });
+    let made = Command::new(&ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-allowed_extensions", "ALL", "-protocol_whitelist", "file,crypto,data", "-i"])
+        .arg(fixtures().join(name).join(playlist))
+        .args(["-map", "0:a:0", "-vn", "-c", "copy"])
+        .arg(&reference)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "ffmpeg's copy: {}", String::from_utf8_lossy(&made.stderr));
+    let theirs = decoded(&ffmpeg, &reference);
+    assert_eq!(ours.len(), 1, "{name}: one stream, the sound");
+    assert_eq!(theirs.len(), 1);
+    let hashes = |v: &Vec<(f64, String)>| v.iter().map(|(_, h)| h.clone()).collect::<Vec<_>>();
+    let (a, b) = (hashes(&ours[0]), hashes(&theirs[0]));
+    assert_eq!(a.len(), b.len(), "{name}: as many sound blocks");
+    // ffmpeg's .mp3 marks the encoder's lead-in to be skipped, so its first block decodes shorter; every other is
+    // the same. (Counted, not listed: a list of hundreds of checksums is unreadable in a failure.)
+    let skip = usize::from(expected == Written::Mp3);
+    let differ = a.iter().zip(&b).skip(skip).filter(|(x, y)| x != y).count();
+    assert_eq!(differ, 0, "{name}: {differ} of {} sound blocks differ", a.len());
+}
+
+#[test]
+fn sound_only_from_ts_pieces_is_mp4_sound() {
+    sound_only_same_as_ffmpeg("h264-ts", "index.m3u8", Written::Mp4);
+}
+
+#[test]
+fn sound_only_from_mp4_fragments() {
+    sound_only_same_as_ffmpeg("h264-fmp4", "index.m3u8", Written::Mp4);
+}
+
+#[test]
+fn sound_only_in_mp3_is_an_mp3_file() {
+    sound_only_same_as_ffmpeg("mp3-ts", "index.m3u8", Written::Mp3);
+}
+
+#[test]
+fn sound_only_takes_the_separate_sound_track() {
+    sound_only_same_as_ffmpeg("split", "master.m3u8", Written::Mp4);
+}
+
+#[test]
+fn sound_only_of_a_stream_with_no_sound_says_so() {
+    let dir = scratch("no-sound");
+    let url = Url::from_file_path(fixtures().join("split/0.m3u8")).unwrap();
+    let mut joiner = Joiner::new(&dir.join("spool")).unwrap();
+    joiner.sound_only();
+    add_playlist(&mut joiner, &url);
+    let err = joiner.finish(&dir.join("out.m4a")).unwrap_err();
+    assert_eq!(err.to_string(), "This stream has no sound to save");
 }

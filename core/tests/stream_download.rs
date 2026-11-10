@@ -207,7 +207,7 @@ fn a_stream_downloads_the_quality_chosen_for_it_or_in_settings() {
     let dir = folder("quality");
     let m = Manager::open(&dir).unwrap();
     // Chosen for it (the extension's picker): the 360p version.
-    let chosen = hd_core::media::StreamChoice { quality: Some(480), sound: Vec::new() };
+    let chosen = hd_core::media::StreamChoice { quality: Some(480), ..Default::default() };
     let id = m.add(NewDownload { url: s.url("/show/master.m3u8"), folder: dir.join("files"), name: Some("chosen.mp4".into()), connections: 4,
                                  start: true, stream: true, choice: Some(chosen), ..NewDownload::default() });
     wait_for(&m, id, "finished", |s| *s == Status::Finished);
@@ -224,5 +224,58 @@ fn a_stream_downloads_the_quality_chosen_for_it_or_in_settings() {
     m.resume(&[id]);
     wait_for(&m, id, "finished", |s| *s == Status::Finished);
     assert_eq!(std::fs::read(dir.join("files/settings.mp4")).unwrap(), joined_directly("h264-ts", &dir), "Settings' 360p at the time it was added");
+    assert!(m.quit(Duration::from_secs(5)));
+}
+
+/// The sound alone, as the joiner makes it from the playlist's own pieces (`<prefix>s0.ts`…).
+fn sound_directly(name: &str, prefix: &str, dir: &Path) -> Vec<u8> {
+    let base = fixtures().join(name);
+    let mut j = Joiner::new(&dir.join("direct-sound-spool")).unwrap();
+    j.sound_only();
+    let source = j.source();
+    let mut n = 0;
+    while base.join(format!("{prefix}s{n}.ts")).exists() {
+        j.piece(source, &std::fs::read(base.join(format!("{prefix}s{n}.ts"))).unwrap(), false).unwrap();
+        n += 1;
+    }
+    let out = dir.join("direct-sound");
+    j.finish(&out).unwrap();
+    std::fs::read(out).unwrap()
+}
+
+#[test]
+fn sound_only_downloads_just_the_sound_track() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    // The picture's playlist is there but none of its pieces: fetching one would fail the download.
+    for entry in std::fs::read_dir(fixtures().join("split")).unwrap() {
+        let path = entry.unwrap().path();
+        let file = path.file_name().unwrap().to_string_lossy().to_string();
+        if !file.starts_with("0_") {
+            s.put(&format!("/split/{file}"), MockFile::new(std::fs::read(&path).unwrap()));
+        }
+    }
+    serve(&s, "mp3-ts", None);
+    let dir = folder("sound-only");
+    let m = Manager::open(&dir).unwrap();
+    let sound_only = Some(hd_core::media::StreamChoice { sound_only: true, ..Default::default() });
+
+    // A separate sound track: only its pieces, saved as .m4a under the stream's name.
+    let id = m.add(NewDownload { url: s.url("/split/master.m3u8"), folder: dir.join("files"), connections: 4, start: true,
+                                 choice: sound_only.clone(), ..NewDownload::default() });
+    wait_for(&m, id, "finished", |s| *s == Status::Finished);
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row.name, "split.m4a");
+    assert_eq!(std::fs::read(dir.join("files/split.m4a")).unwrap(), sound_directly("split", "1_", &dir));
+
+    // MP3 sound in the video's own pieces: its frames as an .mp3 file, whatever name it was added under.
+    let id = m.add(NewDownload { url: s.url("/mp3-ts/index.m3u8"), folder: dir.join("files"), name: Some("song.mp4".into()),
+                                 connections: 4, start: true, choice: sound_only, ..NewDownload::default() });
+    wait_for(&m, id, "finished", |s| *s == Status::Finished);
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row.path.as_deref(), Some(dir.join("files/song.mp3").as_path()));
+    assert_eq!(row.name, "song.mp3");
+    assert_eq!(std::fs::read(dir.join("files/song.mp3")).unwrap(), sound_directly("mp3-ts", "", &dir));
+    assert!(!dir.join("files/song.m4a").exists());
     assert!(m.quit(Duration::from_secs(5)));
 }

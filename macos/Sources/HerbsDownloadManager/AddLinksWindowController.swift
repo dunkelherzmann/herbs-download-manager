@@ -19,6 +19,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
             self.url = url
             name = URL(string: url)?.lastPathComponent.removingPercentEncoding ?? url
             if name.isEmpty || name == "/" { name = url }
+            stream = isStreamLink(url: url)
         }
         /// A file a page scan found, already checked.
         init(found: FoundLink) {
@@ -35,6 +36,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
     private let table = NSTableView()
     private let filter = NSSearchField()
     private let mirrorsBox = NSButton(checkboxWithTitle: "Treat as mirrors of one file", target: nil, action: nil)
+    private let soundBox = NSButton(checkboxWithTitle: "Only the sound of streamed videos", target: nil, action: nil)
     private let summary = NSTextField(labelWithString: "")
     private let folderLabel = NSPathControl()
     private var folder = AppModel.downloadsFolder
@@ -113,6 +115,10 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         mirrorsBox.action = #selector(mirrorsChanged(_:))
         mirrorsBox.toolTip = "Combine the checked links into one download that uses each of them as a source"
         mirrorsBox.setAccessibilityIdentifier("treat-as-mirrors")
+        soundBox.target = self
+        soundBox.action = #selector(mirrorsChanged(_:))
+        soundBox.toolTip = "Save just the sound of each checked stream (.m4a, or .mp3), as the site sends it"
+        soundBox.setAccessibilityIdentifier("sound-only")
 
         folderLabel.url = folder
         folderLabel.pathStyle = .popUp
@@ -135,7 +141,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         let buttons = NSStackView(views: [summary, NSView(), cancel, add, download])
         buttons.spacing = 8
 
-        let stack = NSStackView(views: [top, scroll, mirrorsBox, folderRow, buttons])
+        let stack = NSStackView(views: [top, scroll, mirrorsBox, soundBox, folderRow, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -276,6 +282,9 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
     private func update() {
         mirrorsBox.isEnabled = canBeMirrors
         if !canBeMirrors { mirrorsBox.state = .off }
+        // Only for streams; a whole video file isn't split.
+        soundBox.isEnabled = checked.contains { $0.stream }
+        if !soundBox.isEnabled { soundBox.state = .off }
         let n = checked.count
         // Links to the same file (same name, and same size when known) become one download with mirrors.
         let files = Set(checked.map { "\($0.name)\u{0}\($0.size.map(String.init) ?? "")" }).count
@@ -324,7 +333,8 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         let links: [PendingLink] = mirrorsBox.state == .on
             ? [PendingLink(url: chosen[0].url, mirrors: chosen.dropFirst().map(\.url), name: chosen[0].name,
                            size: chosen.compactMap(\.size).first)]
-            : chosen.map { PendingLink(url: $0.url, name: $0.name, size: $0.size, stream: $0.stream) }
+            : chosen.map { PendingLink(url: $0.url, name: $0.name, size: $0.size, stream: $0.stream,
+                                       soundOnly: $0.stream && soundBox.state == .on) }
         let folder = self.folder
         close()
         let window = (NSApp.delegate as? AppDelegate)?.mainWindow?.window

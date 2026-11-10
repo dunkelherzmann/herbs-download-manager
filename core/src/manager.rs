@@ -495,9 +495,14 @@ impl Manager {
         }
         let stream = new.stream || crate::media::download::is_stream_link(&new.url);
         // A stream's name is known now (it's joined under it at the end); a file's comes from the server.
-        let name = new.name.or_else(|| stream.then(|| crate::media::download::stream_name(&new.url)));
-        let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
         let choice = stream.then(|| new.choice.unwrap_or_else(|| self.settings().stream_choice()));
+        let name = new.name.or_else(|| stream.then(|| crate::media::download::stream_name(&new.url)));
+        // Sound only is saved as `.m4a` (`.mp3` when the sound is MP3, once it's joined).
+        let name = match &choice {
+            Some(c) if c.sound_only => name.map(|n| crate::media::sound_only_name(&n)),
+            _ => name,
+        };
+        let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();
             let id = slots.iter().map(|s| s.entry.id).max().unwrap_or(0) + 1;

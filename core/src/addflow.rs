@@ -122,7 +122,17 @@ pub struct AddSession {
     summary: Summary,
 }
 
+/// Sound only, with Settings' quality and sound language (S13, S14): what the add windows' "Only the sound" gives.
+pub fn sound_only_choice(manager: &Manager) -> crate::media::StreamChoice {
+    crate::media::StreamChoice { sound_only: true, ..manager.settings().stream_choice() }
+}
+
 fn name_of(link: &PendingLink) -> String {
+    let name = plain_name_of(link);
+    if link.choice.as_ref().is_some_and(|c| c.sound_only) { crate::media::sound_only_name(&name) } else { name }
+}
+
+fn plain_name_of(link: &PendingLink) -> String {
     link.name.clone().unwrap_or_else(|| {
         if link.stream || crate::media::download::is_stream_link(&link.url) {
             return crate::media::download::stream_name(&link.url);

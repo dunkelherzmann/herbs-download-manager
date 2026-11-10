@@ -240,6 +240,17 @@ impl Playlist {
         self.audio_in(variant, &[])
     }
 
+    /// A variant that carries sound only (its codecs name no picture, and it has no size), the best of them: what a
+    /// sound-only download takes when the sound isn't a separate track.
+    pub fn sound_variant(&self) -> Option<&Variant> {
+        let Playlist::Master { variants, .. } = self else { return None };
+        let picture = ["avc", "hvc", "hev", "dvh", "dva", "vp0", "vp8", "vp9", "av01", "mp4v"];
+        variants
+            .iter()
+            .filter(|v| v.resolution.is_none() && v.codecs.as_deref().is_some_and(|c| !picture.iter().any(|p| c.to_ascii_lowercase().contains(p))))
+            .max_by_key(|v| v.bandwidth)
+    }
+
     /// The separate sound track a variant plays with (S14): the first of `languages` its group has (`en` matches
     /// `en-US`), else the group's default (the stream's own sound), else its first.
     pub fn audio_in(&self, variant: &Variant, languages: &[String]) -> Option<&Rendition> {
@@ -370,5 +381,17 @@ mod tests {
         assert_eq!(name(&["en"]), "English", "en matches en-US");
         assert_eq!(name(&["fr", "DE"]), "Deutsch", "the first preferred language the stream has");
         assert_eq!(name(&["fr"]), "Original", "none of them: the stream's own");
+    }
+
+    #[test]
+    fn a_sound_only_variant_is_found_by_its_codecs() {
+        let base = Url::parse("https://example.com/m.m3u8").unwrap();
+        let text = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360,CODECS=\"avc1.4d401e,mp4a.40.2\"\nv.m3u8\n\
+                    #EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS=\"mp4a.40.5\"\nlow.m3u8\n\
+                    #EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS=\"mp4a.40.2\"\nhigh.m3u8\n";
+        let p = parse(text, &base).unwrap();
+        assert_eq!(p.sound_variant().unwrap().url.as_str(), "https://example.com/high.m3u8", "the best sound-only variant");
+        let none = parse("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360\nv.m3u8\n", &base).unwrap();
+        assert!(none.sound_variant().is_none(), "without codecs, a variant may hold a picture");
     }
 }

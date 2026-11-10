@@ -153,3 +153,8 @@ add f18 start $L/show/master.m3u8
 wait f18/show.mp4 finished 30
 expect f18/show.mp4 file-size 78728
 setting stream-quality highest
+
+feature Only the sound of a streamed video is saved
+add-sound-only f19 $L/clip/index.m3u8
+wait f19/clip.m4a finished 30
+expect f19/clip.m4a file-size 28293

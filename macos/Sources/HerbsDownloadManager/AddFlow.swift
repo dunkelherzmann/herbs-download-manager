@@ -11,6 +11,8 @@ struct PendingLink {
     var early: UInt64?
     /// A stream a page scan found (§15): joined into one MP4 under `name`, whatever its address says.
     var stream = false
+    /// A stream's sound only, saved as it is (.m4a, or .mp3), never re-encoded.
+    var soundOnly = false
 }
 
 /// Skip, Replace or Keep Both, for a link whose file name is taken by a different file (SPECIFICATION.md §5.6).
@@ -47,8 +49,10 @@ extension AppModel {
                 }
                 continue
             }
-            let plan = manager.planAdd(url: link.url, name: link.name, folder: folder.path, size: link.size)
-            var name = link.name
+            // Sound only is named .m4a from the start, so a clash is found under the name it will have.
+            let linkName = link.soundOnly ? soundOnlyName(name: link.name, url: link.url) : link.name
+            let plan = manager.planAdd(url: link.url, name: linkName, folder: folder.path, size: link.size)
+            var name = linkName
             if case .clash(let id, let path, let size, let finished, let keptName) = plan {
                 let choice: ClashChoice
                 if let remembered {
@@ -78,7 +82,7 @@ extension AppModel {
             }
             let result = manager.add(url: link.url, mirrors: link.mirrors, folder: folder.path, name: name,
                                      size: link.size, connections: connections, start: start, early: link.early,
-                                     stream: link.stream)
+                                     stream: link.stream || link.soundOnly, soundOnly: link.soundOnly)
             if result.asMirror { mirrored += 1 } else { new += 1 }
             decided[key] = .some(result.id)
         }

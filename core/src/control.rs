@@ -63,6 +63,8 @@ pub struct Request {
     pub quality: Option<String>,
     /// add, a stream: its sound language (`de`); absent takes Settings' (S14), empty is the stream's own sound.
     pub sound: Option<String>,
+    /// add, a stream: download only its sound (`.m4a`, or `.mp3`), never re-encoded.
+    pub sound_only: bool,
     /// add, from the browser extension: a DASH manifest a page carries in its data (Facebook's reels) instead of a
     /// link. Saved in the app's data folder and downloaded from there; `urls` may then be empty.
     pub manifest: Option<String>,
@@ -398,6 +400,13 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                 Ok(c) => c,
                 Err(e) => return Answer::error(e),
             };
+            // Sound only is taken from a stream's own sound track; a whole video file isn't split (yet).
+            if r.sound_only
+                && !r.stream
+                && let Some(url) = r.urls.iter().find(|u| !crate::media::download::is_stream_link(u))
+            {
+                return Answer::error(format!("Sound only works for streamed video (.m3u8, .mpd), and “{url}” isn't one"));
+            }
             let links = r
                 .urls
                 .iter()
@@ -539,10 +548,11 @@ pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
 
 /// A stream's quality and sound track from an add request, over Settings' (S13, S14); `None` when it gives neither.
 fn stream_choice(settings: &crate::settings::Settings, r: &Request) -> Result<Option<crate::media::StreamChoice>, String> {
-    if r.quality.is_none() && r.sound.is_none() {
+    if r.quality.is_none() && r.sound.is_none() && !r.sound_only {
         return Ok(None);
     }
     let mut choice = settings.stream_choice();
+    choice.sound_only = r.sound_only;
     if let Some(q) = r.quality.as_deref().map(str::trim) {
         choice.quality = match q.trim_end_matches(['p', 'P']) {
             "" | "highest" | "best" => None,
@@ -572,5 +582,7 @@ mod tests {
         assert_eq!((c.quality, c.sound), (None, vec!["de".to_string()]));
         assert_eq!(choice(None, Some("")).unwrap().unwrap().sound, Vec::<String>::new(), "empty: the stream's own sound");
         assert!(choice(Some("big"), None).is_err());
+        let c = stream_choice(&settings, &Request { sound_only: true, ..Default::default() }).unwrap().unwrap();
+        assert_eq!((c.quality, c.sound_only), (Some(720), true), "sound only keeps Settings' quality and sound");
     }
 }

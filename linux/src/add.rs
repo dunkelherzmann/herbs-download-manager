@@ -146,6 +146,9 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     connections.set_tooltip_text(Some("Connections for this download (1–32)"));
     let size = gtk::Label::builder().xalign(0.0).label("").build();
     size.add_css_class("dim-label");
+    let sound = gtk::CheckButton::with_label("Only the sound");
+    sound.set_tooltip_text(Some("For a streamed video: save just its sound (.m4a, or .mp3), as the site sends it"));
+    sound.set_sensitive(false);
 
     let grid = gtk::Grid::builder().row_spacing(10).column_spacing(10).margin_top(16).margin_bottom(16).margin_start(16).margin_end(16).build();
     for (row, (title, widget)) in [
@@ -155,6 +158,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         ("Save to:", folder_row(&window, folder.clone()).upcast()),
         ("Connections:", connections.clone().upcast()),
         ("Size:", size.clone().upcast()),
+        ("Stream:", sound.clone().upcast()),
     ]
     .into_iter()
     .enumerate()
@@ -163,7 +167,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         grid.attach(&widget, 1, row as i32, 1, 1);
     }
     let (cancel, add, download) = (gtk::Button::with_label("Cancel"), gtk::Button::with_label("Add"), gtk::Button::with_label("Download"));
-    grid.attach(&buttons(&cancel, &add, &download), 0, 6, 2, 1);
+    grid.attach(&buttons(&cancel, &add, &download), 0, 7, 2, 1);
     with_header(&window, &grid);
 
     // A6: ask the server about the link once it stops changing.
@@ -179,8 +183,15 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         let folder = folder.clone();
         let early = early.clone();
         let page = page.clone();
+        let sound = sound.clone();
         link_entry.connect_changed(move |entry| {
             page.set(false);
+            // Sound only is for streams; a whole video file isn't split.
+            let stream = hd_core::media::download::is_stream_link(entry.text().trim());
+            sound.set_sensitive(stream);
+            if !stream {
+                sound.set_active(false);
+            }
             let page = page.clone();
             if let Some(id) = pending.borrow_mut().take() {
                 id.remove();
@@ -250,15 +261,16 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
             }
             let buffer = mirrors.buffer();
             let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
+            let sound_only = sound.is_sensitive() && sound.is_active();
             let link = PendingLink {
                 url,
                 mirrors: hd_core::links::find(&text),
                 name: Some(name.text().trim().to_string()).filter(|n| !n.is_empty()),
                 size: *probed.borrow(),
                 // The download already under way is adopted (moved to the chosen folder and name), not started again.
-                early: early.take(),
-                stream: false,
-                choice: None,
+                early: if sound_only { None } else { early.take() },
+                stream: sound_only,
+                choice: sound_only.then(|| hd_core::addflow::sound_only_choice(&ctx.manager)),
             };
             add_all(&ctx, vec![link], folder.borrow().clone(), connections.value() as u32, start);
             window.close();
@@ -298,6 +310,8 @@ pub struct AddLinks {
     items: Rc<RefCell<Vec<Item>>>,
     summary: gtk::Label,
     mirrors: gtk::CheckButton,
+    /// "Only the sound of streamed videos".
+    sound: gtk::CheckButton,
     manager: Manager,
 }
 
@@ -313,7 +327,7 @@ impl AddLinks {
             fresh.push(url);
         }
         for url in &fresh {
-            self.append_row(url, reqwest_name(url), None, "Checking…", false, true);
+            self.append_row(url, reqwest_name(url), None, "Checking…", hd_core::media::download::is_stream_link(url), true);
         }
         self.window.set_title(Some(&title(self.items.borrow().len())));
         self.update();
@@ -422,7 +436,14 @@ impl AddLinks {
             .borrow()
             .iter()
             .filter(|i| i.check.is_active())
-            .map(|i| PendingLink { url: i.url.clone(), name: Some(i.name.clone()), size: i.size, stream: i.stream, ..Default::default() })
+            .map(|i| PendingLink {
+                url: i.url.clone(),
+                name: Some(i.name.clone()),
+                size: i.size,
+                stream: i.stream,
+                choice: (i.stream && self.sound.is_active()).then(|| hd_core::addflow::sound_only_choice(&self.manager)),
+                ..Default::default()
+            })
             .collect()
     }
 
@@ -437,6 +458,12 @@ impl AddLinks {
         self.mirrors.set_sensitive(can);
         if !can {
             self.mirrors.set_active(false);
+        }
+        // Only for streams; a whole video file isn't split.
+        let streams = checked.iter().any(|l| l.stream);
+        self.sound.set_sensitive(streams);
+        if !streams {
+            self.sound.set_active(false);
         }
         let files: std::collections::HashSet<String> =
             checked.iter().map(|l| format!("{}\u{0}{:?}", l.name.clone().unwrap_or_default(), l.size)).collect();
@@ -488,6 +515,8 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     let scroll = gtk::ScrolledWindow::builder().child(&list).vexpand(true).build();
     let mirrors = gtk::CheckButton::with_label("Treat as mirrors of one file");
     mirrors.set_tooltip_text(Some("Add the checked links as one download, each a source of the same file"));
+    let sound = gtk::CheckButton::with_label("Only the sound of streamed videos");
+    sound.set_tooltip_text(Some("Save just the sound of each checked stream (.m4a, or .mp3), as the site sends it"));
     let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let save = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     save.append(&gtk::Label::new(Some("Save to:")));
@@ -499,7 +528,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     bottom.append(&summary);
     bottom.append(&buttons(&cancel, &add, &download));
     let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    for m in [&top.clone().upcast::<gtk::Widget>(), &scroll.clone().upcast(), &mirrors.clone().upcast(), &save.clone().upcast(), &bottom.clone().upcast()] {
+    for m in [&top.clone().upcast::<gtk::Widget>(), &scroll.clone().upcast(), &mirrors.clone().upcast(), &sound.clone().upcast(), &save.clone().upcast(), &bottom.clone().upcast()] {
         body.append(m);
     }
     body.set_margin_top(12);
@@ -508,7 +537,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     body.set_margin_end(12);
     with_header(&window, &body);
 
-    let this = AddLinks { window: window.clone(), list, items: Rc::default(), summary, mirrors: mirrors.clone(), manager: ctx.manager.clone() };
+    let this = AddLinks { window: window.clone(), list, items: Rc::default(), summary, mirrors: mirrors.clone(), sound: sound.clone(), manager: ctx.manager.clone() };
     {
         let this2 = this.clone();
         mirrors.connect_toggled(move |_| this2.update());

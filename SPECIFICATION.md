@@ -172,6 +172,7 @@ The note is saved with the list.
 | A4 | Save to | folder, with a Choose… button; defaults to the Downloads folder |
 | A5 | Connections | a 1–32 picker, defaults to Settings ▸ Connections per download |
 | A6 | Size | shown once the first source answers ("4.0 GB, resumable" or "size unknown, can't resume") |
+| A7 | Stream: Only the sound | for a streamed video's link (`.m3u8`, `.mpd`): saves just its sound (§15); off and dimmed for any other link |
 
 Buttons: **Cancel**, **Add** (adds the download to the queue, paused if the queue is stopped) and **Download** (the
 default: starts it now). A file of that name in the list or the folder is handled as §5.6 says.
@@ -191,7 +192,8 @@ Every link in the clipboard's text opens the Add Links window (§5.3).
 
 A list of the links found, each with a checkbox, name, size and folder, and a filter field. **Treat as mirrors of
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
-Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same
+**Only the sound of streamed videos** (offered when a checked link is a stream) saves just the sound of each checked
+stream (§15); other files are added as they are. Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same
 name, and the same size when known) become one download and its mirrors (§7.1 M5); the footer line says so ("5
 links checked: 2 downloads with mirrors"), and afterwards the main window's footer sums up what was added. While the
 window is open, links, text and link files dropped on it, or on the main window or the Dock icon, join the list as
@@ -442,7 +444,7 @@ Linux Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
 | Command | What it does |
 |---|---|
 | `hdm list [--filter all\|downloading\|paused\|finished\|unfinished] [--search TEXT] [--json]` | id, status, size, name and note; `--json` gives every field |
-| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14; the MCP tool `add_downloads` takes `quality` and `sound` the same way |
+| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE] [--sound-only]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14, and `--sound-only` saves just its sound (§15; a link that isn't a stream is refused); the MCP tool `add_downloads` takes `quality`, `sound` and `sound_only` the same way |
 | `hdm pause ID…` · `hdm resume ID…` | as Pause and Resume |
 | `hdm remove ID… [--delete-files]` | takes downloads off the list; with `--delete-files` their files go to the Trash (Recycle Bin) |
 | `hdm note ID TEXT…` | sets the note (§4.1); empty text removes it |
@@ -610,6 +612,14 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   with an init section; byte ranges, AES-128 encryption and discontinuities are handled. Protected streams
   (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused with "This stream is protected (DRM): it can't be
   saved", never broken.
+- **Sound only:** a stream added with Only the sound (New Download A7, Add Links, the extension's **Sound Only**,
+  `hdm add --sound-only`) downloads just its sound track and saves it as it came, never re-encoded: AAC as an `.m4a`
+  file (MP4 with no picture), MP3 as an `.mp3` file (its frames one after the other). The name ends in `.m4a` from
+  the start and becomes `.mp3` when the sound turns out to be MP3. A separate sound track (HLS's chosen as above, or
+  DASH's best) is the only playlist fetched; when the sound is inside the picture's pieces, a sound-only variant is
+  taken if the master lists one (its codecs name no picture), else the chosen quality's pieces, whose picture is
+  left out of the file. A stream with no sound fails with "This stream has no sound to save"; Dolby (AC-3) sound,
+  which can't be kept on its own here, fails saying so. A whole video file isn't split: sound only is for streams.
 - **In the list:** a link whose address ends in `.m3u8` (added in any way: New Download, Add Links, `hdm add`, the
   browser extension) becomes a stream download, named after the playlist as `.mp4`: its own name, or the folder
   it's in when the playlist has a generic one (`index`, `master`, `playlist`, `chunklist`…), else the site's name.
@@ -640,7 +650,8 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream with more than one
   quality or sound track shows two lists under it: **Quality as in Settings**, **Highest** and each picture size with
   its bit rate ("720p · 2.8 Mb/s", one per size, HDR left out as above); and **Sound as in Settings**, **The stream's
-  own sound** and each sound track by name and language ("English (en)"). What they show is what the app downloads. A stream is named after
+  own sound** and each sound track by name and language ("English (en)"). What they show is what the app downloads.
+Every stream also has a **Sound Only** button there, which adds just its sound (see Sound only above). A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
   media extension. A file a player fetches in pieces by byte range in its address (`bytestart`, `byteend`,
   `range`) is never listed (one such piece was a reel's fragments without its beginning or sound). When the list

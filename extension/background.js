@@ -328,6 +328,8 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       // A stream's quality and sound chosen in the list (S13, S14 otherwise).
       if (message.quality) options.quality = message.quality;
       if (message.sound !== undefined) options.sound = message.sound;
+      // Only its sound, saved as it is (.m4a, or .mp3).
+      if (message.soundOnly && options.stream) options.sound_only = true;
       let answer;
       if (item.kind === "page-dash") {
         // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.

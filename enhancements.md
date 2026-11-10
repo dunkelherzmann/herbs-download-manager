@@ -168,10 +168,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Download only the sound** of a found video or stream, from the extension's list and the app: its sound track saved as it is (`.m4a`, or `.mp3`/`.aac` when that's what the site sends), never re-encoded (Video DownloadHelper turns it into MP3). A site can be set to always give sound only. *Requested 2026-11-10, from studying Video DownloadHelper.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Download only the sound** of a found video or stream, from the extension's list and the app: its sound track saved as it is (`.m4a`, or `.mp3`/`.aac` when that's what the site sends), never re-encoded (Video DownloadHelper turns it into MP3). A site can be set to always give sound only. *Requested 2026-11-10, from studying Video DownloadHelper.* Done for streams (HLS and DASH): the extension's **Sound Only** button (extension 1.6), "Only the sound" in New Download and Add Links, `hdm add --sound-only` and the MCP tool; done in #78. Left for later: a whole video file's sound (it needs an MP4 reader for whole files), HLS sound sent as bare `.aac` pieces, and the per-site setting, which goes with the per-site default action in the naming-rules entry below.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **The extension's list in a smarter order and easier to reach,** as Video DownloadHelper's: streams before whole files, finished streams before live ones, the page's own site before others (Oldest and Newest as the other choices); the tab's media also in the right-click menu and on a keyboard shortcut; the list can open in the browser's side panel instead of the popup; with nothing found, it says to start the video (and skip any ads) and offers **Look Again**, which reloads the page. *Requested 2026-11-10, from studying Video DownloadHelper.*
   - [ ] Mac
   - [ ] Linux
@@ -181,6 +181,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 - [ ] **Finer media detection in the extension,** from Video DownloadHelper's rules: a file's name from its `Content-Disposition` when it has one; on a page that plays a DASH stream, files under 20 MB are left out as its pieces; an address that only names a stream (`/api/playlist/master/`, `hls` in the path) is read to see whether it is one; and a stream is fetched again with the page's own request headers. Left out on purpose: site-specific scripts (YouTube, Facebook, Vimeo…), which break often and depend on each site's terms, and anything that gets round a site's protection; protected (DRM) video stays refused. *Requested 2026-11-10, from studying Video DownloadHelper.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A preview of each video in the extension's list:** a still picture with the video's length (and its site's icon), so several sources found on one page can be told apart before downloading, as Video DownloadHelper shows. *Requested 2026-11-10.*
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows

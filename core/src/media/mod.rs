@@ -26,6 +26,18 @@ pub struct StreamChoice {
     pub quality: Option<u32>,
     /// Sound languages in order of preference (`en`, `de`…); empty, or none of them there, is the stream's own.
     pub sound: Vec<String>,
+    /// Only the sound track is downloaded and saved as it is (`.m4a`, or `.mp3`): the picture is left out.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub sound_only: bool,
+}
+
+/// A stream's file name when only its sound is saved: `.mp4` becomes `.m4a` (an `.mp3` name stays).
+pub fn sound_only_name(name: &str) -> String {
+    match name.rsplit_once('.') {
+        Some((stem, ext)) if ext.eq_ignore_ascii_case("mp4") || ext.eq_ignore_ascii_case("ts") => format!("{stem}.m4a"),
+        Some(_) => name.to_string(),
+        None => format!("{name}.m4a"),
+    }
 }
 
 /// The qualities offered in Settings and the extension, besides Highest.
@@ -116,6 +128,8 @@ pub enum JoinError {
     Unsupported(String),
     /// The pieces aren't what they should be.
     Damaged(String),
+    /// Sound only was asked for, and the stream has none.
+    NoSound,
 }
 
 impl From<std::io::Error> for JoinError {
@@ -129,6 +143,7 @@ impl std::fmt::Display for JoinError {
         match self {
             JoinError::Io(e) => write!(f, "{e}"),
             JoinError::Unsupported(what) | JoinError::Damaged(what) => write!(f, "{what}"),
+            JoinError::NoSound => write!(f, "This stream has no sound to save"),
         }
     }
 }

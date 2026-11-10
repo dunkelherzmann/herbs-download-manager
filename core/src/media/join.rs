@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::mp4::{self, FragmentedTrack};
 use super::ts::{Codec, Demuxer, Pes, Stream};
-use super::{JoinError, Spool, Track};
+use super::{JoinError, Kind, Spool, Track};
 
 /// One playlist's pieces.
 enum Source {
@@ -19,6 +19,16 @@ enum Source {
 pub struct Joiner {
     spool: Spool,
     sources: Vec<Source>,
+    /// Only the sound is kept (the picture's tracks are left out of the file).
+    sound_only: bool,
+}
+
+/// What `finish` wrote.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Written {
+    Mp4,
+    /// Sound only, in MPEG audio (MP3): its frames one after the other, as the stream had them.
+    Mp3,
 }
 
 /// A piece whose timestamps jumped by more than this from where the last one ended starts again (a new clip, an
@@ -28,7 +38,12 @@ const JUMP_SECONDS: f64 = 10.0;
 impl Joiner {
     /// The pieces' bytes wait in `spool_path` until `finish`.
     pub fn new(spool_path: &Path) -> Result<Joiner, JoinError> {
-        Ok(Joiner { spool: Spool::create(spool_path)?, sources: Vec::new() })
+        Ok(Joiner { spool: Spool::create(spool_path)?, sources: Vec::new(), sound_only: false })
+    }
+
+    /// Keeps only the sound: the file is an `.m4a` (or `.mp3`), with no picture.
+    pub fn sound_only(&mut self) {
+        self.sound_only = true;
     }
 
     /// A new playlist (the video's, then a separate sound track's); returns its number.
@@ -112,20 +127,47 @@ impl Joiner {
         Ok(())
     }
 
-    /// Writes the MP4 to `path`. The spool file can go afterwards.
-    pub fn finish(mut self, path: &Path) -> Result<(), JoinError> {
+    /// Writes the MP4 (or, sound only in MP3, the MP3) to `path`. The spool file can go afterwards.
+    pub fn finish(mut self, path: &Path) -> Result<Written, JoinError> {
+        let sound_only = self.sound_only;
+        let wanted = |kind: Kind| !sound_only || kind == Kind::Audio;
+        // Each track, and whether it's MPEG audio from MPEG-TS pieces.
         let mut tracks = Vec::new();
         for source in std::mem::take(&mut self.sources) {
             match source {
                 Source::Unknown => {}
-                Source::Fragments { tracks: t } => tracks.extend(t.into_iter().map(|t| t.track).filter(|t| !t.samples.is_empty())),
+                Source::Fragments { tracks: t } => {
+                    tracks.extend(t.into_iter().map(|t| (t.track, false)).filter(|(t, _)| !t.samples.is_empty() && wanted(t.kind)))
+                }
                 Source::Ts { streams, .. } => {
-                    for s in streams.into_values() {
-                        tracks.push(s.track()?);
+                    for s in streams.into_values().filter(|s| wanted(s.kind())) {
+                        let mp3 = s.codec == Codec::Mpeg;
+                        tracks.push((s.track()?, mp3));
                     }
                 }
             }
         }
+        if sound_only {
+            // One sound track: the first (a separate sound playlist comes after the video's).
+            tracks.truncate(1);
+            match tracks.first() {
+                None => return Err(JoinError::NoSound),
+                Some((track, true)) => {
+                    // MP3 frames carry their own headers: saved one after the other, as an .mp3 file.
+                    let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
+                    let mut buf = Vec::new();
+                    for sample in &track.samples {
+                        buf.clear();
+                        self.spool.read(sample.offset, sample.size, &mut buf)?;
+                        std::io::Write::write_all(&mut out, &buf)?;
+                    }
+                    std::io::Write::flush(&mut out)?;
+                    return Ok(Written::Mp3);
+                }
+                Some(_) => {}
+            }
+        }
+        let mut tracks: Vec<Track> = tracks.into_iter().map(|(t, _)| t).collect();
         // Durations still unknown at a piece's edge come from the next sample.
         for t in &mut tracks {
             for i in 1..t.samples.len() {
@@ -134,7 +176,8 @@ impl Joiner {
                 }
             }
         }
-        mp4::write(path, &tracks, &mut self.spool)
+        mp4::write(path, &tracks, &mut self.spool)?;
+        Ok(Written::Mp4)
     }
 }
 

@@ -41,13 +41,17 @@ pub fn on_main(hwnd: HWND, request: &mut Request) {
     crate::app::select_ids(&request.ids);
     let (name, ids, args) = (request.name.as_str(), &request.ids, &request.args);
     request.result = match name {
-        "add" | "add-as-mirrors" => {
-            // New Download and Add Links end in add_all; Add Links' "Treat as mirrors" makes one link with mirrors.
+        "add" | "add-as-mirrors" | "add-sound-only" => {
+            // New Download and Add Links end in add_all; Add Links' "Treat as mirrors" makes one link with mirrors,
+            // and "Only the sound of streamed videos" marks each stream.
             let links = &args[2..];
-            let pending: Vec<PendingLink> = if name == "add" {
-                links.iter().map(|u| PendingLink { url: u.clone(), ..Default::default() }).collect()
-            } else {
-                vec![PendingLink { url: links[0].clone(), mirrors: links[1..].to_vec(), ..Default::default() }]
+            let pending: Vec<PendingLink> = match name {
+                "add" => links.iter().map(|u| PendingLink { url: u.clone(), ..Default::default() }).collect(),
+                "add-sound-only" => links
+                    .iter()
+                    .map(|u| PendingLink { url: u.clone(), stream: true, choice: Some(hd_core::addflow::sound_only_choice(&ctx.manager)), ..Default::default() })
+                    .collect(),
+                _ => vec![PendingLink { url: links[0].clone(), mirrors: links[1..].to_vec(), ..Default::default() }],
             };
             let note = crate::add::add_all(hwnd, &ctx.manager, pending, args[0].clone().into(), ctx.manager.settings().connections, args[1] == "start");
             (ctx.done)(note);

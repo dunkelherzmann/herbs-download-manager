@@ -135,6 +135,7 @@ function pickers(item) {
 function row(tab, item, label, facts) {
   const li = document.createElement("li");
   const pick = item.kind === "stream" ? pickers(item) : { box: null, chosen: () => ({}) };
+  const streamed = ["stream", "dash", "page-dash"].includes(item.kind);
   const button = document.createElement("button");
   button.className = "item";
   const name = document.createElement("span");
@@ -146,41 +147,60 @@ function row(tab, item, label, facts) {
   detail.textContent = [...facts, host].filter(Boolean).join(" · ");
   button.append(name, detail);
   button.title = item.url || label;
-  {
-    button.setAttribute("aria-label", `Add ${label} to the queue`);
-    button.onclick = async () => {
-      button.disabled = true;
+  let soundOnly = null;
+  // Adds it (`extra`: sound only), and says how that went in the item's second line.
+  const add = async (extra) => {
+    button.disabled = true;
+    if (soundOnly) soundOnly.disabled = true;
+    detail.className = "detail";
+    detail.textContent = "Adding…";
+    const answer = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen(), ...extra });
+    if (answer && answer.ok) {
+      detail.className = "detail ok";
+      detail.textContent = "Added to the queue";
+    } else if (answer && answer.not_running) {
+      // The app isn't open: offer to open it, then download this at once.
       detail.className = "detail";
-      detail.textContent = "Adding…";
-      const answer = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen() });
-      if (answer && answer.ok) {
-        detail.className = "detail ok";
-        detail.textContent = "Added to the queue";
-      } else if (answer && answer.not_running) {
-        // The app isn't open: offer to open it, then download this at once.
-        detail.className = "detail";
-        detail.textContent = "Herb's Download Manager isn't running.";
-        li.append(openButton("Open and Download", async () => {
-          detail.textContent = "Opening Herb's Download Manager…";
-          const opened = await ask({ type: "open" });
-          if (!(opened && opened.ok)) return opened;
-          detail.textContent = "Adding…";
-          const added = await ask({ type: "add", tabId: tab.id, item, start: true, ...pick.chosen() });
-          if (added && added.ok) {
-            detail.className = "detail ok";
-            detail.textContent = "Downloading";
-          }
-          return added;
-        }, detail));
-      } else {
-        detail.className = "detail bad";
-        detail.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
-        button.disabled = false;
-      }
-    };
-  }
+      detail.textContent = "Herb's Download Manager isn't running.";
+      li.append(openButton("Open and Download", async () => {
+        detail.textContent = "Opening Herb's Download Manager…";
+        const opened = await ask({ type: "open" });
+        if (!(opened && opened.ok)) return opened;
+        detail.textContent = "Adding…";
+        const added = await ask({ type: "add", tabId: tab.id, item, start: true, ...pick.chosen(), ...extra });
+        if (added && added.ok) {
+          detail.className = "detail ok";
+          detail.textContent = "Downloading";
+        }
+        return added;
+      }, detail));
+    } else {
+      detail.className = "detail bad";
+      detail.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
+      button.disabled = false;
+      if (soundOnly) soundOnly.disabled = false;
+    }
+  };
+  button.setAttribute("aria-label", `Add ${label} to the queue`);
+  button.onclick = () => add({});
   li.append(button);
-  if (pick.box) li.append(pick.box);
+  // A streamed video's sound alone, as the site sends it (never re-encoded).
+  let box = pick.box;
+  // (A page's video known to have no sound gets none.)
+  if (streamed && !(item.kind === "page-dash" && item.sound === false)) {
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "pickers";
+    }
+    soundOnly = document.createElement("button");
+    soundOnly.className = "sound-only";
+    soundOnly.textContent = "Sound Only";
+    soundOnly.title = "Add only its sound to the queue (.m4a, or .mp3), as the site sends it";
+    soundOnly.setAttribute("aria-label", `Add only the sound of ${label} to the queue`);
+    soundOnly.onclick = () => add({ soundOnly: true });
+    box.append(soundOnly);
+  }
+  if (box) li.append(box);
   return li;
 }
 

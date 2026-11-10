@@ -11,6 +11,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     private let folderLabel = NSPathControl()
     private let connections = NSPopUpButton()
     private let size = NSTextField(labelWithString: "")
+    private let soundBox = NSButton(checkboxWithTitle: "Only the sound", target: nil, action: nil)
     private var folder = AppModel.downloadsFolder
     /// The user typed a name: the server's no longer replaces it.
     private var nameEdited = false
@@ -88,6 +89,10 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         size.textColor = .secondaryLabelColor
         size.setAccessibilityIdentifier("size")
 
+        soundBox.isEnabled = false
+        soundBox.toolTip = "For a streamed video: save just its sound (.m4a, or .mp3), as the site sends it"
+        soundBox.setAccessibilityIdentifier("sound-only")
+
         let grid = NSGridView(views: [
             [label("Link:"), link],
             [label("Mirrors:"), mirrorScroll],
@@ -95,6 +100,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
             [label("Save to:"), folderRow],
             [label("Connections:"), connections],
             [label("Size:"), size],
+            [label("Stream:"), soundBox],
         ])
         grid.rowSpacing = 10
         grid.columnSpacing = 8
@@ -159,6 +165,8 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         probedPage = false
         dropEarly()
         let url = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        soundBox.isEnabled = isStreamLink(url: url)
+        if !soundBox.isEnabled { soundBox.state = .off }
         guard !url.isEmpty else { size.stringValue = ""; return }
         size.stringValue = "Checking…"
         let manager = AppModel.shared.manager
@@ -238,9 +246,12 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
         let chosen = name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = UInt32(connections.titleOfSelectedItem ?? "") ?? AppModel.shared.settings.connections
         var link = PendingLink(url: url, mirrors: mirrorLinks, name: chosen.isEmpty ? nil : chosen, size: probedSize)
+        link.soundOnly = soundBox.isEnabled && soundBox.state == .on
         // The download already under way is adopted (moved to the chosen folder and name), not started again.
-        link.early = early
-        early = nil
+        if !link.soundOnly {
+            link.early = early
+            early = nil
+        }
         let folder = self.folder
         close()
         let main = (NSApp.delegate as? AppDelegate)?.mainWindow?.window

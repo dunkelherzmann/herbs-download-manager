@@ -42,6 +42,8 @@ const ID_UNCHECK_ALL: u16 = 8;
 const ID_MIRRORS: u16 = 9;
 const ID_LIST: u16 = 10;
 const ID_PATTERN: u16 = 11;
+/// "Only the sound" (New Download) and "Only the sound of streamed videos" (Add Links).
+const ID_SOUND: u16 = 12;
 const ID_NEXT: u16 = ID_DOWNLOAD;
 
 pub(crate) fn wide(s: &str) -> Vec<u16> {
@@ -370,7 +372,7 @@ pub(crate) const DEFAULT: u32 = BS_DEFPUSHBUTTON as u32;
 /// New Download (§5.1).
 pub fn new_download(ctx: &Ctx, link: Option<String>) {
     let multi = (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN) as u32 | WS_VSCROLL.0;
-    let hwnd = open_form(ctx, FormKind::NewDownload, "New Download", (560, 340), &[
+    let hwnd = open_form(ctx, FormKind::NewDownload, "New Download", (560, 374), &[
         (0, w!("STATIC"), "Link:", LABEL, 12, 18, 90, 20),
         (ID_LINK, w!("EDIT"), "", EDIT, 110, 14, 430, 24),
         (0, w!("STATIC"), "Mirrors:", LABEL, 12, 50, 90, 20),
@@ -384,9 +386,11 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (23, w!("EDIT"), &ctx.manager.settings().connections.to_string(), EDIT | ES_NUMBER as u32, 110, 202, 60, 24),
         (0, w!("STATIC"), "Size:", LABEL, 12, 240, 90, 20),
         (24, w!("STATIC"), "", 0, 110, 240, 430, 20),
-        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 270, 290, 85, 30),
-        (ID_ADD, w!("BUTTON"), "Add", BUTTON, 362, 290, 85, 30),
-        (ID_DOWNLOAD, w!("BUTTON"), "Download", DEFAULT, 455, 290, 85, 30),
+        (0, w!("STATIC"), "Stream:", LABEL, 12, 274, 90, 20),
+        (ID_SOUND, w!("BUTTON"), "Only the sound", BS_AUTOCHECKBOX as u32, 110, 272, 300, 24),
+        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 270, 324, 85, 30),
+        (ID_ADD, w!("BUTTON"), "Add", BUTTON, 362, 324, 85, 30),
+        (ID_DOWNLOAD, w!("BUTTON"), "Download", DEFAULT, 455, 324, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (ID_LINK, "", "The address of the file to download"),
@@ -394,11 +398,18 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (21, "", "The file's name, from the server; change it to save under another name"),
         (ID_CHOOSE, "", "Choose the folder the file is saved to"),
         (23, "", "Connections for this download (1–32)"),
+        (ID_SOUND, "", "For a streamed video: save just its sound (.m4a, or .mp3), as the site sends it"),
         (ID_CANCEL, "", "Close without adding anything (Esc)"),
         (ID_ADD, "", "Add: put it in the queue; it starts when the queue runs"),
         (ID_DOWNLOAD, "", "Download: start now (Enter)"),
     ]);
     with_form(hwnd, |f| {
+        // Set here as well as on EN_CHANGE: setting the link below notifies while this form is borrowed, so the
+        // handler can't see it.
+        let stream = link.as_deref().is_some_and(|l| hd_core::media::download::is_stream_link(l.trim()));
+        unsafe {
+            let _ = EnableWindow(f.controls[&ID_SOUND], stream);
+        }
         if let Some(l) = link {
             set_text(f.controls[&ID_LINK], &l);
         }
@@ -424,6 +435,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_UNCHECK_ALL, w!("BUTTON"), "Uncheck All", BUTTON, 648, 11, 100, 28),
                 (ID_LIST, WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 12, 46, 736, 280),
                 (ID_MIRRORS, w!("BUTTON"), "Treat as mirrors of one file", BS_AUTOCHECKBOX as u32, 12, 334, 300, 24),
+                (ID_SOUND, w!("BUTTON"), "Only the sound of streamed videos", BS_AUTOCHECKBOX as u32, 320, 334, 320, 24),
                 (0, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
                 (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000, 76, 370, 560, 20),
                 (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 648, 364, 100, 28),
@@ -450,6 +462,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_UNCHECK_ALL, "", "Untick every link shown"),
                 (ID_LIST, "Links", "The links found: untick the ones not to download"),
                 (ID_MIRRORS, "", "Add the checked links as one download, each a source of the same file"),
+                (ID_SOUND, "", "Save just the sound of each checked stream (.m4a, or .mp3), as the site sends it"),
                 (ID_CHOOSE, "", "Choose the folder the files are saved to"),
                 (ID_CANCEL, "", "Close without adding anything (Esc)"),
                 (ID_ADD, "", "Add: put them in the queue; they start when the queue runs"),
@@ -469,6 +482,9 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         for url in &fresh {
             let name = url.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(url).to_string();
             f.items.push((url.clone(), name, None, "Checking…".into(), true));
+            if hd_core::media::download::is_stream_link(url) {
+                f.streams.insert(url.clone());
+            }
         }
         fresh
     })
@@ -522,6 +538,13 @@ fn update_summary(hwnd: HWND) {
             SendMessageW(mirrors, BM_SETCHECK, Some(WPARAM(0)), None);
         }
         let on = SendMessageW(mirrors, BM_GETCHECK, None, None).0 == 1;
+        // Only for streams; a whole video file isn't split.
+        let streams = checked.iter().any(|i| f.streams.contains(&i.0));
+        let sound = f.controls[&ID_SOUND];
+        let _ = EnableWindow(sound, streams);
+        if !streams {
+            SendMessageW(sound, BM_SETCHECK, Some(WPARAM(0)), None);
+        }
         let files: std::collections::HashSet<String> = checked.iter().map(|i| format!("{}\u{0}{:?}", i.1, i.2)).collect();
         let text = if on {
             format!("1 download from {n} sources")
@@ -577,6 +600,7 @@ fn submit(hwnd: HWND, start: bool) {
                 }
                 let name = text_of(f.controls[&21]).trim().to_string();
                 let connections = text_of(f.controls[&23]).trim().parse::<u32>().unwrap_or(32).clamp(1, 32);
+                let sound_only = hd_core::media::download::is_stream_link(&url) && checked(f.controls[&ID_SOUND]);
                 Some((
                     vec![PendingLink {
                         url,
@@ -584,9 +608,9 @@ fn submit(hwnd: HWND, start: bool) {
                         name: Some(name).filter(|n| !n.is_empty()),
                         size: f.probed_size,
                         // The download already under way is adopted (moved to the chosen folder and name).
-                        early: f.early.take(),
-                        stream: false,
-                        choice: None,
+                        early: if sound_only { None } else { f.early.take() },
+                        stream: sound_only,
+                        choice: sound_only.then(|| hd_core::addflow::sound_only_choice(&f.ctx.manager)),
                     }],
                     f.folder.clone(),
                     connections,
@@ -597,7 +621,18 @@ fn submit(hwnd: HWND, start: bool) {
                     .items
                     .iter()
                     .filter(|i| i.4)
-                    .map(|i| PendingLink { url: i.0.clone(), name: Some(i.1.clone()), size: i.2, stream: f.streams.contains(&i.0), ..Default::default() })
+                    .map(|i| {
+                        let stream = f.streams.contains(&i.0);
+                        let sound_only = stream && checked(f.controls[&ID_SOUND]);
+                        PendingLink {
+                            url: i.0.clone(),
+                            name: Some(i.1.clone()),
+                            size: i.2,
+                            stream,
+                            choice: sound_only.then(|| hd_core::addflow::sound_only_choice(&f.ctx.manager)),
+                            ..Default::default()
+                        }
+                    })
                     .collect();
                 if links.is_empty() {
                     return None;
@@ -649,12 +684,21 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         }
                     }
                     (ID_LINK, EN_CHANGE) => {
+                        // Sound only is for streams; a whole video file isn't split.
+                        with_form(hwnd, |f| {
+                            let stream = hd_core::media::download::is_stream_link(text_of(f.controls[&ID_LINK]).trim());
+                            let _ = EnableWindow(f.controls[&ID_SOUND], stream);
+                            if !stream {
+                                SendMessageW(f.controls[&ID_SOUND], BM_SETCHECK, Some(WPARAM(0)), None);
+                            }
+                        });
                         // A6: ask the server once the link stops changing.
                         drop_early(hwnd);
                         SetTimer(Some(hwnd), TIMER_PROBE, 500, None);
                     }
                     (ID_FILTER, EN_CHANGE) => show_items(hwnd),
                     (ID_MIRRORS, _) => update_summary(hwnd),
+                    (ID_SOUND, _) => {}
                     (ID_CHECK_ALL | ID_UNCHECK_ALL, _) => {
                         with_form(hwnd, |f| {
                             let shown = f.shown.clone();
@@ -878,4 +922,9 @@ fn drop_early(hwnd: HWND) {
     if let Some((manager, token)) = with_form(hwnd, |f| f.early.take().map(|t| (f.ctx.manager.clone(), t))).flatten() {
         std::thread::spawn(move || manager.cancel_early(token));
     }
+}
+
+/// Whether a checkbox is ticked.
+fn checked(button: HWND) -> bool {
+    unsafe { SendMessageW(button, BM_GETCHECK, None, None).0 == 1 }
 }

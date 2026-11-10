@@ -24,14 +24,17 @@ final class FeatureHost: ScenarioHost, @unchecked Sendable {
         model.refresh()
         window.list.select(ids)
         switch name {
-        case "add", "add-as-mirrors":
-            // New Download and Add Links end in addAsking; Add Links' "Treat as mirrors" makes one link with mirrors.
+        case "add", "add-as-mirrors", "add-sound-only":
+            // New Download and Add Links end in addAsking; Add Links' "Treat as mirrors" makes one link with mirrors,
+            // and "Only the sound" marks each stream.
             guard args.count >= 3 else { return "add needs a folder, start or queue, and links" }
             let folder = URL(fileURLWithPath: args[0], isDirectory: true)
             let links = Array(args[2...])
-            let pending = name == "add"
-                ? links.map { PendingLink(url: $0) }
-                : [PendingLink(url: links[0], mirrors: Array(links.dropFirst()))]
+            let pending = switch name {
+            case "add": links.map { PendingLink(url: $0) }
+            case "add-sound-only": links.map { PendingLink(url: $0, stream: true, soundOnly: true) }
+            default: [PendingLink(url: links[0], mirrors: Array(links.dropFirst()))]
+            }
             await model.addAsking(pending, folder: folder, connections: model.settings.connections,
                                   start: args[1] == "start", window: nil)
         case "resume": window.resumeSelected(nil)

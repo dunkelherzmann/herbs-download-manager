@@ -143,6 +143,19 @@ pub fn connection_choices() -> Vec<u32> {
     settings::CONNECTIONS.collect()
 }
 
+/// A stream's file name when only its sound is saved: the name given (else the stream's own, from its link), with
+/// `.mp4` made `.m4a`.
+#[uniffi::export]
+pub fn sound_only_name(name: Option<String>, url: String) -> String {
+    hd_core::media::sound_only_name(&name.unwrap_or_else(|| hd_core::media::download::stream_name(&url)))
+}
+
+/// Whether a link is a stream's playlist or manifest by its address (`.m3u8`, `.mpd`).
+#[uniffi::export]
+pub fn is_stream_link(url: String) -> bool {
+    hd_core::media::download::is_stream_link(&url)
+}
+
 /// S13's choices besides Highest, largest first (2160 … 360).
 #[uniffi::export]
 pub fn stream_quality_choices() -> Vec<u32> {
@@ -398,8 +411,11 @@ impl DownloadManager {
         start: bool,
         early: Option<u64>,
         stream: bool,
+        sound_only: bool,
     ) -> AddResult {
         let s = self.inner.settings();
+        // Sound only: Settings' quality and sound language, the picture left out.
+        let choice = sound_only.then(|| hd_core::media::StreamChoice { sound_only: true, ..s.stream_choice() });
         let added = self.inner.add_or_mirror(manager::NewDownload {
             url,
             mirrors,
@@ -412,7 +428,7 @@ impl DownloadManager {
             size,
             early,
             stream,
-            choice: None,
+            choice,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }
