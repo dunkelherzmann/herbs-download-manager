@@ -120,6 +120,10 @@ reinstall your build (theirs may have replaced it) and run again.
   only bytes written in `write_buffer` pieces, so the counter can reach N just as the event fires.
 - Don't bound the bytes a server sent tightly when checking that nothing is fetched twice: data already in flight to
   a connection that was cut short counts as sent. Compare against a full refetch instead.
+- Never compare the engine's own count (connections receiving, bytes kept) with the server's limit while responses
+  can finish: the client hangs up about 0.2 ms before it lowers its count, and the server frees the slot on its
+  last byte, so a slow CI runner sees one connection too many (#103). Check limits where nothing can finish (a server
+  too slow to end a range), and trace both sides with env-gated `eprintln!` before guessing which one is wrong.
 - Anything measured per tick (speeds, slow connections) must count bytes received, not written (#25).
 - A test that moves the scheduler's clock (`advance_clock`) must move it to exact times worked out from
   `scheduler_now()`, never by fixed amounts: real time keeps running under the offset, so a test that starts late in a
