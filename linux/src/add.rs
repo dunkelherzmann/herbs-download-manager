@@ -10,6 +10,7 @@ use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 use hd_core::addflow::{AddSession, Choice, PendingLink, Step};
 use hd_core::format;
+use hd_core::links::{LinkColumn, LinkRow};
 use hd_core::manager::Manager;
 
 /// What the dialogs need from the main window.
@@ -314,6 +315,12 @@ pub struct AddLinks {
     /// "Only the sound of streamed videos".
     sound: gtk::CheckButton,
     manager: Manager,
+    /// The column the rows are sorted by, and whether A to Z (smallest first); none until a header is clicked.
+    sort: Rc<Cell<Option<(LinkColumn, bool)>>>,
+    /// The headers' sort arrows: Name, Size, Link.
+    arrows: Rc<Vec<(LinkColumn, gtk::Image)>>,
+    /// Each header as wide as its column's cells: the checkbox, Size and Link.
+    widths: Rc<[gtk::SizeGroup; 3]>,
 }
 
 impl AddLinks {
@@ -331,6 +338,7 @@ impl AddLinks {
             self.append_row(url, reqwest_name(url), None, "Checking…", hd_core::media::download::is_stream_link(url), true);
         }
         self.window.set_title(Some(&title(self.items.borrow().len())));
+        self.resort();
         self.update();
         let queue = Rc::new(RefCell::new(fresh));
         for _ in 0..4 {
@@ -364,6 +372,8 @@ impl AddLinks {
                         item.name_label.set_label(&item.name);
                         item.size_label.set_label(&item.size_text);
                     }
+                    // A name or size found changes the order when the list is sorted.
+                    this.resort();
                     this.update();
                 }
             });
@@ -384,6 +394,9 @@ impl AddLinks {
         line.append(&name_label);
         line.append(&size_label);
         line.append(&link);
+        for (group, cell) in self.widths.iter().zip([check.upcast_ref::<gtk::Widget>(), size_label.upcast_ref(), link.upcast_ref()]) {
+            group.add_widget(cell);
+        }
         let row = gtk::ListBoxRow::builder().child(&line).build();
         self.list.append(&row);
         let this = self.clone();
@@ -416,6 +429,7 @@ impl AddLinks {
                     self.append_row(&f.url, f.name, f.size, &text, f.kind == hd_core::media::scan::Kind::Stream, true);
                 }
                 self.window.set_title(Some(&title(self.items.borrow().len())));
+                self.resort();
             }
             result => {
                 let text = match result {
@@ -430,6 +444,33 @@ impl AddLinks {
             }
         }
         self.update();
+    }
+
+    /// A header was clicked: sort by its column, or reverse the order when it is the column sorted by already.
+    fn sort_by(&self, column: LinkColumn) {
+        let ascending = !matches!(self.sort.get(), Some((c, true)) if c == column);
+        self.sort.set(Some((column, ascending)));
+        for (c, arrow) in self.arrows.iter() {
+            arrow.set_visible(*c == column);
+            arrow.set_icon_name(Some(if ascending { "pan-up-symbolic" } else { "pan-down-symbolic" }));
+        }
+        self.resort();
+    }
+
+    /// Puts the rows in the order of the column sorted by (the core's `links::sort_order`, sizes by bytes), which is
+    /// also the order they are added in.
+    fn resort(&self) {
+        let Some((column, ascending)) = self.sort.get() else { return };
+        let mut items = self.items.borrow_mut();
+        let rows: Vec<LinkRow> = items.iter().map(|i| LinkRow { name: &i.name, size: i.size, folder: "", url: &i.url }).collect();
+        let order = hd_core::links::sort_order(&rows, column, ascending);
+        let mut slots: Vec<Option<Item>> = items.drain(..).map(Some).collect();
+        items.extend(order.into_iter().filter_map(|i| slots[i].take()));
+        for item in items.iter() {
+            // The same row widgets move, so their checkboxes and the filter's hiding stay as they were.
+            self.list.remove(&item.row);
+            self.list.append(&item.row);
+        }
     }
 
     fn checked(&self) -> Vec<PendingLink> {
@@ -513,7 +554,37 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     let list = gtk::ListBox::new();
     list.add_css_class("boxed-list");
     list.set_selection_mode(gtk::SelectionMode::None);
-    let scroll = gtk::ScrolledWindow::builder().child(&list).vexpand(true).build();
+    // Column headers over the rows, lined up with their checkbox, name, size and link: click one to sort by it.
+    let headers = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let widths: Rc<[gtk::SizeGroup; 3]> = Rc::new(std::array::from_fn(|_| gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal)));
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    widths[0].add_widget(&spacer);
+    headers.append(&spacer);
+    let mut header_buttons = Vec::new();
+    let mut arrows = Vec::new();
+    for (column, name, group) in [(LinkColumn::Name, "Name", None), (LinkColumn::Size, "Size", Some(1)), (LinkColumn::Link, "Link", Some(2))] {
+        let text = gtk::Label::builder().label(name).build();
+        text.add_css_class("heading");
+        let arrow = gtk::Image::from_icon_name("pan-up-symbolic");
+        arrow.set_visible(false);
+        let inner = gtk::Box::builder().spacing(4).halign(gtk::Align::Start).build();
+        inner.append(&text);
+        inner.append(&arrow);
+        let button = gtk::Button::builder().child(&inner).css_classes(["flat"]).build();
+        // As wide as the column's cells below; Name takes the rest.
+        match group {
+            Some(g) => widths[g].add_widget(&button),
+            None => button.set_hexpand(true),
+        }
+        crate::explain(&button, name, &format!("Sort by {}; click again for the reverse order", name.to_lowercase()));
+        headers.append(&button);
+        header_buttons.push((column, button));
+        arrows.push((column, arrow));
+    }
+    let table = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    table.append(&headers);
+    table.append(&list);
+    let scroll = gtk::ScrolledWindow::builder().child(&table).vexpand(true).build();
     let mirrors = gtk::CheckButton::with_label("Treat as mirrors of one file");
     mirrors.set_tooltip_text(Some("Add the checked links as one download, each a source of the same file"));
     let sound = gtk::CheckButton::with_label("Only the sound of streamed videos");
@@ -538,7 +609,22 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     body.set_margin_end(12);
     with_header(&window, &body);
 
-    let this = AddLinks { window: window.clone(), list, items: Rc::default(), summary, mirrors: mirrors.clone(), sound: sound.clone(), manager: ctx.manager.clone() };
+    let this = AddLinks {
+        window: window.clone(),
+        list,
+        items: Rc::default(),
+        summary,
+        mirrors: mirrors.clone(),
+        sound: sound.clone(),
+        manager: ctx.manager.clone(),
+        sort: Rc::default(),
+        arrows: Rc::new(arrows),
+        widths,
+    };
+    for (column, button) in header_buttons {
+        let this2 = this.clone();
+        button.connect_clicked(move |_| this2.sort_by(column));
+    }
     {
         let this2 = this.clone();
         mirrors.connect_toggled(move |_| this2.update());
@@ -592,6 +678,19 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     }
     *ctx.open_links.borrow_mut() = Some(this.clone());
     this.add(links);
+    // Test hook: `--sort-links name|size|link [desc]` sorts as clicks on that header do.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--sort-links") {
+        let column = match args.get(i + 1).map(String::as_str) {
+            Some("size") => LinkColumn::Size,
+            Some("link") => LinkColumn::Link,
+            _ => LinkColumn::Name,
+        };
+        this.sort_by(column);
+        if args.get(i + 2).is_some_and(|a| a == "desc") {
+            this.sort_by(column);
+        }
+    }
     window.present();
 }
 

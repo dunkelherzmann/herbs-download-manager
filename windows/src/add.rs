@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use hd_core::addflow::{AddSession, Choice, PendingLink, Step};
 use hd_core::format;
+use hd_core::links::{LinkColumn, LinkRow};
 use hd_core::manager::Manager;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
@@ -270,6 +271,8 @@ struct Form {
     /// New Download's link is a web page: Download and Add open Add Links with its files instead.
     page: bool,
     shown: Vec<usize>,
+    /// Add Links' sort: the column clicked last (0 Name, 1 Size, 2 Link) and whether A to Z (smallest first).
+    sort: Option<(usize, bool)>,
     batch: Vec<String>,
 }
 
@@ -357,6 +360,7 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 streams: Default::default(),
                 page: false,
                 shown: Vec::new(),
+                sort: None,
                 batch: Vec::new(),
             })
         });
@@ -433,7 +437,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_FILTER, w!("EDIT"), "", EDIT, 12, 12, 520, 26),
                 (ID_CHECK_ALL, w!("BUTTON"), "Check All", BUTTON, 540, 11, 100, 28),
                 (ID_UNCHECK_ALL, w!("BUTTON"), "Uncheck All", BUTTON, 648, 11, 100, 28),
-                (ID_LIST, WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 12, 46, 736, 280),
+                (ID_LIST, WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS, 12, 46, 736, 280),
                 (ID_MIRRORS, w!("BUTTON"), "Treat as mirrors of one file", BS_AUTOCHECKBOX as u32, 12, 334, 300, 24),
                 (ID_SOUND, w!("BUTTON"), "Only the sound of streamed videos", BS_AUTOCHECKBOX as u32, 320, 334, 320, 24),
                 (0, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
@@ -469,6 +473,12 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_DOWNLOAD, "", "Download: start now (Enter)"),
             ]);
             OPEN_LINKS.with(|o| *o.borrow_mut() = Some(h));
+            // Test hook: `--sort-links name|size|link [desc]` sorts as clicks on that header do.
+            let args: Vec<String> = std::env::args().collect();
+            if let Some(i) = args.iter().position(|a| a == "--sort-links") {
+                let column = ["name", "size", "link"].iter().position(|c| args.get(i + 1).is_some_and(|a| a == c)).unwrap_or(0);
+                with_form(h, |f| f.sort = Some((column, args.get(i + 2).is_none_or(|a| a != "desc"))));
+            }
             h
         }
     };
@@ -500,10 +510,32 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
 fn show_items(hwnd: HWND) {
     with_form(hwnd, |f| unsafe {
         let list = f.controls[&ID_LIST];
+        // In the order of the header clicked last (the core's `links::sort_order`, sizes by bytes), which is also the
+        // order they are added in.
+        if let Some((column, ascending)) = f.sort {
+            let column = [LinkColumn::Name, LinkColumn::Size, LinkColumn::Link][column];
+            let rows: Vec<LinkRow> = f.items.iter().map(|i| LinkRow { name: &i.1, size: i.2, folder: "", url: &i.0 }).collect();
+            let order = hd_core::links::sort_order(&rows, column, ascending);
+            let mut slots: Vec<Option<_>> = f.items.drain(..).map(Some).collect();
+            f.items = order.into_iter().filter_map(|i| slots[i].take()).collect();
+        }
         let needle = text_of(f.controls[&ID_FILTER]).to_lowercase();
         f.shown = (0..f.items.len())
             .filter(|&i| needle.is_empty() || f.items[i].0.to_lowercase().contains(&needle) || f.items[i].1.to_lowercase().contains(&needle))
             .collect();
+        // The header's sort arrow.
+        let header = HWND(SendMessageW(list, LVM_GETHEADER, None, None).0 as *mut _);
+        for c in 0..3 {
+            let mut item = HDITEMW { mask: HDI_FORMAT, ..Default::default() };
+            SendMessageW(header, HDM_GETITEMW, Some(WPARAM(c)), Some(LPARAM(&mut item as *mut _ as isize)));
+            item.fmt.0 &= !(HDF_SORTUP.0 | HDF_SORTDOWN.0);
+            if let Some((column, ascending)) = f.sort
+                && column == c
+            {
+                item.fmt.0 |= if ascending { HDF_SORTUP.0 } else { HDF_SORTDOWN.0 };
+            }
+            SendMessageW(header, HDM_SETITEMW, Some(WPARAM(c)), Some(LPARAM(&item as *const _ as isize)));
+        }
         SendMessageW(list, WM_SETREDRAW, Some(WPARAM(0)), None);
         SendMessageW(list, LVM_DELETEALLITEMS, None, None);
         for (row, &i) in f.shown.iter().enumerate() {
@@ -857,6 +889,12 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
             }
             WM_NOTIFY => {
                 let header = &*(lparam.0 as *const NMHDR);
+                if header.idFrom as u16 == ID_LIST && header.code == LVN_COLUMNCLICK {
+                    // A header click sorts by its column, again for the reverse order.
+                    let column = (*(lparam.0 as *const NMLISTVIEW)).iSubItem as usize;
+                    with_form(hwnd, |f| f.sort = Some((column, !matches!(f.sort, Some((c, true)) if c == column))));
+                    show_items(hwnd);
+                }
                 if header.idFrom as u16 == ID_LIST && header.code == LVN_ITEMCHANGED {
                     let change = &*(lparam.0 as *const NMLISTVIEW);
                     if change.uChanged.0 & LVIF_STATE.0 != 0 && (change.uNewState ^ change.uOldState) & LVIS_STATEIMAGEMASK.0 != 0 {

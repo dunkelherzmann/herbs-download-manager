@@ -143,9 +143,102 @@ pub fn expand_batch(pattern: &str) -> Result<Vec<String>, String> {
     Ok(links)
 }
 
+/// A column of Add Links' list (§5.3) that its rows can be sorted by.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LinkColumn {
+    Name,
+    Size,
+    Folder,
+    Link,
+}
+
+/// What Add Links sorts one row by.
+pub struct LinkRow<'a> {
+    pub name: &'a str,
+    pub size: Option<u64>,
+    pub folder: &'a str,
+    pub url: &'a str,
+}
+
+/// The order of Add Links' rows sorted by a column, as indexes into `rows`: text A to Z, ignoring case, with numbers
+/// by value ("part 2" before "part 10"); sizes by bytes, smallest first, unknown sizes before any. `ascending` false
+/// gives Z to A and biggest first. Rows that tie are ordered by name, then keep their order.
+pub fn sort_order(rows: &[LinkRow], by: LinkColumn, ascending: bool) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (x, y) = (&rows[a], &rows[b]);
+        let key = match by {
+            LinkColumn::Name => natural_cmp(x.name, y.name),
+            LinkColumn::Size => x.size.cmp(&y.size),
+            LinkColumn::Folder => natural_cmp(x.folder, y.folder),
+            LinkColumn::Link => natural_cmp(x.url, y.url),
+        };
+        let key = if by == LinkColumn::Name { key } else { key.then_with(|| natural_cmp(x.name, y.name)) };
+        if ascending { key } else { key.reverse() }
+    });
+    order
+}
+
+/// Compares text the way a person sorts names: case aside, and runs of digits by their value.
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (a.peek().copied(), b.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let digits = |it: &mut std::iter::Peekable<std::str::Chars>| {
+                    let mut run = String::new();
+                    while let Some(c) = it.peek().copied().filter(char::is_ascii_digit) {
+                        run.push(c);
+                        it.next();
+                    }
+                    run.trim_start_matches('0').to_string()
+                };
+                let (m, n) = (digits(&mut a), digits(&mut b));
+                let order = m.len().cmp(&n.len()).then_with(|| m.cmp(&n));
+                if order != Ordering::Equal {
+                    return order;
+                }
+            }
+            (Some(x), Some(y)) => {
+                let order = x.to_lowercase().cmp(y.to_lowercase());
+                if order != Ordering::Equal {
+                    return order;
+                }
+                a.next();
+                b.next();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sorts_add_links_rows_by_each_column() {
+        let row = |name, size, url| LinkRow { name, size, folder: "~/Downloads", url };
+        let rows = [
+            row("preview.mp4", Some(189_000), "https://t.example/b/preview.mp4"),
+            row("Mozaique_listing.jpg", Some(90_600), "https://t.example/a/mozaique_listing.jpg"),
+            row("part 10.bin", None, "https://t.example/c/part10"),
+            row("part 2.bin", Some(1_000_000), "https://t.example/c/part2"),
+            row("preview.mp4", Some(190_000), "https://t.example/a/preview.mp4"),
+        ];
+        // Names A to Z, case aside and numbers by value; equal names keep their order.
+        assert_eq!(sort_order(&rows, LinkColumn::Name, true), [1, 3, 2, 0, 4]);
+        assert_eq!(sort_order(&rows, LinkColumn::Name, false), [0, 4, 2, 3, 1]);
+        // Sizes by bytes, not by their text ("90.6 KB" after "189 KB" as text); unknown first.
+        assert_eq!(sort_order(&rows, LinkColumn::Size, true), [2, 1, 0, 4, 3]);
+        assert_eq!(sort_order(&rows, LinkColumn::Size, false), [3, 4, 0, 1, 2]);
+        assert_eq!(sort_order(&rows, LinkColumn::Link, true), [1, 4, 0, 3, 2]);
+        // One folder for all: by name.
+        assert_eq!(sort_order(&rows, LinkColumn::Folder, true), [1, 3, 2, 0, 4]);
+    }
 
     #[test]
     fn finds_links_in_text_and_html() {

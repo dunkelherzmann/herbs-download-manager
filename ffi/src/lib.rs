@@ -727,6 +727,39 @@ pub fn free_name(folder: String, name: String) -> String {
     manager::free_name(std::path::Path::new(&folder), &name)
 }
 
+/// A column of Add Links' list that its rows can be sorted by.
+#[derive(uniffi::Enum, Clone, Copy)]
+pub enum LinkColumn {
+    Name,
+    Size,
+    Folder,
+    Link,
+}
+
+/// What Add Links sorts one row by.
+#[derive(uniffi::Record)]
+pub struct LinkSortRow {
+    pub name: String,
+    pub size: Option<u64>,
+    pub folder: String,
+    pub url: String,
+}
+
+/// Add Links' rows sorted by a column, as indexes into `rows` (`hd_core::links::sort_order`).
+#[uniffi::export]
+pub fn link_sort_order(rows: Vec<LinkSortRow>, column: LinkColumn, ascending: bool) -> Vec<u32> {
+    use hd_core::links::{LinkColumn as C, LinkRow};
+    let rows: Vec<LinkRow> =
+        rows.iter().map(|r| LinkRow { name: &r.name, size: r.size, folder: &r.folder, url: &r.url }).collect();
+    let column = match column {
+        LinkColumn::Name => C::Name,
+        LinkColumn::Size => C::Size,
+        LinkColumn::Folder => C::Folder,
+        LinkColumn::Link => C::Link,
+    };
+    hd_core::links::sort_order(&rows, column, ascending).into_iter().map(|i| i as u32).collect()
+}
+
 /// "4.0 GB".
 #[uniffi::export]
 pub fn bytes_text(bytes: u64) -> String {

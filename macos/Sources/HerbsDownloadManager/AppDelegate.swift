@@ -32,6 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--add URL` (repeatable) adds and starts a download: the hook the GUI tests use, with HD_DATA_DIR set
         // to a private folder.
         let args = CommandLine.arguments
+        // Test hook: --sort-links COLUMN [desc] sorts Add Links as a click on that header does (name, size, folder, link).
+        if let i = args.firstIndex(of: "--sort-links"), i + 1 < args.count {
+            let descending = args.indices.contains(i + 2) && args[i + 2] == "desc"
+            AddLinksWindowController.testSort = NSSortDescriptor(key: args[i + 1], ascending: !descending)
+        }
         // Test hooks: --import FILE runs Import Links on a file (§5.7).
         for (i, arg) in args.enumerated() where arg == "--import" && i + 1 < args.count {
             mainWindow?.importLinks(from: [URL(fileURLWithPath: args[i + 1])])

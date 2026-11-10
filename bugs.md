@@ -48,3 +48,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Add Links' list couldn't be sorted.** *Reported 2026-11-10* (a page's 14 pictures and videos in "Add 14 Links"). Clicking a column header did nothing. Now a header click sorts by that column and a second click reverses it, with the sort arrow: Name and Link A to Z (numbers by value), Size by bytes rather than its "90.6 KB, Picture" text, Folder alphabetically on the Mac (the only one that shows it). The checked boxes, the filter and Check All / Uncheck All work on the sorted rows, and links are added in the order shown. One ordering in the core (`links::sort_order`, tested in `cargo test`), used by all three apps. Fixed in #97.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

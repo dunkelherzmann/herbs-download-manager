@@ -192,7 +192,12 @@ that has takes the paste as usual.
 
 ### 5.3 Add Links window (several links)
 
-A list of the links found, each with a checkbox, name, size and folder, and a filter field. **Treat as mirrors of
+A list of the links found, each with a checkbox, name, size and folder, and a filter field. Clicking a column's
+header sorts the list by it, and clicking it again reverses the order, with the usual arrow in the header (hover text
+"Sort by name; click again for the reverse order" where the toolkit doesn't show one itself): names and addresses A to
+Z (case aside, numbers by value: "part 2" before "part 10"), sizes by bytes, smallest first (unknown sizes first).
+Checkboxes, the filter and Check All / Uncheck All work on the sorted rows as before. The Linux and Windows lists
+show Name, Size and Link. **Treat as mirrors of
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
 **Only the sound of streamed videos** (offered when a checked link is a stream) saves just the sound of each checked
 stream (§15); other files are added as they are. Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same

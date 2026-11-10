@@ -53,6 +53,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         super.init(window: window)
         self.onClose = onClose
         build()
+        if let sort = Self.testSort { table.sortDescriptors = [sort] }
         applyFilter()
         probe(items)
         window.center()
@@ -89,6 +90,8 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
             let column = NSTableColumn(identifier: .init(id))
             column.title = title
             column.width = width
+            // Click a header to sort by it, again for the reverse order.
+            if id != "check" { column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true) }
             table.addTableColumn(column)
         }
         table.usesAlternatingRowBackgroundColors = true
@@ -194,8 +197,8 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                     case .failure(let error):
                         item.sizeText = errorText(error)
                     }
-                    self.table.reloadData()
-                    self.update()
+                    // A name or size found changes the order when the list is sorted.
+                    if self.table.sortDescriptors.isEmpty { self.table.reloadData(); self.update() } else { self.applyFilter() }
                 }
             })
         }
@@ -258,7 +261,18 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
 
     func controlTextDidChange(_ notification: Notification) { applyFilter() }
 
+    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+        applyFilter()
+    }
+
+    /// The rows shown: those the filter matches, in the order of the column clicked last (sizes by bytes), which is
+    /// also the order they are added in.
     private func applyFilter() {
+        if let sort = table.sortDescriptors.first, let column = Self.columns[sort.key ?? ""] {
+            let folderText = (folder.path as NSString).abbreviatingWithTildeInPath
+            let rows = items.map { LinkSortRow(name: $0.name, size: $0.size, folder: folderText, url: $0.url) }
+            items = linkSortOrder(rows: rows, column: column, ascending: sort.ascending).map { items[Int($0)] }
+        }
         let needle = filter.stringValue.lowercased()
         shown = needle.isEmpty ? items : items.filter {
             $0.name.lowercased().contains(needle) || $0.url.lowercased().contains(needle)
@@ -266,6 +280,11 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         table.reloadData()
         update()
     }
+
+    /// The sort a new window starts with, as a click on that column's header gives (the `--sort-links` test hook).
+    static var testSort: NSSortDescriptor?
+
+    private static let columns: [String: LinkColumn] = ["name": .name, "size": .size, "folder": .folder, "link": .link]
 
     private var checked: [Item] { items.filter(\.checked) }
 
