@@ -48,6 +48,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 BIN="$(swift build --package-path macos -c release --arch arm64 --scratch-path "$BUILD/swift" --show-bin-path)"
 cp "$BIN/HerbsDownloadManager" "$APP/Contents/MacOS/HerbsDownloadManager"
 strip -x "$APP/Contents/MacOS/HerbsDownloadManager"
+# hdm, the command line and MCP server, in the bundle beside the app.
+MACOSX_DEPLOYMENT_TARGET=15.0 cargo build --quiet --release --target "$TARGET" -p hd-core --bin hdm
+cp "target/$TARGET/release/hdm" "$APP/Contents/MacOS/hdm"
 # The app icon, made from icon/icon.svg by icon/make.sh.
 cp macos/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
@@ -95,6 +98,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc signature: runs on this Mac. Use a Developer ID + notarization to distribute.
+codesign --force --sign - --options runtime --timestamp=none "$APP/Contents/MacOS/hdm"
 codesign --force --sign - --options runtime --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 printf 'Built %s (%s)\n' "$APP" "$VERSION"

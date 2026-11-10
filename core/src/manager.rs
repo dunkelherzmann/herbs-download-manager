@@ -347,6 +347,7 @@ impl Manager {
     /// to `timeout` for them to save. Returns false if some were still running.
     pub fn quit(&self, timeout: std::time::Duration) -> bool {
         self.inner.queue.lock().unwrap().quitting = true;
+        crate::control::close(self);
         {
             let mut slots = self.inner.slots.lock().unwrap();
             for slot in slots.iter_mut().filter(|s| s.running.is_some()) {
@@ -362,6 +363,16 @@ impl Manager {
         let stopped = self.wait_idle(timeout);
         self.save();
         stopped
+    }
+
+    /// The folder the list is kept in.
+    pub fn data_dir(&self) -> &Path {
+        &self.inner.dir
+    }
+
+    /// A clone for long-lived helpers (the control server): it shares the list but never owns the runtime.
+    pub(crate) fn detached(&self) -> Manager {
+        Manager { _runtime: None, ..self.clone() }
     }
 
     fn state_file(&self, id: u64) -> PathBuf {

@@ -59,6 +59,10 @@ final class AppModel {
             if ProcessInfo.processInfo.environment["HD_DATA_DIR"] != nil {
                 manager.useTrashFolder(dir: Self.dataFolder.appendingPathComponent("Trash").path)
             }
+            // hdm, the command line and MCP server, reaches the app through it (§12). Without it the app still works.
+            do { try manager.startControlServer(downloads: Self.defaultDownloadsFolder.path) } catch {
+                NSLog("hdm can't reach the app: %@", errorText(error))
+            }
         } catch {
             let alert = NSAlert()
             alert.messageText = "Herb's Download Manager can't open its download list"

@@ -407,6 +407,12 @@ impl DownloadManager {
 
     /// Quitting: pauses running downloads, marks them to start again at the next launch, and waits up to
     /// `seconds` for them to save. False if some were still running.
+    /// Lets `hdm` (the command line and MCP server) control this list while the app runs (§12). `downloads` is the
+    /// Downloads folder, used when Settings ▸ Save to is unset.
+    pub fn start_control_server(&self, downloads: String) -> Result<(), CoreError> {
+        hd_core::control::serve(&self.inner, downloads.into()).map_err(|e| CoreError::Io { message: e.to_string() })
+    }
+
     pub fn quit(&self, seconds: f64) -> bool {
         self.inner.quit(std::time::Duration::from_secs_f64(seconds))
     }

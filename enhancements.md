@@ -4,7 +4,7 @@ Every enhancement requested for Herb's Download Manager, oldest first. New reque
 A box is ticked once the change has shipped. A request that covers several platforms has a box for each, and its main box is ticked when they're all done.
 
 - [x] **Set up the project, locally and on GitHub,** with `SPECIFICATION.md`, `bugs.md`, `enhancements.md` and `pending.md`. *Requested 2026-11-08.* Done in #1.
-- [x] **Study Internet Download Manager, Free Download Manager, XDM, Progressive Downloader and AB Download Manager** with Craft Anything and REA, Progressive Downloader as the main inspiration, and record their features in the spec. *Requested 2026-11-08.* Done in #1 (`SPECIFICATION.md` §12).
+- [x] **Study Internet Download Manager, Free Download Manager, XDM, Progressive Downloader and AB Download Manager** with Craft Anything and REA, Progressive Downloader as the main inspiration, and record their features in the spec. *Requested 2026-11-08.* Done in #1 (`SPECIFICATION.md` §13).
 - [ ] **Multi-threaded downloading:** many connections per file, split dynamically. *Requested 2026-11-08.* Mac, Linux and Windows. (§8) The shared engine does it (#5); each app still needs its window.
   - [ ] Mac
   - [ ] Linux
@@ -26,7 +26,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [x] **Study IDM on the Windows PC with Craft Anything and REA** instead of only its website: its menus, toolbar, dialogs and strings from `IDMan.exe`, and its main window while running. *Requested 2026-11-08.* Done in #2 (`SPECIFICATION.md` §12).
+- [x] **Study IDM on the Windows PC with Craft Anything and REA** instead of only its website: its menus, toolbar, dialogs and strings from `IDMan.exe`, and its main window while running. *Requested 2026-11-08.* Done in #2 (`SPECIFICATION.md` §13).
 - [x] **Up to 32 connections per download,** chosen from 1 to 32. *Requested 2026-11-09.* Spec: 32 by default for downloads and per server, with a 1–32 picker (§5.1 A5, §9 S2–S3). Done in #3.
 - [ ] **Use the most appropriate, portable language, evaluating Rust.** *Requested 2026-11-09.* Spec: Rust core on all three platforms, Swift/AppKit host on the Mac, Rust Win32 and GTK 4 hosts (§1). Done in #3; built per platform below.
   - [ ] Mac
@@ -97,10 +97,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **A command line and an MCP server,** so scripts and AI assistants can list, add, pause and remove downloads; the feature tests can drive the app through it too. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **A command line and an MCP server,** so scripts and AI assistants can list, add, pause and remove downloads; the feature tests can drive the app through it too. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #57: `hdm` (list, add, pause, resume, remove, note) and `hdm mcp`, shipped with each app; the app listens on 127.0.0.1 only, with a token in its data folder (SPECIFICATION.md §12). The feature tests still drive the app through its own command code.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Start downloading while the New Download window is still open,** so no time is lost while choosing the folder; Cancel discards what was fetched. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #54: once the link proves resumable it downloads into the folder shown; Download or Add moves it to the chosen folder and name and carries on (SPECIFICATION.md §5.1).
   - [x] Mac
   - [x] Linux

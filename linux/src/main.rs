@@ -100,6 +100,10 @@ fn main() -> gtk::glib::ExitCode {
                 if std::env::var_os("HD_DATA_DIR").is_some() {
                     manager.use_trash_folder(&data_folder().join("Trash"));
                 }
+                // hdm, the command line and MCP server, reaches the app through it (§12).
+                if let Err(e) = hd_core::control::serve(&manager, downloads_folder()) {
+                    eprintln!("hdm can't reach the app: {e}");
+                }
                 // Test hook: `--add URL` (repeatable) adds and starts a download, as on the Mac.
                 let args: Vec<String> = std::env::args().collect();
                 for (i, a) in args.iter().enumerate() {

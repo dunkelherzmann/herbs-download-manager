@@ -286,6 +286,8 @@ pub fn run() {
                 return;
             }
         };
+        // hdm, the command line and MCP server, reaches the app through it (§12); the app works without it.
+        let _ = hd_core::control::serve(&manager, crate::downloads_folder());
         let args: Vec<String> = std::env::args().collect();
         // Test hook: `--add URL` (repeatable) adds and starts a download, as on the Mac.
         for (i, a) in args.iter().enumerate() {

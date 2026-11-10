@@ -401,7 +401,27 @@ All** stops the queue too, so pausing everything doesn't start the next waiting 
 remembered: a queue running at quit runs again at the next launch. The footer shows "Queue running" or "Queue
 stopped" with the number of waiting downloads.
 
-## 12. Reference apps
+## 12. Command line and MCP server
+
+`hdm` controls the running app from a terminal, a script or an AI assistant. Each app ships it: inside the Mac app
+(`/Applications/Herb's Download Manager.app/Contents/MacOS/hdm`), beside the Windows `.exe` (`hdm.exe`), and in the
+Linux Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
+
+| Command | What it does |
+|---|---|
+| `hdm list [--filter all\|downloading\|paused\|finished\|unfinished] [--search TEXT] [--json]` | id, status, size, name and note; `--json` gives every field |
+| `hdm add LINK… [--folder FOLDER] [--queue]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given |
+| `hdm pause ID…` · `hdm resume ID…` | as Pause and Resume |
+| `hdm remove ID… [--delete-files]` | takes downloads off the list; with `--delete-files` their files go to the Trash (Recycle Bin) |
+| `hdm note ID TEXT…` | sets the note (§4.1); empty text removes it |
+| `hdm mcp` | an MCP server on standard input and output with the same commands as tools: `list_downloads`, `add_downloads`, `pause_downloads`, `resume_downloads`, `remove_downloads` (marked destructive) and `set_note` |
+
+While the app runs it listens on 127.0.0.1 only, at a port it picks, and writes the port and a random token to
+`control.json` in its data folder, readable only by the user; a request without the token is refused, and quitting
+removes the file. When the app isn't open, `hdm` says "Herb's Download Manager isn't running. Open it, then try
+again." (exit code 1; 2 for a mistyped command). `$HD_DATA_DIR` points `hdm` at a test copy.
+
+## 13. Reference apps
 
 The design above comes from studying five download managers on 2026-11-08. Facts are labelled by their source:
 **official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (the

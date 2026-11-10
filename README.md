@@ -8,6 +8,8 @@ server or from several mirrors of the same file, and pauses and resumes without 
   connections are spread over all of them.
 - **Pause and resume**, across quits, crashes and restarts.
 - A simple window: menu bar, toolbar, status filters, the download list.
+- **A command line and an MCP server**, `hdm`, so scripts and AI assistants can list, add, pause, resume and remove
+  downloads while the app runs.
 
 How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
 
@@ -16,6 +18,26 @@ How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
 Early development: the macOS version is being built first (it opens an empty window so far), then Linux and
 Windows. What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
 [windows/pending.md](windows/pending.md).
+
+## Command line and MCP server
+
+Each app carries `hdm` (SPECIFICATION.md §12). While the app is open:
+
+```sh
+hdm add https://example.com/big.iso --folder ~/Downloads/isos
+hdm list
+hdm pause 3
+hdm note 3 for the old laptop
+```
+
+Where it is: `/Applications/Herb's Download Manager.app/Contents/MacOS/hdm` on a Mac, `hdm.exe` beside the app on
+Windows, and `flatpak run --command=hdm org.herbsdownloadmanager.app` on Linux.
+
+For an AI assistant, `hdm mcp` is an MCP server on standard input and output. In Claude Code, for example:
+
+```sh
+claude mcp add herbs-download-manager -- "/Applications/Herb's Download Manager.app/Contents/MacOS/hdm" mcp
+```
 
 ## Building
 

@@ -13,6 +13,10 @@ publish = false
 name = "herbs-download-manager"
 path = "src/main.rs"
 
+[[bin]]
+name = "hdm"
+path = "src/hdm.rs"
+
 [dependencies]
 hd-core = { path = "../core" }
 gtk = { package = "gtk4", version = "0.11.5", features = ["v4_18"] }

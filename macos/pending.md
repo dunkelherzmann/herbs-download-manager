@@ -60,7 +60,7 @@ No open bugs in `bugs.md`.
 - [x] **Finished downloads**: Open and Show in Finder on the notification, Delete Completed, Move/Rename, server's file date. (enhancements.md)
 - [x] **Start while New Download is open.** (§5.1, enhancements.md)
 - [x] **A note per download**, in a column and the search. (§2.2, §4.1, enhancements.md; #55)
-- [ ] **Command line and MCP server.** (enhancements.md)
+- [x] **Command line and MCP server.** (enhancements.md, SPECIFICATION.md §12; #57)
 - [ ] **Scheduler** for the queue. (§11, enhancements.md)
 - [ ] **Browser extension** (Safari, Chrome, Firefox). (enhancements.md)
 

@@ -2,6 +2,8 @@
 
 pub mod addflow;
 pub mod checksum;
+pub mod cli;
+pub mod control;
 pub mod disk;
 pub mod format;
 pub mod hosts;
