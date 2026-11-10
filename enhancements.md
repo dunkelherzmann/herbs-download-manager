@@ -93,7 +93,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac (Chrome, Edge, Brave, Vivaldi, Firefox)
   - [x] Linux
   - [x] Windows
-  - [ ] Safari
+  - [ ] Safari: on hold until there is an Apple Developer account to sign it (Herbert, 2026-11-10).
 - [x] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #58: Settings ▸ Scheduler starts and stops the queue at set times on chosen days (running downloads go back to waiting at the stop time), and when the queue is done, quits, sleeps or shuts down after a minute's countdown with Cancel; the footer shows the next start or stop (SPECIFICATION.md §11.1).
   - [x] Mac
   - [x] Linux
