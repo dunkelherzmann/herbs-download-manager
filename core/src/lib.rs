@@ -12,6 +12,7 @@ pub mod http;
 pub mod limit;
 pub mod links;
 pub mod manager;
+pub mod media;
 pub mod scenario;
 pub mod schedule;
 pub mod segments;

@@ -583,3 +583,26 @@ internetdownloadmanager.com (Features).
 - Resume after dropped connections, shutdowns or power loss; scheduler and several queues with shutdown when done;
   categories; download quotas; customizable toolbar and columns; drag and drop; Basic, Negotiate, NTLM and Kerberos
   authentication; antivirus scan on completion.
+
+## 15. Streamed video and sound
+
+Sites stream video as HLS (an `.m3u8` playlist of pieces) or DASH (an `.mpd` manifest). The app downloads the
+pieces and joins them into one `.mp4` file with its own code in the shared core, never re-encoding anything: each
+picture and sound sample keeps the bytes the site sent, so the file has the site's quality.
+
+- **HLS:** a master playlist's best quality is taken (the most pixels, then the most bits a second), with its
+  separate sound track when it has one (the default of its group). Pieces may be MPEG-TS (`.ts`) or MP4 fragments
+  with an init section; byte ranges, AES-128 encryption and discontinuities are handled. A live stream (no end)
+  isn't downloaded. Protected streams (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused, never broken.
+- **Joining:** MPEG-TS pieces with H.264 or H.265 video and AAC or MP3 sound become an MP4 with the same samples;
+  MP4 fragments are copied sample by sample, keeping their init section's edit lists (the sound's start against the
+  picture). The index (`moov`) goes first, so the file plays before it's read to the end. A piece whose
+  timestamps start again is placed right after the previous one. A codec MP4 isn't given here (AC-3 sound) leaves
+  the pieces joined as one `.ts` file instead.
+- **Held to ffmpeg's standard:** the core's tests join streams of each kind and compare the result with ffmpeg's own
+  join (`-c copy`): every decoded picture and sound block the same, at the same times (within a millisecond), sound
+  and picture as far apart as before. ffmpeg is only the tests' reference; the app never uses it. macOS doesn't
+  decode MP3 sound inside MP4 (ffmpeg's file behaves the same); other players do.
+- Not yet: DASH, downloading streams from the list (the add flow, progress, pause and resume), the browser
+  extension's list of a page's media, and scanning a page from the app (enhancements.md).
+
