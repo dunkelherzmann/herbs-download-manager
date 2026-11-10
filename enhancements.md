@@ -160,3 +160,27 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Choose the quality and the sound track, with defaults in Settings,** as Video DownloadHelper does: a preferred quality (Highest, 1080p as the default, 720p, 480p) used when nothing else is picked, each found stream's own quality picker overriding it, and a preferred list of sound languages ("the original" by default) for streams that offer several sound tracks; HDR versions are left out unless asked for. *Requested 2026-11-10, from studying Video DownloadHelper 10.6.7.2 (`.investigation/vdh.cany`).*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Subtitles kept with the video:** a stream's subtitles in the preferred languages (a list in Settings) go into the MP4 as subtitle tracks, labelled with their language, without touching the picture or sound. *Requested 2026-11-10, from studying Video DownloadHelper.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Download only the sound** of a found video or stream, from the extension's list and the app: its sound track saved as it is (`.m4a`, or `.mp3`/`.aac` when that's what the site sends), never re-encoded (Video DownloadHelper turns it into MP3). A site can be set to always give sound only. *Requested 2026-11-10, from studying Video DownloadHelper.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **The extension's list in a smarter order and easier to reach,** as Video DownloadHelper's: streams before whole files, finished streams before live ones, the page's own site before others (Oldest and Newest as the other choices); the tab's media also in the right-click menu and on a keyboard shortcut; the list can open in the browser's side panel instead of the popup; with nothing found, it says to start the video (and skip any ads) and offers **Look Again**, which reloads the page. *Requested 2026-11-10, from studying Video DownloadHelper.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Naming rules for found media:** a name pattern (`%title`, `%site`, and text taken from the page by a CSS selector), find-and-replace pairs, a length limit and a sub-folder, set per site, with the page's title as the default; and a default action per site (download, ask for a name, sound only, copy the address). *Requested 2026-11-10, from studying Video DownloadHelper.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Finer media detection in the extension,** from Video DownloadHelper's rules: a file's name from its `Content-Disposition` when it has one; on a page that plays a DASH stream, files under 20 MB are left out as its pieces; an address that only names a stream (`/api/playlist/master/`, `hls` in the path) is read to see whether it is one; and a stream is fetched again with the page's own request headers. Left out on purpose: site-specific scripts (YouTube, Facebook, Vimeo…), which break often and depend on each site's terms, and anything that gets round a site's protection; protected (DRM) video stays refused. *Requested 2026-11-10, from studying Video DownloadHelper.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
