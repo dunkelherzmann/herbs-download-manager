@@ -11,6 +11,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 - No GitHub CI (the repo is private and Actions minutes cost money): check a pushed branch with `scripts/check.sh`,
   which runs the Mac build and tests here and `cargo test --workspace` on linux and windows, then merge.
+- Other sessions often work in this same folder: do your own work in a worktree of your own from the start (`git
+  worktree add ~/Projects/wt-hdm-<topic> -b <branch> origin/main`), and run `scripts/check.sh` there. In the shared
+  checkout, another session switched the branch under a running task: a commit landed on local main and the check
+  tested the other session's commit (#64).
 - Never run `cargo fmt`: there is no `rustfmt.toml` and the code isn't rustfmt-formatted (about 120-column lines);
   it rewrites the whole workspace.
 
