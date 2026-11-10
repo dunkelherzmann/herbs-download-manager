@@ -15,9 +15,9 @@ i=0; while ! grep -q '^sha256' "$WORK/mock.txt" && [ $i -lt 50 ]; do sleep 0.1; 
 SUM="$(awk '/^sha256/ {print $3}' "$WORK/mock.txt")"
 cp "$ROOT/tests/features.scenario" "$WORK/features.scenario"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-# The app-observer skill watches the run when it's installed (HD_NO_OBSERVE=1 skips it): a crash, a write outside
+# The master-control skill watches the run when it's installed (HD_NO_OBSERVE=1 skips it): a crash, a write outside
 # the test folder, or a change to the real app's data or the browsers' native-host folders fails the run.
-OBSERVER="$HOME/.agents/library/app-observer/scripts/observer.py"
+OBSERVER="$HOME/.agents/library/master-control/scripts/observer.py"
 set --
 if [ -f "$OBSERVER" ] && [ -z "${HD_NO_OBSERVE:-}" ]; then
     # Judged: the app and what it starts, not the KWin session around it. Its Flatpak cache folder is allowed.
