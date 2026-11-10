@@ -28,4 +28,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-
+- [x] **Date Added was cut off at the list's right edge** ("Date A…", "Toda…"). *Reported 2026-11-10.* The columns added up to more than the list (about 1,230 points in a 1,030-point list on the Mac); the Mac shrank only the last column, and Linux and Windows pushed Mirrors and Date Added past the edge. Fixed in #75: on the Mac every column has a minimum (the date columns as wide as their longest text), a window's change of width is shared by all columns, and a layout wider than the list is fitted once at launch; Windows fits its columns into the list whenever the window changes size, the dates kept whole; Linux's columns are narrower, to fit its first window.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

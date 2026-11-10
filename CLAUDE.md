@@ -48,7 +48,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 - Windows tests over ssh with several steps: write a `.ps1` file, copy it over and run it with `-ExecutionPolicy Bypass
   -File`. Inline `cmd` one-liners lose PowerShell's quotes, and a `start /b` child keeps the ssh session open until
   killed. Start processes with `Start-Process -PassThru` and stop them by that id, never by name: Herbert's own copy
-  and browser run there too. The worktree may have been removed by another session: check it exists first.
+  and browser run there too. The worktree may have been removed by another session: check it exists first. Make the
+  script remove an existing worktree before `git worktree add`, and print the commit it builds (`git log --oneline
+  -1`): when `add` fails on a leftover folder, the build silently tests the old branch (pictures from it misled #75).
 - Windows: `powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). Scripts are blocked on windows, so every `.ps1` runs with `-ExecutionPolicy Bypass`, which lifts the block for that one run without changing the system setting. `--capture
   FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.

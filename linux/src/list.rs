@@ -12,17 +12,19 @@ use hd_core::format::{self, FileKind, Filter};
 use hd_core::manager::{Row, Status};
 
 /// Column ids, titles and their initial widths; L1 (Name) can't be hidden.
+/// Their widths fit the window's first size (1100 wide: the list is 910) with every shown column whole; Name takes
+/// what's left (bugs.md: Date Added was cut off past the edge).
 pub const COLUMNS: [(&str, &str, i32); 11] = [
-    ("name", "Name", 200),
-    ("note", "Note", 160),
-    ("status", "Status", 120),
-    ("size", "Size", 140),
-    ("speed", "Speed", 80),
-    ("time-left", "Time Left", 80),
-    ("connections", "Connections", 90),
-    ("mirrors", "Mirrors", 70),
-    ("added", "Date Added", 130),
-    ("finished", "Date Finished", 130),
+    ("name", "Name", 160),
+    ("note", "Note", 80),
+    ("status", "Status", 100),
+    ("size", "Size", 100),
+    ("speed", "Speed", 66),
+    ("time-left", "Time Left", 74),
+    ("connections", "Connections", 88),
+    ("mirrors", "Mirrors", 62),
+    ("added", "Date Added", 150),
+    ("finished", "Date Finished", 150),
     ("location", "Location", 200),
 ];
 

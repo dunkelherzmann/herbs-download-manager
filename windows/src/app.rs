@@ -632,11 +632,48 @@ fn layout(hwnd: HWND) {
             let _ = MoveWindow(s.sidebar, 0, bar + 1, side, h - bar - foot - 2, true);
             let x = if side > 0 { side + 1 } else { 0 };
             let _ = MoveWindow(s.list, x, bar + 1, w - x, h - bar - foot - 2, true);
+            fit_columns(s.list, &px);
             let _ = MoveWindow(s.footer, px(12), h - foot, w - px(24), foot, true);
             let _ = MoveWindow(s.find_edit, w - px(330), bar + px(30), px(250), px(26), true);
             let _ = MoveWindow(s.find_done, w - px(74), bar + px(30), px(60), px(26), true);
         });
         let _ = InvalidateRect(Some(hwnd), None, true);
+    }
+}
+
+/// The list's columns, wider together than the list, shrink to fit it, each down to its minimum, so every shown column
+/// shows whole: Date Added and Date Finished never below their text's width (bugs.md: Date Added was cut off).
+fn fit_columns(list: HWND, px: &dyn Fn(i32) -> i32) {
+    unsafe {
+        let mut rect = RECT::default();
+        let _ = GetClientRect(list, &mut rect);
+        let room = rect.right - px(4);
+        if room < px(200) {
+            return;
+        }
+        let minimum = |i: usize| match COLUMNS[i].0 {
+            "Date Added" | "Date Finished" => px(130),
+            "Name" => px(120),
+            "Location" => px(100),
+            "Status" => px(80),
+            "Size" => px(70),
+            _ => px(46),
+        };
+        let widths: Vec<i32> = (0..COLUMNS.len()).map(|i| SendMessageW(list, LVM_GETCOLUMNWIDTH, Some(WPARAM(i)), None).0 as i32).collect();
+        let shown: Vec<usize> = (0..COLUMNS.len()).filter(|&i| widths[i] > 0).collect();
+        let total: i32 = shown.iter().map(|&i| widths[i]).sum();
+        let spare: i32 = shown.iter().map(|&i| (widths[i] - minimum(i)).max(0)).sum();
+        if total <= room || spare <= 0 {
+            return;
+        }
+        // Each column gives up its share of the excess, in proportion to how far it is above its minimum.
+        let excess = (total - room).min(spare);
+        for &i in &shown {
+            let above = (widths[i] - minimum(i)).max(0);
+            let cut = (excess as i64 * above as i64 / spare as i64) as i32;
+            let width = (widths[i] - cut).max(minimum(i));
+            SendMessageW(list, LVM_SETCOLUMNWIDTH, Some(WPARAM(i)), Some(LPARAM(width as isize)));
+        }
     }
 }
 

@@ -11,23 +11,36 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         let title: String
         let width: CGFloat
         let hiddenByDefault: Bool
+        /// The narrowest it may get; the date columns are as wide as their longest text instead.
+        var minWidth: CGFloat = 46
     }
 
     static let columns: [Column] = [
-        Column(id: "name", title: "Name", width: 280, hiddenByDefault: false),
-        Column(id: "note", title: "Note", width: 180, hiddenByDefault: false),
-        Column(id: "status", title: "Status", width: 150, hiddenByDefault: false),
-        Column(id: "size", title: "Size", width: 140, hiddenByDefault: false),
+        Column(id: "name", title: "Name", width: 280, hiddenByDefault: false, minWidth: 120),
+        Column(id: "note", title: "Note", width: 180, hiddenByDefault: false, minWidth: 50),
+        Column(id: "status", title: "Status", width: 150, hiddenByDefault: false, minWidth: 80),
+        Column(id: "size", title: "Size", width: 140, hiddenByDefault: false, minWidth: 70),
         Column(id: "speed", title: "Speed", width: 90, hiddenByDefault: false),
         Column(id: "timeLeft", title: "Time Left", width: 90, hiddenByDefault: false),
         Column(id: "connections", title: "Connections", width: 90, hiddenByDefault: false),
         Column(id: "mirrors", title: "Mirrors", width: 70, hiddenByDefault: false),
         Column(id: "added", title: "Date Added", width: 140, hiddenByDefault: false),
         Column(id: "finished", title: "Date Finished", width: 140, hiddenByDefault: true),
-        Column(id: "location", title: "Location", width: 200, hiddenByDefault: true),
+        Column(id: "location", title: "Location", width: 200, hiddenByDefault: true, minWidth: 100),
     ]
 
+    /// The widest a date in the Date Added and Date Finished columns gets, in the list's font, with the cell's margins:
+    /// "Yesterday at 11:59 PM", or an older date written out ("Sep 30, 2026 at 11:59 PM").
+    static var dateWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let samples = [Date().addingTimeInterval(-86_400), Date(timeIntervalSince1970: 1_790_812_740)].map { dateFormat.string(from: $0) }
+        let widest = samples.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 140
+        return ceil(widest) + 24
+    }
+
     let table = NSTableView()
+    /// The columns were fitted into the list once it had its size.
+    private var fitted = false
     var filter: Filter = .all { didSet { reload() } }
     var kind: FileKind? { didSet { reload() } }
     var search = "" { didSet { reload() } }
@@ -56,12 +69,23 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         table.selectRowIndexes(rows, byExtendingSelection: false)
     }
 
+    /// Once the list has its size: columns wider together than the list (a layout saved in a wider window, or before a
+    /// column was added) shrink to fit, each down to its minimum, so every visible column shows whole.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard !fitted, let clip = table.enclosingScrollView?.contentView, clip.bounds.width > 100 else { return }
+        fitted = true
+        let total = table.tableColumns.filter { !$0.isHidden }.reduce(CGFloat(0)) { $0 + $1.width + table.intercellSpacing.width }
+        if total > clip.bounds.width { table.sizeToFit() }
+    }
+
     override func loadView() {
         for c in Self.columns {
             let column = NSTableColumn(identifier: .init(c.id))
             column.title = c.title
-            column.width = c.width
-            column.minWidth = 50
+            let isDate = c.id == "added" || c.id == "finished"
+            column.minWidth = isDate ? Self.dateWidth : c.minWidth
+            column.width = max(c.width, column.minWidth)
             column.isHidden = c.hiddenByDefault
             column.sortDescriptorPrototype = NSSortDescriptor(key: c.id, ascending: c.id != "added")
             column.headerToolTip = c.title
@@ -70,7 +94,9 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = true
         table.allowsColumnReordering = true
-        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        // A change of the window's width is shared by every column, each down to its minimum, so the last one (Date
+        // Added) is never the only one squeezed (bugs.md).
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.rowHeight = 30
         table.style = .fullWidth
         table.dataSource = self
