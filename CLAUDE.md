@@ -73,6 +73,9 @@ its steps there; each feature downloads into its own folder, and waits for its d
 file another unfinished download fetches becomes its mirror. A host step refreshes the list before selecting rows: the list is
 refreshed only twice a second, and a command acts on the rows as the list last saw them (Resume once skipped a row it
 still thought was running).
+On Linux, "the app wrote no report" with "unable to lock lockfile …/hdm-features.lock" in
+`~/.cache/hdm-features/session.log` means another session's feature run holds the test compositor: wait for it, then
+reinstall your build (theirs may have replaced it) and run again.
 
 ## Writing tests (learned the hard way)
 
