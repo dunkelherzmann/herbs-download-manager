@@ -9,8 +9,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   a secrets and privacy scan (code and history), stale branches removed, description and topics, README install
   steps. Once public, GitHub Actions is free and can check pull requests again.
 
-- No GitHub CI (the repo is private and Actions minutes cost money): check a pushed branch with `scripts/check.sh`,
-  which runs the Mac build and tests here and `cargo test --workspace` on linux and windows, then merge.
+- GitHub Actions checks every pull request again (free since the repo went public, 2026-11-10;
+  `.github/workflows/build.yml`). Before merging, also check a pushed branch with `scripts/check.sh`, which runs the Mac build and tests here and `cargo test --workspace` on linux and windows, then merge.
   Merge only on its exit status 0 and an `ok` line for every machine: never judge it through `| tail`, which
   returns tail's status (#89 merged with Linux and Windows failing, 2026-11-10).
 - Other sessions often work in this same folder: do your own work in a worktree of your own from the start (`git

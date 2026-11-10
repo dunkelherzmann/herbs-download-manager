@@ -39,7 +39,9 @@ fn the_command_line_adds_lists_notes_pauses_resumes_and_removes() {
     let s = rt.block_on(MockServer::start()).unwrap();
     let data = pattern(4 * 1024 * 1024, 7);
     let mut slow = MockFile::new(data.clone());
-    slow.rate = Some(2 * 1024 * 1024);
+    // Per response: 32 connections at 32 KiB/s take about 4 s, long enough to see it downloading and pause it
+    // (at 2 MiB/s a fast machine finished it between two looks).
+    slow.rate = Some(32 * 1024);
     s.put("/slow.bin", slow);
     s.put("/small.bin", MockFile::new(pattern(1000, 3)));
     let dir = folder("cli");

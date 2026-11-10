@@ -69,7 +69,7 @@ Every version builds from this repository with Rust (rustup).
 macos/scripts/build.sh --install   # builds dist/Herb's Download Manager.app and copies it to /Applications
 scripts/test.sh                    # Rust tests, then the app's self-check
 cargo run -p hd-mock               # local test server: a 64 MiB file and two mirrors
-scripts/check.sh                   # a pushed branch on the Mac, Linux and Windows machines (in place of CI)
+scripts/check.sh                   # a pushed branch on the Mac, Linux and Windows machines (GitHub Actions checks pull requests too)
 ```
 
 **Linux** (a Flatpak; needs `org.flatpak.Builder`, the GNOME 49 SDK and its Rust extension:

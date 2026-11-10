@@ -1,9 +1,14 @@
-# Off since 2026-11-09: the repo is private and GitHub charges for private repos' Actions minutes, so every pull
-# request is checked on Herbert's own Mac, Linux and Windows machines with scripts/check.sh instead. It can still be
-# run by hand (Actions ▸ Build ▸ Run workflow) if the minutes are ever free again.
+# Every pull request and every push to main, on GitHub's Mac, Linux and Windows runners. Back on 2026-11-10 when the
+# repo went public (Actions minutes are free for public repos; it was off while private, when they cost money).
+# scripts/check.sh still checks a branch on Herbert's own three machines before merging.
 name: Build
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -13,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       - run: rustup target add aarch64-apple-darwin
       - run: macos/scripts/build.sh
       - run: scripts/test.sh

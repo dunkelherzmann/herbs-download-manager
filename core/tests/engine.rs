@@ -171,10 +171,12 @@ async fn a_file_that_changes_on_the_server_fails_the_download() {
         let control = control.clone();
         async move { transfer::download(&client, req, fast(), progress, control).await }
     });
-    while progress.downloaded.load(Ordering::SeqCst) < 512 * 1024 {
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    // Once its first bytes arrive (a response keeps the data it started with), the file changes, long before the
+    // reconnect, whose If-Range then no longer matches. (Waiting for 512 KiB first left only the stall timeout to do
+    // it in, which a busy machine missed.)
+    while progress.downloaded.load(Ordering::SeqCst) == 0 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    // …and before it reconnects the file changes, so the reconnect's If-Range no longer matches.
     server.change("/changing.bin", pattern(4 * MIB, 9));
     let outcome = tokio::time::timeout(Duration::from_secs(30), task).await.unwrap().unwrap();
     assert_eq!(outcome, Outcome::Failed("File changed on the server".into()));

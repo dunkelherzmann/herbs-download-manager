@@ -7,14 +7,29 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 printf 'Rust tests…\n'
-cargo test --quiet --workspace 2>&1 | grep -E '^test result|FAILED|panicked|error' || true
-cargo test --quiet --workspace >/dev/null 2>&1 || { echo "Rust tests failed (run: cargo test --workspace)" >&2; exit 1; }
+# Run once, output kept: a second run to get the status could fail where the first passed and show nothing.
+LOG="$(mktemp)"
+STATUS=0
+cargo test --quiet --workspace >"$LOG" 2>&1 || STATUS=$?
+grep -E '^test result|FAILED|panicked|error' "$LOG" || true
+if [ "$STATUS" != 0 ]; then
+    grep -E -A25 '^---- .* stdout ----' "$LOG" | head -80 >&2 || true
+    rm -f "$LOG"
+    echo "Rust tests failed (run: cargo test --workspace)" >&2
+    exit 1
+fi
+rm -f "$LOG"
 
 # The browser extension's background, run in Node with a stand-in browser (tests/extension).
 if command -v node >/dev/null 2>&1; then
     printf 'Extension tests…\n'
-    node --test tests/extension 2>&1 | grep -E '^ℹ (pass|fail)|^✖' || true
-    node --test tests/extension >/dev/null 2>&1 || { echo "Extension tests failed (run: node --test tests/extension)" >&2; exit 1; }
+    # The files by name: older Node (as on GitHub's runners) doesn't take a folder.
+    if ! OUT="$(node --test tests/extension/*.test.js 2>&1)"; then
+        printf '%s\n' "$OUT" | tail -40 >&2
+        echo "Extension tests failed (run: node --test tests/extension/*.test.js)" >&2
+        exit 1
+    fi
+    printf '%s\n' "$OUT" | grep -E '^ℹ (pass|fail)|^# (pass|fail)' || true
 else
     echo "Extension tests skipped: Node isn't installed" >&2
 fi
