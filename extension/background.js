@@ -79,10 +79,19 @@ async function makeMenu() {
   await api.contextMenus.removeAll();
   api.contextMenus.create({ id: "hdm-link", title: `Download with ${NAME}`, contexts: ["link", "image", "video", "audio"] });
 }
-api.runtime.onInstalled.addListener(() => { makeMenu(); showState(); });
-api.runtime.onStartup.addListener(() => { makeMenu(); showState(); });
+api.runtime.onInstalled.addListener(() => { makeMenu(); showState(); applyPanel(); });
+api.runtime.onStartup.addListener(() => { makeMenu(); showState(); applyPanel(); });
 
 api.contextMenus.onClicked.addListener(async (info) => {
+  const pick = /^hdm-media-(\d+)$/.exec(String(info.menuItemId));
+  if (pick) {
+    const chosen = menuItems[Number(pick[1])];
+    if (!chosen) return;
+    const answer = await addItem(chosen.tab, chosen.item, {});
+    if (!(answer && answer.ok)) await tell((answer && answer.error) || `${NAME} didn't answer.`);
+    return;
+  }
+  if (info.menuItemId !== "hdm-link") return;
   const url = info.linkUrl || info.srcUrl;
   if (!web(url)) return;
   const answer = await send(url, info.pageUrl);
@@ -113,6 +122,7 @@ async function itemsOf(tabId) {
 async function setItems(tabId, items) {
   await api.storage.session.set({ [`media-${tabId}`]: items });
   await countFor(tabId, items);
+  await refreshMenu().catch(() => {});
 }
 
 // The button's number: what the tab has to download (or "off" while the hand-over is off).
@@ -183,9 +193,20 @@ async function variantsOf(url) {
     for (const v of (standard.length ? standard : variants).filter((v) => v.lines).sort((a, b) => b.lines - a.lines || b.bandwidth - a.bandwidth)) {
       if (!qualities.some((q) => q.lines === v.lines)) qualities.push({ lines: v.lines, bandwidth: v.bandwidth });
     }
-    return { urls, qualities, sounds };
+    // Live: a media playlist with no end (a master's is its first quality's), read with a 5-second limit.
+    const ended = (t) => /#EXT-X-ENDLIST|#EXT-X-PLAYLIST-TYPE:VOD/.test(t);
+    let live = !variants.length && !ended(text);
+    if (variants.length) {
+      try {
+        const first = await fetch(urls[0], { credentials: "include", signal: AbortSignal.timeout(5000) });
+        live = !ended((await first.text()).slice(0, 256 * 1024));
+      } catch {
+        live = false;
+      }
+    }
+    return { urls, qualities, sounds, live };
   } catch {
-    return { urls: [], qualities: [], sounds: [] };
+    return { urls: [], qualities: [], sounds: [], live: false };
   }
 }
 
@@ -195,7 +216,7 @@ function note(d, found) {
   noting = noting.then(async () => {
     const items = await itemsOf(d.tabId);
     if (items.some((i) => i.url === d.url)) return;
-    const item = { url: d.url, kind: found.kind, size: found.size || 0, mime: found.mime || "", hidden: false };
+    const item = { url: d.url, kind: found.kind, size: found.size || 0, mime: found.mime || "", hidden: false, seen: Date.now() };
     if (found.kind === "stream") {
       const found = await variantsOf(d.url);
       if (found === null) return; // not a playlist after all
@@ -205,6 +226,7 @@ function note(d, found) {
       item.variants = variants;
       item.qualities = found.qualities;
       item.sounds = found.sounds;
+      item.live = found.live;
       for (const i of items) if (variants.includes(i.url)) i.hidden = true;
     }
     items.push(item);
@@ -227,7 +249,10 @@ api.tabs.onRemoved.addListener((id) => api.storage.session.remove(`media-${id}`)
 api.tabs.onUpdated.addListener((id, change) => {
   if (change.url) noting = noting.then(() => setItems(id, [])).catch(() => {});
 });
-api.tabs.onActivated.addListener(({ tabId }) => countFor(tabId).catch(() => {}));
+api.tabs.onActivated.addListener(({ tabId }) => {
+  countFor(tabId).catch(() => {});
+  refreshMenu().catch(() => {});
+});
 
 // DASH manifests a page carries in its data instead of loading them (Facebook's reels: "dash_manifest" in the page's
 // JSON): read from the tab's scripts when the list opens, each listed once as a video with its sound.
@@ -290,12 +315,22 @@ function nameFor(item, title) {
 api.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     if (message.type === "state") {
-      const items = (await itemsOf(message.tabId)).filter((i) => !i.hidden);
-      for (const manifest of await pageManifests(message.tabId)) {
-        const about = describeManifest(manifest);
-        if (!about.protected) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, ...about });
-      }
-      reply({ on: await isOn(), items });
+      const tab = await api.tabs.get(message.tabId).catch(() => null);
+      const order = await orderSetting();
+      reply({ on: await isOn(), items: await listed(message.tabId, tab, order), order, panel: await panelSetting(), panelOffered: !!api.sidePanel });
+    } else if (message.type === "set-order") {
+      await api.storage.local.set({ order: message.order });
+      await refreshMenu();
+      reply({ ok: true });
+    } else if (message.type === "set-panel") {
+      await api.storage.local.set({ panel: !!message.on });
+      await applyPanel();
+      reply({ ok: true, panel: await panelSetting() });
+    } else if (message.type === "look-again") {
+      // The page loads again, so its player fetches its media again and the list fills as it does.
+      await setItems(message.tabId, []);
+      await api.tabs.reload(message.tabId).catch(() => {});
+      reply({ ok: true });
     } else if (message.type === "preview") {
       // A stream's first picture and length (§15), made by hdm with the browser's cookies; kept while the browser
       // runs, so the list shows it at once next time.
@@ -348,29 +383,103 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       }
     } else if (message.type === "add") {
       const tab = await api.tabs.get(message.tabId).catch(() => null);
-      const item = message.item;
-      // A file the app found on the page comes with its name; what the tab played is named here.
-      const name = item.name || nameFor(item, tab && tab.title);
-      // Added to the queue; right after opening the app ("Open and Download"), started at once.
-      const options = { queue: !message.start, stream: ["stream", "dash", "page-dash"].includes(item.kind) || item.stream === true, name };
-      // A stream's quality and sound chosen in the list (S13, S14 otherwise).
-      if (message.quality) options.quality = message.quality;
-      if (message.sound !== undefined) options.sound = message.sound;
-      // Only its sound, saved as it is (.m4a, or .mp3).
-      if (message.soundOnly && options.stream) options.sound_only = true;
-      let answer;
-      if (item.kind === "page-dash") {
-        // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.
-        try {
-          answer = await api.runtime.sendNativeMessage(HOST, { command: "add", manifest: item.manifest, referer: tab && tab.url, ...options });
-        } catch {
-          answer = { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
-        }
-      } else {
-        answer = await send(item.url, tab && tab.url, options);
-      }
-      reply(answer || { ok: false, error: `${NAME} didn't answer.` });
+      reply(await addItem(tab, message.item, message));
     }
   })();
   return true; // answers later
 });
+
+// Adds a listed item to the app (from the list or the right-click menu): `message` carries start, quality, sound
+// and soundOnly.
+async function addItem(tab, item, message) {
+  // A file the app found on the page comes with its name; what the tab played is named here.
+  const name = item.name || nameFor(item, tab && tab.title);
+  // Added to the queue; right after opening the app ("Open and Download"), started at once.
+  const options = { queue: !message.start, stream: ["stream", "dash", "page-dash"].includes(item.kind) || item.stream === true, name };
+  // A stream's quality and sound chosen in the list (S13, S14 otherwise).
+  if (message.quality) options.quality = message.quality;
+  if (message.sound !== undefined) options.sound = message.sound;
+  // Only its sound, saved as it is (.m4a, or .mp3).
+  if (message.soundOnly && options.stream) options.sound_only = true;
+  let answer;
+  if (item.kind === "page-dash") {
+    // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.
+    try {
+      answer = await api.runtime.sendNativeMessage(HOST, { command: "add", manifest: item.manifest, referer: tab && tab.url, ...options });
+    } catch {
+      answer = { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
+    }
+  } else {
+    answer = await send(item.url, tab && tab.url, options);
+  }
+  return answer || { ok: false, error: `${NAME} didn't answer.` };
+}
+
+// ---- the list's order, the right-click menu and the side panel (§13, §15) -------------------------------------
+
+const orderSetting = async () => (await api.storage.local.get({ order: "smart" })).order;
+const panelSetting = async () => !!api.sidePanel && (await api.storage.local.get({ panel: false })).panel;
+
+// A site's name without its subdomains: the last two labels of the host (www.youtube.com → youtube.com).
+function siteOf(url) {
+  try {
+    return new URL(url).hostname.split(".").slice(-2).join(".");
+  } catch {
+    return "";
+  }
+}
+
+// The tab's items as the list shows them, in the order chosen: Smart puts DASH, then HLS streams, then video files,
+// then sounds; a finished stream before a live one; the page's own site before others; else the order found.
+// Oldest and Newest go by when each was found.
+async function listed(tabId, tab, order, page = true) {
+  const items = (await itemsOf(tabId)).filter((i) => !i.hidden);
+  for (const manifest of page ? await pageManifests(tabId) : []) {
+    const about = describeManifest(manifest);
+    if (!about.protected) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
+  }
+  const found = (i) => i.seen || 0;
+  if (order === "oldest") return items.sort((a, b) => found(a) - found(b));
+  if (order === "newest") return items.sort((a, b) => found(b) - found(a));
+  const site = tab ? siteOf(tab.url) : "";
+  const rank = (i) => [
+    { "page-dash": 0, dash: 0, stream: 1, video: 2, file: 2, audio: 3 }[i.kind] ?? 2,
+    i.live ? 1 : 0,
+    i.url && siteOf(i.url) === site ? 0 : i.kind === "page-dash" ? 0 : 1,
+    found(i),
+  ];
+  return items.sort((a, b) => {
+    const [x, y] = [rank(a), rank(b)];
+    for (let k = 0; k < x.length; k++) if (x[k] !== y[k]) return x[k] - y[k];
+    return 0;
+  });
+}
+
+// The right-click menu's list of the active tab's media, in the list's order (its first 20; videos a page carries in
+// its data are read only when the list opens, so they aren't here): choosing one adds it to the queue.
+let menuItems = [];
+async function refreshMenu() {
+  if (!api.contextMenus) return;
+  const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+  const items = tab ? (await listed(tab.id, tab, await orderSetting(), false)).slice(0, 20) : [];
+  menuItems = items.map((item) => ({ tab, item }));
+  await new Promise((done) => api.contextMenus.remove("hdm-media", () => { void api.runtime.lastError; done(); }));
+  if (!items.length) return;
+  const contexts = ["page", "frame", "video", "audio", "selection"];
+  api.contextMenus.create({ id: "hdm-media", title: `${NAME}: media on this page`, contexts });
+  items.forEach((item, i) => {
+    const streamed = ["stream", "dash", "page-dash"].includes(item.kind);
+    const name = streamed ? (tab.title || "Video") : decodeURIComponent(pathOf(item.url).split("/").pop() || item.url);
+    const kind = { stream: "Video stream", dash: "Video stream", "page-dash": "Video", video: "Video", audio: "Sound" }[item.kind] || "File";
+    const quality = item.quality || (item.qualities && item.qualities[0] ? `${item.qualities[0].lines}p` : "");
+    api.contextMenus.create({ id: `hdm-media-${i}`, parentId: "hdm-media", title: [name.slice(0, 60), kind, quality].filter(Boolean).join(" · "), contexts });
+  });
+}
+
+// "Open in the side panel" (Chrome, Edge): the toolbar button opens the list there instead of as a popup.
+async function applyPanel() {
+  if (!api.sidePanel) return;
+  const on = await panelSetting();
+  await api.sidePanel.setPanelBehavior({ openPanelOnActionClick: on }).catch(() => {});
+  await api.action.setPopup({ popup: on ? "" : "popup.html" }).catch(() => {});
+}

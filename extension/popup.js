@@ -41,13 +41,44 @@ async function currentTab() {
   return tab;
 }
 
+// In the side panel (`?panel=1`) the list follows the window's active tab.
+const inPanel = new URLSearchParams(location.search).has("panel");
+if (inPanel) document.body.classList.add("panel");
+
+// The items as last shown, so a refresh that changes nothing leaves the list (and its pickers) alone.
+let shownKey = "";
+
 async function show() {
   const tab = await currentTab();
+  if (!tab) return;
   const state = await ask({ type: "state", tabId: tab.id });
   $("on").checked = state.on;
   $("on").onchange = async () => {
     $("on").checked = (await ask({ type: "toggle", tabId: tab.id })).on;
   };
+  $("order").value = state.order;
+  $("order").onchange = async () => {
+    await ask({ type: "set-order", order: $("order").value });
+    shownKey = "";
+    show();
+  };
+  $("panel-row").hidden = !state.panelOffered;
+  $("panel").checked = state.panel;
+  $("panel").onchange = async () => {
+    await ask({ type: "set-panel", on: $("panel").checked });
+  };
+  $("again").onclick = async () => {
+    $("again").disabled = true;
+    $("again").textContent = "Loading the page again…";
+    await ask({ type: "look-again", tabId: tab.id });
+    setTimeout(() => {
+      $("again").disabled = false;
+      $("again").textContent = "Look Again";
+    }, 3000);
+  };
+  const key = `${tab.id}|${state.order}|${state.items.map((i) => i.url || i.manifest.length).join("|")}`;
+  if (key === shownKey) return;
+  shownKey = key;
   const list = $("items");
   list.replaceChildren();
   $("empty").hidden = state.items.length > 0;
@@ -275,3 +306,11 @@ function openButton(label, then, detail) {
 }
 
 show();
+// What the tab finds while the list is open (after Look Again, say) joins it; in the side panel, so does another tab.
+api.storage.session.onChanged.addListener(() => show());
+if (inPanel) {
+  api.tabs.onActivated.addListener(() => show());
+  api.tabs.onUpdated.addListener((id, change) => {
+    if (change.status === "complete" || change.title) show();
+  });
+}

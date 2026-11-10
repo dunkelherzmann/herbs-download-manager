@@ -6,6 +6,11 @@ body { margin: 0; padding: 12px 14px; width: 340px; font: 13px/1.35 system-ui, -
 header { display: flex; align-items: center; gap: 8px; }
 h1 { font-size: 14px; margin: 0; font-weight: 600; }
 h2 { font-size: 12px; margin: 14px 0 6px; color: var(--dim); font-weight: 600; text-transform: none; }
+.heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.heading select { font: inherit; font-size: 12px; color: var(--dim); background: transparent; border: none; cursor: pointer; }
+.heading select:focus-visible { outline: 2px solid var(--accent); }
+body.panel { width: auto; }
+body.panel ul { max-height: none; }
 .switch { display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer; }
 ul { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
 li { border-top: 1px solid var(--line); }

@@ -469,7 +469,12 @@ downloads to the app. The browser keeps a download the app doesn't take.
   shows "!" with the reason in its hover text for 15 seconds: the app isn't running, isn't set up for this browser,
   or the server refused it.
 - Private (incognito) windows' downloads stay in the browser.
-- Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**.
+- Right-clicking a link, picture, video or sound offers **Download with Herb's Download Manager**. Right-clicking
+  a page whose tab played media also offers **Herb's Download Manager: media on this page**, listing them (up to 20,
+  in the list's order, as "name · kind · quality"); choosing one adds it to the queue as the list would.
+- **Alt+Shift+H** (Control+Shift+H on the Mac) opens the list; the browser's extension shortcuts page can change it.
+- **Open in the side panel** (Chrome and Edge, under the first switch) opens the list in the browser's side panel
+  instead of a popup when the toolbar button is clicked; there it follows the window's active tab.
 - When the app isn't running, an item the list can't add says "Herb's Download Manager isn't running." with an
   **Open and Download** button: `hdm` opens the app (from beside itself, apart from the browser so it stays open
   when the browser closes), waits up to 30 seconds for it to answer, and the item is added and started at once
@@ -650,6 +655,13 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   join (`-c copy`): every decoded picture and sound block the same, at the same times (within a millisecond), sound
   and picture as far apart as before. ffmpeg is only the tests' reference; the app never uses it. macOS doesn't
   decode MP3 sound inside MP4 (ffmpeg's file behaves the same); other players do.
+- **The list's order:** a menu beside "Played on this page" (kept for next time): **Smart order** (the default)
+  lists DASH videos, then HLS streams, then video files, then sounds; within those a finished stream before a live
+  one (a playlist with no end), then media from the page's own site (the last two parts of its host, so
+  video.example.com counts for www.example.com) before other sites', then in the order found. **Oldest first** and
+  **Newest first** go by when each was found. With nothing found yet, the list says "Start the video (and skip any
+  ads), and it shows here" and offers **Look Again**, which loads the page again so its player fetches its media
+  again; whatever the tab finds while the list is open joins it.
 - **The browser extension's list:** the extension notes what each tab loads that can be downloaded, in the order
   seen: stream playlists (HLS by an `.m3u8` address or an `mpegurl` type; DASH by `.mpd` or `dash+xml`) and whole
   video and sound files (by a `video/` or `audio/` type, or a media file's extension with no type). Left out:

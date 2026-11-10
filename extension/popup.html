@@ -14,9 +14,23 @@
     <input type="checkbox" id="on">
     <span>Take the browser's downloads</span>
   </label>
-  <h2>Played on this page</h2>
+  <label class="switch" id="panel-row" hidden>
+    <input type="checkbox" id="panel">
+    <span>Open in the side panel</span>
+  </label>
+  <div class="heading">
+    <h2>Played on this page</h2>
+    <select id="order" aria-label="Order of the list" title="Order of the list: Smart puts streams first, finished ones before live ones and the page's own site before others">
+      <option value="smart">Smart order</option>
+      <option value="oldest">Oldest first</option>
+      <option value="newest">Newest first</option>
+    </select>
+  </div>
   <ul id="items"></ul>
-  <p id="empty" hidden>Nothing played yet. Play the video or sound, then look again.</p>
+  <div id="empty" hidden>
+    <p>Nothing found yet. Start the video (and skip any ads), and it shows here.</p>
+    <button id="again" class="scan" title="Load the page again, so its player fetches its video again">Look Again</button>
+  </div>
   <button id="scan" class="scan">Find Files on This Page</button>
   <ul id="found"></ul>
   <p id="scan-note" class="note" hidden></p>

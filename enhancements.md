@@ -172,7 +172,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **The extension's list in a smarter order and easier to reach,** as Video DownloadHelper's: streams before whole files, finished streams before live ones, the page's own site before others (Oldest and Newest as the other choices); the tab's media also in the right-click menu and on a keyboard shortcut; the list can open in the browser's side panel instead of the popup; with nothing found, it says to start the video (and skip any ads) and offers **Look Again**, which reloads the page. *Requested 2026-11-10, from studying Video DownloadHelper.*
+- [ ] **The extension's list in a smarter order and easier to reach,** as Video DownloadHelper's: streams before whole files, finished streams before live ones, the page's own site before others (Oldest and Newest as the other choices); the tab's media also in the right-click menu and on a keyboard shortcut; the list can open in the browser's side panel instead of the popup; with nothing found, it says to start the video (and skip any ads) and offers **Look Again**, which reloads the page. *Requested 2026-11-10, from studying Video DownloadHelper.* Built in #82 (extension 1.8): Smart, Oldest and Newest order, the right-click menu, Alt+Shift+H (Control+Shift+H on the Mac), Open in the side panel (Chrome and Edge), Look Again. Checked with a stand-in for the browser's extension API and the order on sample items; the menu, shortcut and side panel need a try in a real browser.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
