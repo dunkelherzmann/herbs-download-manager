@@ -20,6 +20,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   `HD_DOWNLOADS_DIR`) set to a scratch folder: it keeps its own list and its own UI settings. Read windows by the
   test copy's pid (`CGWindowListCopyWindowInfo`), or with computer-use when his copy isn't running. `build.sh
   --install` leaves his running copy alone; the new build loads at his next launch.
+- AppKit saves window frames, split views and table columns (`setFrameAutosaveName`, `autosaveName`) in the app's
+  standard defaults, which test copies share with his copy: name them through `TestCopy.autosave(_:)` so a test run
+  never changes his layout. A new list column needs a one-time move into place, since a saved layout puts it last.
 
 ## Building the Linux and Windows apps
 
