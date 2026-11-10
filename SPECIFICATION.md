@@ -311,6 +311,11 @@ as long as one source stays on.
   the ones it accepted; the download stops opening more to that host and tries again one at a time after 60 s.
 - A connection that is far slower than the others (under a quarter of the download's average per-connection speed
   for 15 s) gives its remaining range to a faster source; its source is marked Slow.
+- The link counts no more than a mirror. A bad link (missing, behind a login, stalling, refusing every connection)
+  is marked and set aside like a bad mirror. With two or more mirrors, each source is asked its file's size when a
+  download starts: a source serving another file, when two or more others agree on a different size, is marked
+  "Different file", even the link, and the download starts from one that agrees. (With one mirror, the link's file
+  decides.)
 - A download fails only when no source is left working, and says why ("All sources failed: 404 Not Found").
 
 ## 8. Connections and segments

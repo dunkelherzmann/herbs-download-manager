@@ -200,3 +200,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **A bad main link is ignored when its mirrors are good,** as a bad mirror is. *Requested 2026-11-10.* Tests give a link bad in each way (missing, behind a login, stalling midway, refusing every connection, serving another file) two good mirrors: each finishes with the mirrors' file. The first four already worked; a link serving another file won before, because the first answer decided the file's size, so mirrors that agree now outvote it (§7) (#88).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+

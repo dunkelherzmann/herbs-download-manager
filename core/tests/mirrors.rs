@@ -369,3 +369,49 @@ async fn a_bad_link_with_good_mirrors_still_downloads() {
     let (_c, _p, task) = spawn(request(bad[2].clone(), mirrors, &dir, 8), fast());
     assert_eq!(std::fs::read(finished(&finish(task).await)).unwrap(), data);
 }
+
+/// The link itself bad in each way, its mirrors good (Herbert: "if the main link is bad but there are good mirrors,
+/// the download should ignore the bad link like with the mirrors").
+async fn link_bad_in_one_way(kind: &str, data: &[u8]) -> (String, MockServer) {
+    let s = MockServer::start().await.unwrap();
+    match kind {
+        "missing" => {}
+        "login" => {
+            let mut f = MockFile::new(data.to_vec());
+            f.requires = vec![("authorization".into(), "Basic secret".into())];
+            s.put("/f.bin", f);
+        }
+        "stalls" => {
+            let mut f = MockFile::new(data.to_vec());
+            f.stall_after = Some(64 * 1024);
+            s.put("/f.bin", f);
+        }
+        "refuses" => {
+            let mut f = MockFile::new(data.to_vec());
+            f.max_connections = Some(0);
+            s.put("/f.bin", f);
+        }
+        "other file" => s.put("/f.bin", MockFile::new(pattern(data.len() / 2, 77))),
+        _ => unreachable!(),
+    }
+    (s.url("/f.bin"), s)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bad_link_in_every_way_is_ignored_when_its_mirrors_are_good() {
+    for kind in ["missing", "login", "stalls", "refuses", "other file"] {
+        let data = pattern(8 * MIB, 13);
+        let good = servers(2, &data, None).await;
+        let (link, _keep) = link_bad_in_one_way(kind, &data).await;
+        let dir = folder(&format!("badlink-{}", kind.replace(' ', "-")));
+        let (_c, _p, task) = spawn(request(link, vec![good[0].url("/f.bin"), good[1].url("/f.bin")], &dir, 8), fast());
+        let outcome = tokio::time::timeout(Duration::from_secs(30), finish(task)).await.unwrap_or(Outcome::Failed("still running after 30 s".into()));
+        match &outcome {
+            Outcome::Finished(path) => {
+                let got = std::fs::read(path).unwrap();
+                assert!(got == data, "{kind}: got {} bytes, not the good mirrors' {} bytes", got.len(), data.len());
+            }
+            other => panic!("a link that's {kind}, with two good mirrors: {other:?}"),
+        }
+    }
+}

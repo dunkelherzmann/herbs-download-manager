@@ -287,6 +287,28 @@ impl Control {
     }
 }
 
+/// Each source's file size, asked with a one-byte request (10 seconds at most each): `None` when it doesn't say.
+async fn sizes_of(client: &reqwest::Client, req: &Request, urls: Vec<(usize, reqwest::Url)>) -> Vec<(usize, Option<u64>)> {
+    let mut tasks = tokio::task::JoinSet::new();
+    for (i, url) in urls {
+        let (client, vault, dress) = (client.clone(), req.vault.clone(), req.dress.clone());
+        tasks.spawn(async move {
+            let rb = signed_as(client.get(url.clone()), &url, &vault, dress.as_ref()).header(RANGE, "bytes=0-0").header(ACCEPT_ENCODING, "identity");
+            let size = match tokio::time::timeout(Duration::from_secs(10), rb.send()).await {
+                Ok(Ok(r)) if r.status() == StatusCode::PARTIAL_CONTENT => http::content_range_total(r.headers()),
+                Ok(Ok(r)) if r.status().is_success() => r.content_length(),
+                _ => None,
+            };
+            (i, size)
+        });
+    }
+    let mut out = Vec::new();
+    while let Some(Ok(done)) = tasks.join_next().await {
+        out.push(done);
+    }
+    out
+}
+
 /// Whether a running download was told to stop, and how it ends then.
 pub(crate) fn stop_outcome(rx: &watch::Receiver<u8>) -> Option<Outcome> {
     match *rx.borrow() {
@@ -568,6 +590,7 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
     // A fresh start: ask the sources in turn for the whole file until one answers. One with ranges and a size is
     // preferred, so a mirror can save a download whose link has no ranges.
     let mut attempt = 0usize;
+    let (first_idx, first) = 'chosen: loop {
     let (first_idx, first) = loop {
         let mut plain: Option<(usize, reqwest::Response)> = None;
         let mut reason = None;
@@ -618,6 +641,41 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
             return outcome_for_stop(&stop);
         }
         attempt += 1;
+    };
+    // With two or more other sources, the file is the one most of them serve: a link (or first mirror) serving
+    // another file, when two or more of the others agree on a different size, is set aside as a "Different file"
+    // and the download starts from one that agrees (Herbert: a bad link is ignored like a bad mirror).
+    let first_size = if first.status() == StatusCode::PARTIAL_CONTENT { http::content_range_total(first.headers()) } else { first.content_length() };
+    let others: Vec<(usize, reqwest::Url)> = sources
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| *i != first_idx && s.enabled && !s.status.is_dead())
+        .filter_map(|(i, s)| reqwest::Url::parse(&s.url).ok().map(|u| (i, u)))
+        .collect();
+    if first_size.is_some() && others.len() >= 2 {
+        let sizes = sizes_of(client, &req, others).await;
+        let mut votes: HashMap<u64, usize> = HashMap::new();
+        for size in sizes.iter().filter_map(|(_, s)| *s) {
+            *votes.entry(size).or_default() += 1;
+        }
+        let first_votes = first_size.and_then(|f| votes.get(&f)).copied().unwrap_or(0) + 1;
+        if let Some((&size, &count)) = votes.iter().max_by_key(|(_, c)| **c)
+            && Some(size) != first_size
+            && count >= 2
+            && count > first_votes
+        {
+            drop(first);
+            sources[first_idx].status = SourceStatus::DifferentFile;
+            // The ones that disagree with the majority are set aside too.
+            for (i, s) in sizes {
+                if s.is_some() && s != Some(size) {
+                    sources[i].status = SourceStatus::DifferentFile;
+                }
+            }
+            continue 'chosen;
+        }
+    }
+    break 'chosen (first_idx, first);
     };
 
     let ranges = first.status() == StatusCode::PARTIAL_CONTENT;
