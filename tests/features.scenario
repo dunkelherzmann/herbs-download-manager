@@ -122,3 +122,15 @@ expect f14/small.bin matches Laptop
 expect f14/small.bin not-matches desktop
 do note f14/small.bin ""
 expect f14/small.bin not-matches laptop
+
+feature The scheduler starts the queue, then the app offers to sleep
+do stop-queue
+setting when-done sleep
+add f15 queue $L/small.bin
+expect f15/small.bin status-contains Waiting
+setting schedule-start +2
+clock +180
+wait f15/small.bin finished 30
+do cancel-when-done sleep
+setting schedule-start off
+setting when-done nothing

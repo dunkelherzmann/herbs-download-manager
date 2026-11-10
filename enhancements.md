@@ -93,10 +93,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #58: Settings ▸ Scheduler starts and stops the queue at set times on chosen days (running downloads go back to waiting at the stop time), and when the queue is done, quits, sleeps or shuts down after a minute's countdown with Cancel; the footer shows the next start or stop (SPECIFICATION.md §11.1).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **A command line and an MCP server,** so scripts and AI assistants can list, add, pause and remove downloads; the feature tests can drive the app through it too. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #57: `hdm` (list, add, pause, resume, remove, note) and `hdm mcp`, shipped with each app; the app listens on 127.0.0.1 only, with a token in its data folder (SPECIFICATION.md §12). The feature tests still drive the app through its own command code.
   - [x] Mac
   - [x] Linux

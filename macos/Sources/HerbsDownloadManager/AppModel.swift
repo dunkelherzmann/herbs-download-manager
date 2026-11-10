@@ -89,6 +89,7 @@ final class AppModel {
         finishedIDs = finished
         observers.forEach { $0() }
         askForLogins()
+        QueueDone.check(manager)
     }
 
     /// Downloads already asked about, so a cancelled prompt isn't shown again until the download runs again.

@@ -12,10 +12,13 @@
 //! do COMMAND [ROW] [ARG…]          an app command with ROW selected: resume, pause, restart, delete,
 //!                                  delete-files, add-mirror (ARG: links), set-checksum (ARG: algorithm, value),
 //!                                  rename (ARG: new name), move (ARG: a folder under $DL), note (ARG: text),
-//!                                  start-queue, stop-queue, stop-all
+//!                                  start-queue, stop-queue, stop-all, cancel-when-done (ARG: the action the app
+//!                                  offers to take now the queue is done; retried for 10 s)
 //! setting KEY VALUE                downloads-at-once, speed-limit (bytes a second, 0 for none),
 //!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off),
-//!                                  keep-server-date (on, off)
+//!                                  keep-server-date (on, off), schedule-start and schedule-stop (+MINUTES from the
+//!                                  scheduler's now, HH:MM, or off), when-done (nothing, quit, sleep, shut-down)
+//! clock +SECONDS                   moves the scheduler's clock forward
 //! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
 //! expect ROW CHECK [VALUE]         file-size N, file-date SECONDS, sources N, status-contains TEXT,
 //!                                  verified-contains TEXT, note TEXT, matches TEXT (the search finds it),
@@ -95,6 +98,16 @@ impl Run<'_> {
                 let command = arg(1)?;
                 let (ids, rest) = match command.as_str() {
                     "start-queue" | "stop-queue" | "stop-all" => (vec![], &words[2..]),
+                    // The app sees the queue is done within half a second; give it time to ask.
+                    "cancel-when-done" => {
+                        let until = Instant::now() + Duration::from_secs(10);
+                        loop {
+                            match self.host.command(&command, &[], &words[2..]) {
+                                Err(_) if Instant::now() < until => std::thread::sleep(Duration::from_millis(200)),
+                                result => return result,
+                            }
+                        }
+                    }
                     _ => (vec![self.need_row(&arg(2)?)?.id], &words[3..]),
                 };
                 // Move To…'s folder picker answers with a full path: the folder under $DL and the file's name.
@@ -130,9 +143,28 @@ impl Run<'_> {
                     }
                     "look-for-checksum-files" => s.look_for_checksum_files = value == "on",
                     "keep-server-date" => s.keep_server_date = value == "on",
+                    "schedule-start" | "schedule-stop" => {
+                        let minutes = match value.strip_prefix('+') {
+                            _ if value == "off" => None,
+                            Some(ahead) => {
+                                let ahead: i64 = ahead.parse().map_err(|_| "+MINUTES".to_string())?;
+                                let t = self.manager.scheduler_now() + ahead * 60;
+                                let local = chrono::TimeZone::timestamp_opt(&chrono::Local, t, 0).earliest().ok_or("no such time")?;
+                                Some(chrono::Timelike::hour(&local) * 60 + chrono::Timelike::minute(&local))
+                            }
+                            None => Some(crate::schedule::parse_time(&value).ok_or("HH:MM")?),
+                        };
+                        if key == "schedule-start" { s.schedule.start = minutes } else { s.schedule.stop = minutes }
+                    }
+                    "when-done" => s.schedule.when_done = crate::schedule::WhenDone::from_word(&value).ok_or("no such action")?,
                     _ => return Err(format!("no setting {key}")),
                 }
                 self.manager.set_settings(s);
+                Ok(())
+            }
+            "clock" => {
+                let seconds: i64 = arg(1)?.trim_start_matches('+').parse().map_err(|_| "clock +SECONDS".to_string())?;
+                self.manager.advance_clock(seconds);
                 Ok(())
             }
             "wait" => {
@@ -343,6 +375,11 @@ impl Host for DirectHost {
                 m.set_note(ids[0], &args.join(" "));
                 Ok(())
             }
+            // With no app to count down, the core's own word that the queue is done stands in for the countdown.
+            "cancel-when-done" => match m.take_queue_done() {
+                Some(action) if Some(action) == crate::schedule::WhenDone::from_word(args.first().map(String::as_str).unwrap_or("")) => Ok(()),
+                other => Err(format!("the queue isn't done with {} to do ({other:?})", args.first().map(String::as_str).unwrap_or("?"))),
+            },
             "set-checksum" => {
                 let algorithm = crate::checksum::Algorithm::ALL.into_iter().find(|a| a.name().eq_ignore_ascii_case(&args[0]) || a.extension() == args[0])
                     .ok_or("no such algorithm")?;

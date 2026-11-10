@@ -17,6 +17,8 @@ finish-args:
   # Delete moves files to the desktop's Trash.
   - --filesystem=xdg-data/Trash
   - --talk-name=org.freedesktop.Notifications
+  # The scheduler sleeps or shuts down the computer when the queue is done, if chosen in Settings.
+  - --system-talk-name=org.freedesktop.login1
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   # Local builds fetch the crates with cargo (a Flathub build would vendor them).

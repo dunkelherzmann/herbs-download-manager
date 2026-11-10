@@ -103,6 +103,17 @@ final class SettingsWindowController: NSWindowController {
     private let notify = NSButton(checkboxWithTitle: "Show a notification when a download finishes", target: nil,
                                   action: nil)
 
+    private let startOn = NSButton(checkboxWithTitle: "Start the queue at", target: nil, action: nil)
+    private let startTime = NSDatePicker()
+    private let stopOn = NSButton(checkboxWithTitle: "Stop the queue at", target: nil, action: nil)
+    private let stopTime = NSDatePicker()
+    private let days = (0..<7).map { _ in NSButton(checkboxWithTitle: "", target: nil, action: nil) }
+    private let whenDone = NSPopUpButton()
+
+    private static let doneChoices: [(String, WhenDone)] = [
+        ("Do nothing", .nothing), ("Quit", .quit), ("Sleep", .sleep), ("Shut down", .shutDown),
+    ]
+
     private static let existsChoices: [(String, WhenFileExists)] = [
         ("Ask", .ask), ("Keep both", .keepBoth), ("Skip the new link", .skip), ("Replace the existing file", .replace),
     ]
@@ -185,6 +196,8 @@ final class SettingsWindowController: NSWindowController {
         notify.toolTip = "Show a macOS notification each time a download finishes"
         notify.setAccessibilityIdentifier("settings-notify")
 
+        buildScheduler()
+
         let label = { (text: String) in NSTextField(labelWithString: text) }
         let grid = NSGridView(views: [
             [label("Save downloads to:"), folderRow],
@@ -194,6 +207,10 @@ final class SettingsWindowController: NSWindowController {
             [label("Speed limit:"), speed],
             [label("Retries per source:"), retries],
             [label("When a file exists:"), whenExists],
+            [label("Scheduler:"), NSStackView(views: [startOn, startTime])],
+            [NSGridCell.emptyContentView, NSStackView(views: [stopOn, stopTime])],
+            [label("On:"), NSStackView(views: days)],
+            [label("When the queue is done:"), whenDone],
             [label("Server limits:"), NSStackView(views: [hostLimits, forgetLimits])],
             [label("Sign-ins:"), NSStackView(views: [signInsText, manageSignIns])],
             [NSGridCell.emptyContentView, checksumFiles],
@@ -205,6 +222,7 @@ final class SettingsWindowController: NSWindowController {
         grid.rowSpacing = 10
         grid.columnSpacing = 8
         grid.row(at: 7).topPadding = 6
+        grid.row(at: 11).topPadding = 6
         grid.translatesAutoresizingMaskIntoConstraints = false
         let content = NSView()
         content.addSubview(grid)
@@ -232,6 +250,62 @@ final class SettingsWindowController: NSWindowController {
         showHostLimits()
         showSignIns()
         notify.state = s.notifyWhenFinished ? .on : .off
+        startOn.state = s.scheduleStart == nil ? .off : .on
+        stopOn.state = s.scheduleStop == nil ? .off : .on
+        startTime.dateValue = Self.date(s.scheduleStart ?? 60)
+        stopTime.dateValue = Self.date(s.scheduleStop ?? 7 * 60)
+        for (box, on) in zip(days, s.scheduleDays) { box.state = on ? .on : .off }
+        whenDone.selectItem(at: Self.doneChoices.firstIndex { $0.1 == s.whenDone } ?? 0)
+        enableScheduler()
+    }
+
+    /// Q1–Q4 (§11.1). The days run Monday first, named as the Mac's language names them.
+    private func buildScheduler() {
+        for (box, picker, what) in [(startOn, startTime, "start"), (stopOn, stopTime, "stop")] {
+            box.target = self
+            box.action = #selector(save(_:))
+            box.setAccessibilityIdentifier("settings-schedule-\(what)")
+            picker.datePickerElements = .hourMinute
+            picker.datePickerStyle = .textFieldAndStepper
+            picker.target = self
+            picker.action = #selector(save(_:))
+            picker.setAccessibilityLabel("Time to \(what) the queue")
+            picker.setAccessibilityIdentifier("settings-schedule-\(what)-time")
+        }
+        startOn.toolTip = "Start the queue at this time on the days chosen below"
+        stopOn.toolTip = "Stop the queue at this time; downloads still running pause and wait in the queue for the next start. "
+            + "A time before the start time is the next morning's"
+        let short = Calendar.current.shortWeekdaySymbols  // Sunday first
+        let full = Calendar.current.weekdaySymbols
+        for (i, box) in days.enumerated() {
+            box.title = short[(i + 1) % 7]
+            box.target = self
+            box.action = #selector(save(_:))
+            box.toolTip = "Start the queue on \(full[(i + 1) % 7])s"
+            box.setAccessibilityIdentifier("settings-schedule-day-\(i)")
+        }
+        whenDone.addItems(withTitles: Self.doneChoices.map(\.0))
+        whenDone.target = self
+        whenDone.action = #selector(save(_:))
+        whenDone.toolTip = "Once the running queue has nothing left to download: quit the app, or put the Mac to sleep or "
+            + "shut it down, after a minute's countdown you can cancel"
+        whenDone.setAccessibilityLabel("When the queue is done")
+        whenDone.setAccessibilityIdentifier("settings-when-done")
+    }
+
+    private func enableScheduler() {
+        startTime.isEnabled = startOn.state == .on
+        stopTime.isEnabled = stopOn.state == .on
+        for box in days { box.isEnabled = startOn.state == .on || stopOn.state == .on }
+    }
+
+    private static func date(_ minutes: UInt32) -> Date {
+        Calendar.current.date(bySettingHour: Int(minutes / 60), minute: Int(minutes % 60), second: 0, of: Date()) ?? Date()
+    }
+
+    private static func minutes(_ date: Date) -> UInt32 {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return UInt32((c.hour ?? 0) * 60 + (c.minute ?? 0))
     }
 
     @objc private func save(_ sender: Any?) {
@@ -246,6 +320,11 @@ final class SettingsWindowController: NSWindowController {
         s.lookForChecksumFiles = checksumFiles.state == .on
         s.keepServerDate = serverDate.state == .on
         s.notifyWhenFinished = notify.state == .on
+        s.scheduleStart = startOn.state == .on ? Self.minutes(startTime.dateValue) : nil
+        s.scheduleStop = stopOn.state == .on ? Self.minutes(stopTime.dateValue) : nil
+        s.scheduleDays = days.map { $0.state == .on }
+        s.whenDone = Self.doneChoices[max(0, whenDone.indexOfSelectedItem)].1
+        enableScheduler()
         AppModel.shared.settings = s
         if s.notifyWhenFinished, (sender as? NSButton) === notify { AppModel.shared.askToNotify() }
     }

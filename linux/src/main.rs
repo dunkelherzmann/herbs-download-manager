@@ -5,6 +5,7 @@ mod add;
 mod detail;
 mod features;
 mod list;
+mod queuedone;
 mod settings;
 mod signins;
 mod window;

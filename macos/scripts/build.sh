@@ -71,6 +71,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key><string>The scheduler shuts down your Mac when the queue is done, if you choose that in Settings.</string>
     <!-- Text and HTML files dropped on the Dock icon: their links open Add Links (never the default app). -->
     <key>CFBundleDocumentTypes</key>
     <array>

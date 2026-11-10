@@ -77,6 +77,10 @@ fn on_main(name: &str, ids: &[u64], args: &[String]) -> Result<(), String> {
             // Rename…'s dialog and Move To…'s folder picker, answered.
             "rename" => ctx.manager.rename_file(ids[0], &args[0]).map(|_| ()),
             "move" => ctx.manager.move_file(ids[0], std::path::Path::new(&args[0])).map(|_| ()),
+            // The countdown once the queue is done, answered Cancel.
+            "cancel-when-done" => crate::queuedone::cancel(
+                hd_core::schedule::WhenDone::from_word(args.first().map(String::as_str).unwrap_or(""))
+                    .ok_or("cancel-when-done needs quit, sleep or shut-down")?),
             // Note…'s dialog, answered.
             "note" => {
                 ctx.manager.set_note(ids[0], &args.join(" "));

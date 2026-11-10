@@ -13,6 +13,8 @@ mod detail;
 mod signins;
 #[cfg(windows)]
 mod features;
+#[cfg(windows)]
+mod queuedone;
 
 use std::path::PathBuf;
 

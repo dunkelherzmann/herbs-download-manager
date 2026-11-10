@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 use hd_core::format;
 use hd_core::manager::{Detail, Status};
+use hd_core::schedule::{self, WhenDone};
 use hd_core::settings::{Settings, WhenFileExists};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
@@ -68,6 +69,13 @@ const S_FORGET: u16 = 84;
 const S_SIGN_INS: u16 = 85;
 const S_MANAGE: u16 = 86;
 const S_SERVER_DATE: u16 = 87;
+const S_START_ON: u16 = 88;
+const S_START: u16 = 89;
+const S_STOP_ON: u16 = 90;
+const S_STOP: u16 = 91;
+const S_WHEN_DONE: u16 = 92;
+/// Monday to Sunday: S_DAY..S_DAY + 6.
+const S_DAY: u16 = 93;
 const S_CLOSE: u16 = 2;
 
 const INFO_KEYS: [&str; 7] = ["Link:", "Folder:", "Size:", "Resumable:", "Date Added:", "Date Finished:", "Checksum:"];
@@ -463,6 +471,22 @@ pub fn ask_mirrors(ctx: &Ctx, id: u64) {
     }
 }
 
+const DONE: [(&str, WhenDone); 4] =
+    [("Do nothing", WhenDone::Nothing), ("Quit", WhenDone::Quit), ("Sleep", WhenDone::Sleep), ("Shut down", WhenDone::ShutDown)];
+const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/// Turns the scheduler's time boxes and days on or off with their checkboxes.
+fn enable_scheduler(w: &Win) {
+    let (start, stop) = (checked(w.controls[&S_START_ON]), checked(w.controls[&S_STOP_ON]));
+    unsafe {
+        let _ = EnableWindow(w.controls[&S_START], start);
+        let _ = EnableWindow(w.controls[&S_STOP], stop);
+        for d in 0..7 {
+            let _ = EnableWindow(w.controls[&(S_DAY + d)], start || stop);
+        }
+    }
+}
+
 const EXISTS: [(&str, WhenFileExists); 4] = [
     ("Ask", WhenFileExists::Ask),
     ("Keep both", WhenFileExists::KeepBoth),
@@ -485,7 +509,9 @@ pub fn settings(ctx: &Ctx) {
     let folder = crate::save_folder(&ctx.manager).display().to_string();
     let (limits_text, limits_detail) = hd_core::hosts::describe(&ctx.manager.host_limits());
     let sign_ins = crate::signins::summary(ctx);
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 518), &[
+    let start_text = schedule::time_text(s.schedule.start.unwrap_or(60));
+    let stop_text = schedule::time_text(s.schedule.stop.unwrap_or(7 * 60));
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 654), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -504,16 +530,31 @@ pub fn settings(ctx: &Ctx) {
         (S_RETRIES, w!("EDIT"), &s.retries.to_string(), EDIT | ES_NUMBER as u32, 190, 230, 60, 24),
         (0, w!("STATIC"), "When a file exists:", LABEL, 12, 270, 170, 20),
         (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 266, 230, 160),
-        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 302, 340, 24),
-        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 330, 340, 24),
-        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 358, 340, 24),
-        (0, w!("STATIC"), "Server limits:", LABEL, 12, 394, 170, 20),
-        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 394, 250, 20),
-        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 388, 95, 28),
-        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 428, 170, 20),
-        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 428, 250, 20),
-        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 422, 95, 28),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 474, 85, 30),
+        (0, w!("STATIC"), "Scheduler:", LABEL, 12, 306, 170, 20),
+        (S_START_ON, w!("BUTTON"), "Start the queue at", BS_AUTOCHECKBOX as u32, 190, 302, 146, 24),
+        (S_START, w!("EDIT"), &start_text, EDIT, 338, 300, 64, 24),
+        (S_STOP_ON, w!("BUTTON"), "Stop the queue at", BS_AUTOCHECKBOX as u32, 190, 332, 146, 24),
+        (S_STOP, w!("EDIT"), &stop_text, EDIT, 338, 330, 64, 24),
+        (0, w!("STATIC"), "On:", LABEL, 12, 366, 170, 20),
+        (S_DAY, w!("BUTTON"), DAYS[0], BS_AUTOCHECKBOX as u32, 190, 362, 50, 24),
+        (S_DAY + 1, w!("BUTTON"), DAYS[1], BS_AUTOCHECKBOX as u32, 240, 362, 50, 24),
+        (S_DAY + 2, w!("BUTTON"), DAYS[2], BS_AUTOCHECKBOX as u32, 290, 362, 50, 24),
+        (S_DAY + 3, w!("BUTTON"), DAYS[3], BS_AUTOCHECKBOX as u32, 340, 362, 50, 24),
+        (S_DAY + 4, w!("BUTTON"), DAYS[4], BS_AUTOCHECKBOX as u32, 390, 362, 50, 24),
+        (S_DAY + 5, w!("BUTTON"), DAYS[5], BS_AUTOCHECKBOX as u32, 440, 362, 50, 24),
+        (S_DAY + 6, w!("BUTTON"), DAYS[6], BS_AUTOCHECKBOX as u32, 490, 362, 50, 24),
+        (0, w!("STATIC"), "When the queue is done:", LABEL, 12, 400, 170, 20),
+        (S_WHEN_DONE, w!("COMBOBOX"), "", combo_style, 190, 396, 160, 160),
+        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 438, 340, 24),
+        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 466, 340, 24),
+        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 494, 340, 24),
+        (0, w!("STATIC"), "Server limits:", LABEL, 12, 530, 170, 20),
+        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 530, 250, 20),
+        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 524, 95, 28),
+        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 564, 170, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 564, 250, 20),
+        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 558, 95, 28),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 610, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -529,6 +570,18 @@ pub fn settings(ctx: &Ctx) {
         (S_CHECKSUM_FILES, "", "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)"),
         (S_NOTIFY, "", "Show a notification each time a download finishes"),
         (S_SERVER_DATE, "", "A finished file gets the date the server gives it (Last-Modified) instead of the time it finished downloading"),
+        (S_START_ON, "", "Start the queue at this time (hours:minutes) on the days chosen below"),
+        (S_START, "Time to start the queue", "Hours and minutes, such as 01:30"),
+        (S_STOP_ON, "", "Stop the queue at this time; running downloads wait in the queue for the next start. A time before the start time is the next morning's"),
+        (S_STOP, "Time to stop the queue", "Hours and minutes, such as 07:00"),
+        (S_WHEN_DONE, "", "Once the running queue has nothing left to download: quit the app, or put the computer to sleep or shut it down, after a minute's countdown you can cancel"),
+        (S_DAY, "", "Start the queue on Mondays"),
+        (S_DAY + 1, "", "Start the queue on Tuesdays"),
+        (S_DAY + 2, "", "Start the queue on Wednesdays"),
+        (S_DAY + 3, "", "Start the queue on Thursdays"),
+        (S_DAY + 4, "", "Start the queue on Fridays"),
+        (S_DAY + 5, "", "Start the queue on Saturdays"),
+        (S_DAY + 6, "", "Start the queue on Sundays"),
         (S_LIMITS, "Server limits", limits_detail.as_str()),
         (S_FORGET, "", "Forget every server's remembered limit; downloads learn them again"),
         (S_MANAGE, "Manage sign-ins", "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"),
@@ -548,6 +601,13 @@ pub fn settings(ctx: &Ctx) {
         set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
         set_checked(w.controls[&S_CHECKSUM_FILES], s.look_for_checksum_files);
         set_checked(w.controls[&S_SERVER_DATE], s.keep_server_date);
+        combo(w.controls[&S_WHEN_DONE], &DONE.map(|d| d.0), DONE.iter().position(|d| d.1 == s.schedule.when_done).unwrap_or(0));
+        set_checked(w.controls[&S_START_ON], s.schedule.start.is_some());
+        set_checked(w.controls[&S_STOP_ON], s.schedule.stop.is_some());
+        for (d, on) in s.schedule.days.iter().enumerate() {
+            set_checked(w.controls[&(S_DAY + d as u16)], *on);
+        }
+        enable_scheduler(w);
         unsafe {
             let _ = EnableWindow(w.controls[&S_FORGET], !w.ctx.manager.host_limits().is_empty());
         }
@@ -576,8 +636,24 @@ fn save_settings(hwnd: HWND) {
             notify_when_finished: checked(w.controls[&S_NOTIFY]),
             look_for_checksum_files: checked(w.controls[&S_CHECKSUM_FILES]),
             keep_server_date: checked(w.controls[&S_SERVER_DATE]),
+            schedule: {
+                // A time that doesn't read as hours:minutes keeps the one saved before, and the box shows it again.
+                let time = |on: u16, edit: u16, before: Option<u32>, fallback: u32| {
+                    let typed = schedule::parse_time(&text_of(w.controls[&edit]));
+                    let value = typed.or(before).unwrap_or(fallback);
+                    set_text(w.controls[&edit], &schedule::time_text(value));
+                    checked(w.controls[&on]).then_some(value)
+                };
+                let mut q = current.schedule.clone();
+                q.start = time(S_START_ON, S_START, current.schedule.start, 60);
+                q.stop = time(S_STOP_ON, S_STOP, current.schedule.stop, 7 * 60);
+                q.days = std::array::from_fn(|d| checked(w.controls[&(S_DAY + d as u16)]));
+                q.when_done = DONE[selection(w.controls[&S_WHEN_DONE]).min(3)].1;
+                q
+            },
             ..current
         };
+        enable_scheduler(w);
         w.ctx.manager.set_settings(s);
     });
 }
@@ -742,8 +818,9 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             w.ctx.manager.set_settings(Settings { save_to: None, ..w.ctx.manager.settings() });
                             set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
                         })),
-                        S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == EN_KILLFOCUS => save_settings(hwnd),
-                        S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES | S_SERVER_DATE => save_settings(hwnd),
+                        S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES | S_START | S_STOP if code == EN_KILLFOCUS => save_settings(hwnd),
+                        S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
+                        id if (S_DAY..S_DAY + 7).contains(&id) => save_settings(hwnd),
                         S_MANAGE => {
                             if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
                                 crate::signins::open(&ctx);
@@ -756,7 +833,7 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             crate::a11y::tip(w.controls[&S_LIMITS], &detail);
                             let _ = EnableWindow(w.controls[&S_FORGET], false);
                         })),
-                        S_UNIT | S_EXISTS if code == CBN_SELCHANGE => save_settings(hwnd),
+                        S_UNIT | S_EXISTS | S_WHEN_DONE if code == CBN_SELCHANGE => save_settings(hwnd),
                         _ => {}
                     },
                     _ => {}

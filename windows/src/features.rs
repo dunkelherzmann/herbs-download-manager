@@ -67,6 +67,11 @@ pub fn on_main(hwnd: HWND, request: &mut Request) {
         // Rename…'s dialog and Move To…'s folder picker, answered.
         "rename" => ctx.manager.rename_file(ids[0], &args[0]).map(|_| ()),
         "move" => ctx.manager.move_file(ids[0], std::path::Path::new(&args[0])).map(|_| ()),
+        // The countdown once the queue is done, answered Cancel.
+        "cancel-when-done" => match hd_core::schedule::WhenDone::from_word(args.first().map(String::as_str).unwrap_or("")) {
+            Some(action) => crate::queuedone::cancel(action),
+            None => Err("cancel-when-done needs quit, sleep or shut-down".into()),
+        },
         // Note…'s dialog, answered.
         "note" => {
             ctx.manager.set_note(ids[0], &args.join(" "));

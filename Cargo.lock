@@ -459,6 +459,7 @@ name = "hd-core"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "chrono",
  "hd-mock",
  "libc",
  "md-5",

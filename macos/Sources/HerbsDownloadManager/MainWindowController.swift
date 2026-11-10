@@ -155,12 +155,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         let selected = list.selectedRows.count
         var parts = ["\(selected) selected", "\(active.count) active"]
         if speed > 0 { parts.append(speedText(bytesPerSecond: speed)) }
-        let waiting = rows.filter { $0.status == .waiting }.count
-        if AppModel.shared.queueRunning {
-            parts.append(waiting == 0 ? "Queue running" : "Queue running, \(waiting) waiting")
-        } else if waiting > 0 {
-            parts.append("Queue stopped, \(waiting) waiting")
-        }
+        if let queue = AppModel.shared.manager.queueText() { parts.append(queue) }
         if let notice = AppModel.shared.notice { parts.append(notice) }
         footer.stringValue = parts.joined(separator: "  ·  ")
         window?.toolbar?.validateVisibleItems()

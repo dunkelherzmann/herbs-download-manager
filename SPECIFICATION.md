@@ -399,7 +399,34 @@ starting new ones and lets running ones finish. A download started with Download
 whatever the queue's limit. While the queue runs, a download added with Add starts as soon as there is room. **Stop
 All** stops the queue too, so pausing everything doesn't start the next waiting download. Whether the queue runs is
 remembered: a queue running at quit runs again at the next launch. The footer shows "Queue running" or "Queue
-stopped" with the number of waiting downloads.
+stopped" with the number of waiting downloads, the scheduler's next start or stop, and what happens when the queue
+is done ("Queue running, 2 waiting, stops at 07:00, then sleeps").
+
+### 11.1 Scheduler
+
+Settings has a Scheduler group:
+
+| Id | Setting | Default |
+|---|---|---|
+| Q1 | Start the queue at (a time, local) | Off, 01:00 |
+| Q2 | Stop the queue at | Off, 07:00 |
+| Q3 | On (Mon … Sun) | every day |
+| Q4 | When the queue is done | Do nothing; Quit, Sleep or Shut down |
+
+- At the start time, on a chosen day, the queue starts (Start Queue). At the stop time it stops, and downloads still
+  running pause and go back to waiting in the queue, so the next start carries on with them. A stop time no later
+  than the start time is the next morning's; with no start time, the stop happens on the chosen days.
+- The times are checked every second. A time missed while the app was closed or the computer slept counts when the
+  app next looks, and only the latest one: after a start and a stop were both missed, the queue stays stopped.
+  Changing the schedule counts from then on, so a time already past today doesn't fire.
+- The queue is done when it was running, had something to do, and has nothing left running or waiting (a failed
+  download doesn't hold it up). Then, with Q4 other than Do nothing, the main window shows "The queue is done" with
+  a 60-second countdown ("Your Mac will shut down in 60 seconds."), **Cancel** (the default) and **Quit Now**,
+  **Sleep Now** or **Shut Down Now**; when the countdown ends, that happens. Stopping the queue isn't being done.
+- Sleep and Shut down: on the Mac `pmset sleepnow` and loginwindow's Shut Down (macOS may ask once to allow it); on
+  Linux systemd-logind (`Suspend`, `PowerOff`; the Flatpak may talk to `org.freedesktop.login1`); on Windows
+  `SetSuspendState` and `shutdown /s`. A test copy (`HD_DATA_DIR` set) only logs them.
+- Kept in `settings.json` under `schedule`, and when it last looked in `queue.json`.
 
 ## 12. Command line and MCP server
 

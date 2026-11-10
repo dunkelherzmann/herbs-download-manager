@@ -282,11 +282,15 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     view.set_bottom_bar_style(adw::ToolbarStyle::Raised);
     view.set_top_bar_style(adw::ToolbarStyle::Raised);
 
+    // Test hook: `--window-size WIDTHxHEIGHT`, so a picture can show a whole dialog (Settings is taller than 640).
+    let size = std::env::args().skip_while(|a| a != "--window-size").nth(1)
+        .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
+        .unwrap_or((1100, 640));
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Herb's Download Manager")
-        .default_width(1100)
-        .default_height(640)
+        .default_width(size.0)
+        .default_height(size.1)
         .content(&view)
         .build();
 
@@ -336,12 +340,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             if speed > 0 {
                 parts.push(format::speed_text(speed));
             }
-            let waiting = rows.iter().filter(|r| r.status == Status::Waiting).count();
-            if ui.manager.queue_running() {
-                parts.push(if waiting == 0 { "Queue running".into() } else { format!("Queue running, {waiting} waiting") });
-            } else if waiting > 0 {
-                parts.push(format!("Queue stopped, {waiting} waiting"));
-            }
+            parts.extend(ui.manager.queue_text());
             let mut notice = ui.notice.borrow_mut();
             if notice.as_ref().is_some_and(|(_, at)| at.elapsed().as_secs() >= 6) {
                 *notice = None;
@@ -351,6 +350,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             }
             footer.set_label(&parts.join("  ·  "));
             enable(&window, &selected, &rows);
+            crate::queuedone::check(&ui.manager, &window);
         })
     };
 

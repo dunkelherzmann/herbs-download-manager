@@ -20,6 +20,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   `HD_DOWNLOADS_DIR`) set to a scratch folder: it keeps its own list and its own UI settings. Read windows by the
   test copy's pid (`CGWindowListCopyWindowInfo`), or with computer-use when his copy isn't running. `build.sh
   --install` leaves his running copy alone; the new build loads at his next launch.
+- Code reached while `AppModel` is being made (its first `refresh()`, observers, anything `init` calls) must not read
+  `AppModel.shared`: the app traps at launch with "dispatch_once ... trying to lock recursively". Pass the model or its
+  manager in instead (hit twice: hdm's control server, the scheduler's countdown).
 - AppKit saves window frames, split views and table columns (`setFrameAutosaveName`, `autosaveName`) in the app's
   standard defaults, which test copies share with his copy: name them through `TestCopy.autosave(_:)` so a test run
   never changes his layout. A new list column needs a one-time move into place, since a saved layout puts it last.
@@ -51,7 +54,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 ## Feature tests
 
-`tests/features.scenario` is run by each app through its own command code (`core/src/scenario.rs` has the language):
+`tests/features.scenario` is run by each app through its own command code (`core/src/scenario.rs` has the language,
+and `DirectHost`, which runs it against the core alone in `cargo test`: a new `do` command needs it too):
 `macos/scripts/features.sh` (part of `scripts/test.sh`), `sh linux/scripts/features.sh` after `linux/scripts/build.sh
 --install`, `powershell -ExecutionPolicy Bypass -File windows\scripts\features.ps1` after `windows\scripts\build.ps1`. A new feature gets
 its steps there; each feature downloads into its own folder, and waits for its downloads to finish, because a link to a

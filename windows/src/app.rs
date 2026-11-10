@@ -63,6 +63,7 @@ const C_FIND_DONE: u16 = 143;
 const C_RENAME: u16 = 144;
 const C_MOVE: u16 = 145;
 const C_NOTE: u16 = 146;
+// The private messages: WM_PROBED (add.rs) +1, WM_FEATURE (features.rs) +20, WM_TRAY +21, WM_QUEUE_DONE (queuedone.rs) +22.
 /// The notification area icon's messages (a click on the "Download finished" balloon).
 const WM_TRAY: u32 = WM_APP + 21;
 const NIN_BALLOONUSERCLICK: u32 = 0x405;
@@ -755,12 +756,7 @@ fn refresh() {
         if speed > 0 {
             parts.push(format::speed_text(speed));
         }
-        let waiting = s.rows.iter().filter(|r| r.status == Status::Waiting).count();
-        if s.manager.queue_running() {
-            parts.push(if waiting == 0 { "Queue running".into() } else { format!("Queue running, {waiting} waiting") });
-        } else if waiting > 0 {
-            parts.push(format!("Queue stopped, {waiting} waiting"));
-        }
+        parts.extend(s.manager.queue_text());
         if s.notice.as_ref().is_some_and(|(_, at)| at.elapsed().as_secs() >= 6) {
             s.notice = None;
         }
@@ -769,6 +765,10 @@ fn refresh() {
         }
         let text = wide(&parts.join("  ·  "));
         let _ = SetWindowTextW(s.footer, PCWSTR(text.as_ptr()));
+        // The scheduler (§11.1): the countdown runs from its own message, never inside this refresh.
+        if let Some(action) = s.manager.take_queue_done() {
+            let _ = PostMessageW(Some(s.window), crate::queuedone::WM_QUEUE_DONE, WPARAM(crate::queuedone::code(action)), LPARAM(0));
+        }
         for (id, control) in &s.tools {
             if *id != 0 {
                 let _ = EnableWindow(*control, enabled(*id, &selection, &s.rows));
@@ -1436,6 +1436,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 {
                     open_path(&p, true);
                 }
+                LRESULT(0)
+            }
+            crate::queuedone::WM_QUEUE_DONE => {
+                crate::queuedone::countdown(hwnd, wparam.0);
                 LRESULT(0)
             }
             crate::features::WM_FEATURE => {

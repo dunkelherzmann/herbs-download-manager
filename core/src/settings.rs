@@ -45,6 +45,8 @@ pub struct Settings {
     pub notify_when_finished: bool,
     /// S12: a finished file gets the date the server gives it (`Last-Modified`) instead of the time it finished.
     pub keep_server_date: bool,
+    /// The scheduler (§11.1).
+    pub schedule: crate::schedule::Schedule,
 }
 
 impl Default for Settings {
@@ -60,6 +62,7 @@ impl Default for Settings {
             look_for_checksum_files: true,
             notify_when_finished: true,
             keep_server_date: false,
+            schedule: crate::schedule::Schedule::default(),
         }
     }
 }
@@ -72,6 +75,7 @@ impl Settings {
         self.connections_per_server = clamp(self.connections_per_server, &CONNECTIONS_PER_SERVER);
         self.downloads_at_once = clamp(self.downloads_at_once, &DOWNLOADS_AT_ONCE);
         self.retries = clamp(self.retries, &RETRIES);
+        self.schedule = self.schedule.clamped();
         if self.speed_limit == Some(0) {
             self.speed_limit = None;
         }

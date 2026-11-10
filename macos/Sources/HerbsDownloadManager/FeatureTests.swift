@@ -60,6 +60,15 @@ final class FeatureHost: ScenarioHost, @unchecked Sendable {
         case "move":
             guard let id = ids.first, let target = args.first else { return "move needs a folder" }
             do { _ = try model.manager.moveFile(id: id, target: target) } catch { return errorText(error) }
+        case "cancel-when-done":  // the countdown once the queue is done, answered Cancel
+            let action: WhenDone? = switch args.first {
+            case "quit": .quit
+            case "sleep": .sleep
+            case "shut-down": .shutDown
+            default: nil
+            }
+            guard let action else { return "cancel-when-done needs quit, sleep or shut-down" }
+            return QueueDone.cancel(action)
         case "note":  // Note…'s sheet, answered
             guard let id = ids.first else { return "note needs a download" }
             model.manager.setNote(id: id, note: args.joined(separator: " "))

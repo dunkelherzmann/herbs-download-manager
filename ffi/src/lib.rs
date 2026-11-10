@@ -3,7 +3,39 @@
 
 uniffi::setup_scaffolding!();
 
+use hd_core::schedule;
 use hd_core::settings;
+
+/// The scheduler's "When the queue is done" (§11.1 Q4).
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+pub enum WhenDone {
+    Nothing,
+    Quit,
+    Sleep,
+    ShutDown,
+}
+
+impl From<schedule::WhenDone> for WhenDone {
+    fn from(w: schedule::WhenDone) -> Self {
+        match w {
+            schedule::WhenDone::Nothing => WhenDone::Nothing,
+            schedule::WhenDone::Quit => WhenDone::Quit,
+            schedule::WhenDone::Sleep => WhenDone::Sleep,
+            schedule::WhenDone::ShutDown => WhenDone::ShutDown,
+        }
+    }
+}
+
+impl From<WhenDone> for schedule::WhenDone {
+    fn from(w: WhenDone) -> Self {
+        match w {
+            WhenDone::Nothing => schedule::WhenDone::Nothing,
+            WhenDone::Quit => schedule::WhenDone::Quit,
+            WhenDone::Sleep => schedule::WhenDone::Sleep,
+            WhenDone::ShutDown => schedule::WhenDone::ShutDown,
+        }
+    }
+}
 
 #[derive(uniffi::Enum)]
 pub enum WhenFileExists {
@@ -25,6 +57,12 @@ pub struct Settings {
     pub look_for_checksum_files: bool,
     pub notify_when_finished: bool,
     pub keep_server_date: bool,
+    /// The scheduler (§11.1): start and stop times in minutes after midnight, `None` for off.
+    pub schedule_start: Option<u32>,
+    pub schedule_stop: Option<u32>,
+    /// Seven days, Monday first.
+    pub schedule_days: Vec<bool>,
+    pub when_done: WhenDone,
 }
 
 impl From<settings::Settings> for Settings {
@@ -45,6 +83,10 @@ impl From<settings::Settings> for Settings {
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
             keep_server_date: s.keep_server_date,
+            schedule_start: s.schedule.start,
+            schedule_stop: s.schedule.stop,
+            schedule_days: s.schedule.days.to_vec(),
+            when_done: s.schedule.when_done.into(),
         }
     }
 }
@@ -67,6 +109,12 @@ impl From<Settings> for settings::Settings {
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
             keep_server_date: s.keep_server_date,
+            schedule: schedule::Schedule {
+                start: s.schedule_start,
+                stop: s.schedule_stop,
+                days: std::array::from_fn(|i| s.schedule_days.get(i).copied().unwrap_or(true)),
+                when_done: s.when_done.into(),
+            },
         }
     }
 }
@@ -361,6 +409,16 @@ impl DownloadManager {
 
     pub fn queue_running(&self) -> bool {
         self.inner.queue_running()
+    }
+
+    /// Once, when the running queue has finished everything: the scheduler's "When the queue is done" action.
+    pub fn take_queue_done(&self) -> Option<WhenDone> {
+        self.inner.take_queue_done().map(Into::into)
+    }
+
+    /// The footer's words for the queue: "Queue running, 2 waiting, stops at 07:00, then sleeps".
+    pub fn queue_text(&self) -> Option<String> {
+        self.inner.queue_text()
     }
 
     /// Downloads at once (1–10).

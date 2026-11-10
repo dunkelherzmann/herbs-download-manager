@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::format::{self, FileKind};
 use crate::limit::Limiter;
+use crate::schedule::{Event, WhenDone};
 use crate::settings::Settings;
 use crate::transfer::{self, Control, Outcome, Progress, Request, ResumeState, Tuning};
 
@@ -206,6 +207,8 @@ impl Added {
 struct Running {
     /// Restart (§10) was asked while it ran: once stopped, its data is discarded and it starts again.
     restart: std::sync::atomic::AtomicBool,
+    /// The scheduler stopped it (§11.1): once paused, it waits in the queue again instead of staying Paused.
+    to_queue: std::sync::atomic::AtomicBool,
     control: Control,
     progress: Arc<Progress>,
     meter: Mutex<Meter>,
@@ -241,12 +244,24 @@ struct Inner {
     early: Mutex<Vec<Slot>>,
     /// S5, shared by every download.
     limiter: Arc<Limiter>,
+    /// Seconds added to the clock the scheduler reads, so tests can move time forward.
+    clock_offset: std::sync::atomic::AtomicI64,
 }
 
 /// The queue (§11): whether it starts waiting downloads, and how many may run at once.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 struct Queue {
     running: bool,
+    /// When the scheduler last looked (seconds since 1970): events after it fire, including those the app was
+    /// closed or the computer asleep for.
+    #[serde(default)]
+    checked: Option<i64>,
+    /// The queue has had something to do since it last was done.
+    #[serde(skip)]
+    busy: bool,
+    /// The queue became done and the app hasn't been told yet (`take_queue_done`).
+    #[serde(skip)]
+    done: bool,
     /// Downloads at once, kept here before it moved to `settings.json` (read once, never written).
     #[serde(default, skip_serializing)]
     at_once: Option<u32>,
@@ -305,7 +320,7 @@ impl Manager {
         let queue = std::fs::read(dir.join("queue.json"))
             .ok()
             .and_then(|b| serde_json::from_slice::<Queue>(&b).ok())
-            .unwrap_or(Queue { running: false, at_once: None, quitting: false });
+            .unwrap_or_default();
         let settings = Settings::load(dir).unwrap_or_else(|| {
             let mut s = Settings::default();
             s.downloads_at_once = queue.at_once.unwrap_or(s.downloads_at_once);
@@ -324,6 +339,7 @@ impl Manager {
                 learned: Arc::new(crate::hosts::Learned::open(Some(dir))),
                 vault: Arc::new(crate::vault::Vault::open(Some(dir))),
                 early: Mutex::new(Vec::new()),
+                clock_offset: std::sync::atomic::AtomicI64::new(0),
             }),
             handle: runtime.handle().clone(),
             _runtime: Some(Arc::new(runtime)),
@@ -340,13 +356,27 @@ impl Manager {
             .collect();
         manager.resume(&again);
         manager.pump();
+        manager.tick();
+        let (weak, handle, client) = (Arc::downgrade(&manager.inner), manager.handle.clone(), manager.client.clone());
+        manager.handle.spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let Some(inner) = weak.upgrade() else { break };
+                Manager { inner, _runtime: None, handle: handle.clone(), client: client.clone() }.tick();
+            }
+        });
         Ok(manager)
     }
 
     /// Quitting (§10): pauses every running download, marks it to start again at the next launch, and waits up
     /// to `timeout` for them to save. Returns false if some were still running.
     pub fn quit(&self, timeout: std::time::Duration) -> bool {
-        self.inner.queue.lock().unwrap().quitting = true;
+        let q = {
+            let mut q = self.inner.queue.lock().unwrap();
+            q.quitting = true;
+            *q
+        };
+        self.save_queue(&q);
         crate::control::close(self);
         {
             let mut slots = self.inner.slots.lock().unwrap();
@@ -531,6 +561,7 @@ impl Manager {
             *progress.checksum.lock().unwrap() = e.checksum.clone();
             let running = Arc::new(Running {
                 restart: std::sync::atomic::AtomicBool::new(false),
+                to_queue: std::sync::atomic::AtomicBool::new(false),
                 control: transfer::control(),
                 progress,
                 meter: Mutex::new(Meter { at: Instant::now(), bytes: e.downloaded, speed: 0.0 }),
@@ -596,6 +627,7 @@ impl Manager {
                     e.status = Status::Finished;
                     e.finished = Some(now());
                 }
+                Outcome::Paused if running.to_queue.load(Ordering::SeqCst) => e.status = Status::Waiting,
                 Outcome::Paused => e.status = Status::Paused,
                 Outcome::Failed(reason) => {
                     e.needs_login = running.progress.needs_login.lock().unwrap().clone();
@@ -1043,6 +1075,11 @@ impl Manager {
     pub fn set_settings(&self, s: Settings) {
         let s = s.clamped();
         let _ = s.save(&self.inner.dir);
+        if s.schedule != self.inner.settings.lock().unwrap().schedule {
+            // A new schedule counts from now: times already past today don't fire.
+            let now = self.clock();
+            self.inner.queue.lock().unwrap().checked = Some(now);
+        }
         self.inner.limiter.set_rate(s.speed_limit);
         *self.inner.settings.lock().unwrap() = s;
         self.pump();
@@ -1113,19 +1150,121 @@ impl Manager {
             change(&mut q);
             *q
         };
-        if let Ok(text) = serde_json::to_vec_pretty(&q) {
+        self.save_queue(&q);
+        self.pump();
+    }
+
+    fn save_queue(&self, q: &Queue) {
+        if let Ok(text) = serde_json::to_vec_pretty(q) {
             let tmp = self.inner.dir.join("queue.json.tmp");
             if std::fs::write(&tmp, text).is_ok() {
                 let _ = std::fs::rename(tmp, self.inner.dir.join("queue.json"));
             }
         }
-        self.pump();
+    }
+
+    /// The time the scheduler goes by, in seconds since 1970.
+    fn clock(&self) -> i64 {
+        now() as i64 + self.inner.clock_offset.load(Ordering::SeqCst)
+    }
+
+    /// The scheduler's now (moved by `advance_clock` in tests).
+    pub fn scheduler_now(&self) -> i64 {
+        self.clock()
+    }
+
+    /// Tests: moves the scheduler's clock forward by `seconds` and lets it look at once.
+    pub fn advance_clock(&self, seconds: i64) {
+        self.inner.clock_offset.fetch_add(seconds, Ordering::SeqCst);
+        self.tick();
+    }
+
+    /// Runs every second: fires the schedule's events (§11.1) and notices when the queue is done.
+    fn tick(&self) {
+        let now = self.clock();
+        let schedule = self.inner.settings.lock().unwrap().schedule.clone();
+        let event = {
+            let mut q = self.inner.queue.lock().unwrap();
+            if q.quitting {
+                return;
+            }
+            let since = *q.checked.get_or_insert(now);
+            q.checked = Some(now);
+            schedule.last_event(since, now).map(|(_, e)| e)
+        };
+        match event {
+            Some(Event::Start) => self.start_queue(),
+            Some(Event::Stop) => self.stop_for_schedule(),
+            None => {}
+        }
+        let idle = {
+            let slots = self.inner.slots.lock().unwrap();
+            !slots.iter().any(|s| s.running.is_some() || s.entry.status == Status::Waiting)
+        };
+        let mut q = self.inner.queue.lock().unwrap();
+        if !q.running || q.quitting {
+            q.busy = false;
+        } else if !idle {
+            q.busy = true;
+        } else if q.busy {
+            q.busy = false;
+            q.done = true;
+        }
+    }
+
+    /// The schedule's stop time: the queue stops, and running downloads pause and wait in the queue again, so the
+    /// next start carries on with them.
+    fn stop_for_schedule(&self) {
+        self.stop_queue();
+        let slots = self.inner.slots.lock().unwrap();
+        for r in slots.iter().filter_map(|s| s.running.as_ref()) {
+            r.to_queue.store(true, Ordering::SeqCst);
+            r.control.pause();
+        }
+    }
+
+    /// Once, after the running queue finished its last download with nothing left waiting: what the scheduler's
+    /// "When the queue is done" (Q4) asks for. `None` until then, or when it's set to do nothing.
+    pub fn take_queue_done(&self) -> Option<WhenDone> {
+        let done = std::mem::take(&mut self.inner.queue.lock().unwrap().done);
+        let when = self.inner.settings.lock().unwrap().schedule.when_done;
+        (done && when != WhenDone::Nothing).then_some(when)
+    }
+
+    /// The footer's words for the queue (§11): "Queue running, 2 waiting, stops at 07:00, then sleeps", or
+    /// `None` when the queue is stopped with nothing waiting and nothing scheduled.
+    pub fn queue_text(&self) -> Option<String> {
+        let waiting = self.inner.slots.lock().unwrap().iter().filter(|s| s.entry.status == Status::Waiting).count();
+        let running = self.queue_running();
+        let schedule = self.inner.settings.lock().unwrap().schedule.clone();
+        let mut parts = Vec::new();
+        match (running, waiting) {
+            (true, 0) => parts.push("Queue running".to_string()),
+            (true, n) => parts.push(format!("Queue running, {n} waiting")),
+            (false, 0) => {}
+            (false, n) => parts.push(format!("Queue stopped, {n} waiting")),
+        }
+        if let Some(next) = schedule.next_text(self.clock()) {
+            if parts.is_empty() {
+                parts.push("Queue stopped".into());
+            }
+            parts.push(next);
+        }
+        if running {
+            match schedule.when_done {
+                WhenDone::Nothing => {}
+                WhenDone::Quit => parts.push("then quits".into()),
+                WhenDone::Sleep => parts.push("then sleeps".into()),
+                WhenDone::ShutDown => parts.push("then shuts down".into()),
+            }
+        }
+        (!parts.is_empty()).then(|| parts.join(", "))
     }
 
     /// Starts the oldest waiting downloads while the queue runs and has room. The queue lock is held throughout,
     /// so two calls can't both fill the same free place.
     fn pump(&self) {
-        let q = self.inner.queue.lock().unwrap();
+        let mut q = self.inner.queue.lock().unwrap();
         if !q.running || q.quitting {
             return;
         }
@@ -1142,6 +1281,8 @@ impl Manager {
         for id in &next {
             self.start(*id);
         }
+        // A download can finish between two of the scheduler's looks: starting one makes the queue busy.
+        q.busy |= !next.is_empty();
         drop(q);
         if !next.is_empty() {
             self.save();
