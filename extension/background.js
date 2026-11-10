@@ -302,6 +302,194 @@ async function fetchAsPage(url, signal) {
   }
 }
 
+// ---- Refresh: what the page plays now (§15) --------------------------------------------------------------------
+//
+// Sites that change videos as you scroll (TikTok, reels) fetch the next ones before they're shown, and play them
+// through a blob: address, so the list fills with videos that aren't on screen. Refresh asks the page's players
+// what they play: a file's own address, or for a blob: player its length and picture size, matched against the
+// files the tab fetched (their length read from their index, the first bytes). The one playing goes first, marked
+// "Playing now", and files no player on the page holds any more leave the list; with no match nothing is lost.
+
+// Runs in the page: each video and sound element, what it plays and whether it's playing and on screen.
+function playersOnPage() {
+  return [...document.querySelectorAll("video, audio")].map((m) => {
+    const r = m.getBoundingClientRect();
+    const seen = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+    return {
+      src: m.currentSrc || m.src || "",
+      playing: !m.paused && !m.ended && m.readyState > 2,
+      seconds: Number.isFinite(m.duration) ? m.duration : 0,
+      width: m.videoWidth || 0,
+      height: m.videoHeight || 0,
+      seen,
+    };
+  }).filter((p) => p.src || p.seconds > 0);
+}
+
+// Fetches `url` as its page would (the site's cookies and the page as Referer, set by a browser rule for this one
+// address, as a server like TikTok's refuses a file to anyone without its cookie).
+async function fetchForPage(url, page, init = {}) {
+  const forced = [];
+  const cookies = await cookiesFor(url);
+  if (cookies) forced.push({ header: "cookie", operation: "set", value: cookies });
+  if (page) forced.push({ header: "referer", operation: "set", value: page });
+  const dnr = api.declarativeNetRequest;
+  const id = (ruleId = ruleId >= 9999 ? 9000 : ruleId + 1);
+  if (forced.length && dnr && dnr.updateSessionRules) {
+    await dnr.updateSessionRules({
+      removeRuleIds: [id],
+      addRules: [{ id, priority: 1, action: { type: "modifyHeaders", requestHeaders: forced },
+                   condition: { urlFilter: `|${url}|`, resourceTypes: ["xmlhttprequest"] } }],
+    }).catch(() => {});
+  }
+  try {
+    return await fetch(url, init);
+  } finally {
+    if (forced.length && dnr && dnr.updateSessionRules) await dnr.updateSessionRules({ removeRuleIds: [id] }).catch(() => {});
+  }
+}
+
+// A preview in the list (a <video> in the extension's own page) asks for the file as its page would, for two
+// minutes: the rule stays while the browser reads the picture and length.
+let mediaRuleId = 10000;
+async function mediaAccess(url, page) {
+  const dnr = api.declarativeNetRequest;
+  if (!web(url) || !dnr || !dnr.updateSessionRules) return;
+  const forced = [];
+  const cookies = await cookiesFor(url);
+  if (cookies) forced.push({ header: "cookie", operation: "set", value: cookies });
+  if (page && web(page)) forced.push({ header: "referer", operation: "set", value: page });
+  if (!forced.length) return;
+  const id = (mediaRuleId = mediaRuleId >= 10099 ? 10000 : mediaRuleId + 1);
+  await dnr.updateSessionRules({
+    removeRuleIds: [id],
+    addRules: [{ id, priority: 1, action: { type: "modifyHeaders", requestHeaders: forced },
+                 condition: { urlFilter: `|${url}|`, resourceTypes: ["media"] } }],
+  }).catch(() => {});
+  const timer = setTimeout(() => dnr.updateSessionRules({ removeRuleIds: [id] }).catch(() => {}), 120000);
+  // (In the tests' Node, the timer mustn't keep the run alive.)
+  if (timer && timer.unref) timer.unref();
+}
+
+// An MP4 file's length and picture size, from its index when it comes first (as a player wants it): null when the
+// first 512 KB don't hold it.
+async function fileFacts(url, page) {
+  let bytes;
+  try {
+    const r = await fetchForPage(url, page, { headers: { Range: "bytes=0-524287" }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    bytes = new Uint8Array(await r.arrayBuffer());
+  } catch {
+    return null;
+  }
+  return mp4Facts(bytes);
+}
+
+function mp4Facts(b) {
+  const u32 = (i) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+  const type = (i) => String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]);
+  // The boxes from `from` to `to`: [type, start of contents, end].
+  const boxes = (from, to) => {
+    const out = [];
+    for (let i = from; i + 8 <= to;) {
+      let size = u32(i);
+      let head = 8;
+      if (size === 1) {
+        size = u32(i + 8) * 2 ** 32 + u32(i + 12);
+        head = 16;
+      } else if (size === 0) size = to - i;
+      if (size < head) break;
+      out.push([type(i), i + head, Math.min(i + size, to)]);
+      i += size;
+    }
+    return out;
+  };
+  const moov = boxes(0, b.length).find(([t, , end]) => t === "moov" && end <= b.length);
+  if (!moov) return null;
+  const inside = boxes(moov[1], moov[2]);
+  const mvhd = inside.find(([t]) => t === "mvhd");
+  if (!mvhd) return null;
+  const at = mvhd[1];
+  const v1 = b[at] === 1;
+  const scale = u32(at + (v1 ? 20 : 12));
+  const duration = v1 ? u32(at + 24) * 2 ** 32 + u32(at + 28) : u32(at + 16);
+  let width = 0;
+  let height = 0;
+  for (const [t, start, end] of inside) {
+    if (t !== "trak") continue;
+    const tkhd = boxes(start, end).find(([k]) => k === "tkhd");
+    if (!tkhd) continue;
+    // Its last two fields: the picture's width and height (16.16 fixed point); a sound track's are 0.
+    const w = u32(tkhd[2] - 8) >>> 16;
+    const h = u32(tkhd[2] - 4) >>> 16;
+    if (w && h) {
+      width = w;
+      height = h;
+      break;
+    }
+  }
+  return scale ? { seconds: duration / scale, width, height } : null;
+}
+
+// Files' lengths and picture sizes (`mp4Facts`), by address; null when unknown.
+const factsOf = new Map();
+
+async function refresh(tabId) {
+  const tab = await api.tabs.get(tabId).catch(() => null);
+  if (!tab) return { ok: false };
+  let players = [];
+  try {
+    const results = await api.scripting.executeScript({ target: { tabId, allFrames: true }, func: playersOnPage });
+    players = results.flatMap((r) => (r && r.result) || []);
+  } catch {
+    return { ok: false, error: "This page can't be read." };
+  }
+  const page = web(tab.url) ? tab.url : "";
+  // Each file's length and size, read once (in parallel) and kept.
+  const unknown = (await itemsOf(tabId)).filter((i) => (i.kind === "video" || i.kind === "audio") && i.url && !factsOf.has(i.url));
+  await Promise.all(unknown.map(async (f) => factsOf.set(f.url, await fileFacts(f.url, page))));
+  if (factsOf.size > 200) factsOf.delete(factsOf.keys().next().value);
+  let playing = null;
+  // Written in turn with what the tab fetches meanwhile.
+  await (noting = noting.then(async () => {
+    const items = await itemsOf(tabId);
+    // A playing file the list doesn't hold yet (fetched before the list started looking): added.
+    for (const p of players) {
+      if (web(p.src) && !items.some((i) => i.url === p.src)) {
+        items.push({ url: p.src, kind: p.width ? "video" : "audio", size: 0, seen: Date.now(), hidden: false });
+      }
+    }
+    const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url && !i.hidden);
+    const close = (a, b) => a > 0 && b > 0 && Math.abs(a - b) < 0.5;
+    // The file a player plays: its own address, else the one as long and as big.
+    const fileOf = (p) => {
+      if (web(p.src)) return files.find((f) => f.url === p.src) || null;
+      const same = files.filter((f) => {
+        const facts = factsOf.get(f.url);
+        return facts && close(facts.seconds, p.seconds)
+          && (!p.width || !facts.width || (facts.width === p.width && facts.height === p.height));
+      });
+      // The closest in length (a player's own length runs a little over its file's: 10.20 s for 10.08), then the newest.
+      const off = (f) => Math.abs(factsOf.get(f.url).seconds - p.seconds);
+      return same.sort((a, b) => off(a) - off(b) || (b.seen || 0) - (a.seen || 0))[0] || null;
+    };
+    // The one playing (the biggest on screen), else the biggest on screen.
+    const ranked = [...players].sort((a, b) => Number(b.playing) - Number(a.playing) || b.seen - a.seen);
+    const held = new Set();
+    for (const p of ranked) {
+      const f = fileOf(p);
+      if (!f) continue;
+      held.add(f);
+      if (!playing && (p.playing || p.seen > 0)) playing = f;
+    }
+    for (const i of items) i.playing = i === playing;
+    // Files no player holds any more go, once the page's players were matched at all.
+    const kept = held.size ? items.filter((i) => !(i.kind === "video" || i.kind === "audio") || held.has(i)) : items;
+    await setItems(tabId, kept);
+  }).catch(() => {}));
+  return { ok: true, playing: !!playing, players: players.length };
+}
+
 // How many addresses each tab had read to see whether they're streams (MAYBE_STREAM), at most 20.
 const probes = new Map();
 
@@ -454,6 +642,12 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       await api.storage.local.set({ panel: !!message.on });
       await applyPanel();
       reply({ ok: true, panel: await panelSetting() });
+    } else if (message.type === "refresh") {
+      reply(await refresh(message.tabId));
+    } else if (message.type === "media-access") {
+      // A file's own preview in the list: the browser asks for it as the page would (§15).
+      await mediaAccess(message.url, message.page);
+      reply({ ok: true });
     } else if (message.type === "look-again") {
       // The page loads again, so its player fetches its media again and the list fills as it does.
       await setItems(message.tabId, []);
@@ -603,8 +797,10 @@ async function listed(tabId, tab, order, page = true) {
     if (!about.protected) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
   }
   const found = (i) => i.seen || 0;
-  if (order === "oldest") return items.sort((a, b) => found(a) - found(b));
-  if (order === "newest") return items.sort((a, b) => found(b) - found(a));
+  // What a Refresh found playing comes first, whatever the order.
+  const first = (sorted) => sorted.sort((a, b) => Number(!!b.playing) - Number(!!a.playing));
+  if (order === "oldest") return first(items.sort((a, b) => found(a) - found(b)));
+  if (order === "newest") return first(items.sort((a, b) => found(b) - found(a)));
   const site = tab ? siteOf(tab.url) : "";
   const rank = (i) => [
     { "page-dash": 0, dash: 0, stream: 1, video: 2, file: 2, audio: 3 }[i.kind] ?? 2,
@@ -612,11 +808,11 @@ async function listed(tabId, tab, order, page = true) {
     i.url && siteOf(i.url) === site ? 0 : i.kind === "page-dash" ? 0 : 1,
     found(i),
   ];
-  return items.sort((a, b) => {
+  return first(items.sort((a, b) => {
     const [x, y] = [rank(a), rank(b)];
     for (let k = 0; k < x.length; k++) if (x[k] !== y[k]) return x[k] - y[k];
     return 0;
-  });
+  }));
 }
 
 // The right-click menu's list of the active tab's media, in the list's order (its first 20; videos a page carries in

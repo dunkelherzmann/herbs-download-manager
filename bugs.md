@@ -44,3 +44,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **TikTok videos showed no picture or length in the extension's list.** *Reported 2026-11-10.* The list's preview is the browser reading the file itself, and TikTok's server (`v16-webapp-prime.tiktok.com`, links ending `tk=tt_chain_token`) answers 403 to anyone without its `tt_chain_token` cookie, which the extension's own page didn't send (the app's download was fine: it gets the page's cookies). Fixed: a preview is asked for as the page would, with the site's cookies and the page as Referer (a browser rule for that address, for two minutes). Extension 1.14.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

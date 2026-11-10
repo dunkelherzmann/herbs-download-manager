@@ -35,7 +35,7 @@ function area() {
   };
 }
 
-function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "" } = {}) {
+function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "", cookies = [] } = {}) {
   const sent = [];
   const fetches = [];
   const rules = { added: [], removed: [] };
@@ -52,7 +52,7 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
       removeAll: async () => menus.clear(),
       onClicked: event(),
     },
-    cookies: { getAll: async () => [] },
+    cookies: { getAll: async () => cookies },
     downloads: { onCreated: event(), pause: async () => {}, resume: async () => {}, cancel: async () => {}, erase: async () => {}, search: async () => [] },
     runtime: {
       lastError: undefined,
@@ -90,10 +90,12 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
   const fakeFetch = async (url, options = {}) => {
     fetches.push({ url, options });
     const { status = 200, body = "" } = answer(url, options) || {};
-    return { ok: status >= 200 && status < 300, status, text: async () => body, json: async () => JSON.parse(body) };
+    const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;
+    return { ok: status >= 200 && status < 300, status, text: async () => body, json: async () => JSON.parse(body),
+             arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
   };
   const context = vm.createContext({
-    chrome, console, URL, URLSearchParams, AbortSignal, TextEncoder, TextDecoder, setTimeout, clearTimeout, structuredClone,
+    chrome, console, URL, URLSearchParams, AbortSignal, Uint8Array, TextEncoder, TextDecoder, setTimeout, clearTimeout, structuredClone,
     navigator: { clipboard: { writeText: async () => {} } },
     fetch: fakeFetch,
     importScripts: (...files) => files.forEach((f) => vm.runInContext(fs.readFileSync(path.join(EXT, f), "utf8"), context, { filename: f })),

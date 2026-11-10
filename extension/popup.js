@@ -27,10 +27,12 @@ function size(bytes) {
   return `${u ? n.toFixed(1) : n} ${units[u]}`;
 }
 
-function title(item) {
+function title(item, tab) {
   // The server's own name for it (Content-Disposition) when it gave one.
   if (item.name) return item.name;
   const last = decodeURIComponent(item.url.split(/[?#]/)[0].split("/").pop() || "");
+  // A link with no file's name in it (TikTok's end in "/"): its page, as the app names it.
+  if (!/\.[a-z0-9]{2,5}$/i.test(last) && tab && tab.title) return tab.title;
   return last || new URL(item.url).hostname;
 }
 
@@ -73,6 +75,17 @@ async function show() {
   $("panel").onchange = async () => {
     await ask({ type: "set-panel", on: $("panel").checked });
   };
+  // Refresh: what the page plays now goes first, marked "Playing now".
+  $("refresh").onclick = async () => {
+    $("refresh").disabled = true;
+    $("refresh").textContent = "Looking…";
+    const answer = await ask({ type: "refresh", tabId: tab.id }).catch(() => null);
+    $("refresh").disabled = false;
+    $("refresh").textContent = answer && answer.ok && !answer.playing ? "Nothing playing" : "Refresh";
+    if (answer && answer.ok && !answer.playing) setTimeout(() => { $("refresh").textContent = "Refresh"; }, 3000);
+    shownKey = "";
+    show();
+  };
   $("again").onclick = async () => {
     $("again").disabled = true;
     $("again").textContent = "Loading the page again…";
@@ -82,7 +95,7 @@ async function show() {
       $("again").textContent = "Look Again";
     }, 3000);
   };
-  const key = `${tab.id}|${state.order}|${siteAction}|${state.items.map((i) => i.url || i.manifest.length).join("|")}`;
+  const key = `${tab.id}|${state.order}|${siteAction}|${state.items.map((i) => `${i.playing ? "*" : ""}${i.url || i.manifest.length}`).join("|")}`;
   if (key === shownKey) return;
   shownKey = key;
   const list = $("items");
@@ -93,7 +106,8 @@ async function show() {
     const facts = item.kind === "page-dash"
       ? [item.sound ? "Video with sound" : "Video", item.quality, length(item.seconds)]
       : [KIND[item.kind], size(item.size)];
-    list.append(row(tab, item, streamed ? tab.title || title(item) : title(item), facts));
+    if (item.playing) facts.unshift("Playing now");
+    list.append(row(tab, item, streamed ? tab.title || title(item, tab) : title(item, tab), facts));
   }
   $("scan").onclick = async () => {
     $("scan").disabled = true;
@@ -195,7 +209,8 @@ function thumbnail(tab, item, streamed) {
   };
   box.append(time);
   if (!streamed) {
-    show(`${item.url}#t=1`);
+    // Asked for as its page would (cookies, Referer): TikTok's server refuses its files to anyone without its cookie.
+    ask({ type: "media-access", url: item.url, page: tab.url }).catch(() => null).then(() => show(`${item.url}#t=1`));
     return box;
   }
   if (item.seconds) time.textContent = length(item.seconds);

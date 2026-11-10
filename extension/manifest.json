@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Herb's Download Manager",
   "short_name": "Herb's DM",
-  "version": "1.13",
+  "version": "1.14",
   "description": "Hands the browser's downloads to Herb's Download Manager, and lists the videos and sounds a page plays. The browser keeps any download the app doesn't take.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyqtImNXMJIRd1ALV8sc7HOOvXHIW3WUSLJjt2YXWixFq7oSa8QskxbjBg/eGthy6wM/33mU29I5lxsjO7uIEybNOIOrpOxwW6Z8lIWk3gS7UQj5k9HxOqVnFHcdYwyrjBWnoc4ri30w0QrzgYbfMEXX2M6nX4TPbuK1XmXb0n6VsqFg0vP7ApU5OPm91nQIwmXejttvF3TLMCShAWOW0GrbQt20leyFW+MTwDVOhaH3xwlWSc66jJyFWxD+mkwJi2/FzjnHYPRZa4PFU1xfi0++sN3p6nDr+P5QXexiZdrD/BdkySJsvzdL9WamR+beOBr4jS3iLfqsvFOjt1P3UqwIDAQAB",
   "browser_specific_settings": {

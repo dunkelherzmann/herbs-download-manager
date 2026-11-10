@@ -208,3 +208,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **A Refresh button in the browser extension's list,** for sites like TikTok that keep changing videos: it finds the video playing now and puts it first, marked "Playing now", and drops files the page no longer holds. *Requested 2026-11-10.* TikTok plays its videos through blob: addresses and fetches the next ones early, so the playing one is matched by its length and picture size against each file's index (read with the page's cookies); a plain video link is matched by its address. Files with no name in their link are listed under the page's title. Extension 1.14.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

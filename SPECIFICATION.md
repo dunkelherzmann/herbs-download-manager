@@ -717,8 +717,18 @@ Each video and stream shows a **preview** to its left, so several found on one p
 with its length in the corner ("0:13"). A stream's is made by `hdm` itself (the app needn't run), with the page's
 cookies: the first whole picture of its smallest quality's first piece, as a tiny MP4 (a few KB), and its length from
 the playlist or manifest (none for a live stream). Three are made at a time and kept while the browser runs. A whole
-video file's picture and length are read by the browser. A video that can't be previewed (a DASH quality kept as one
+video file's picture and length are read by the browser, which asks for it as its page would (the site's cookies
+and the page as Referer, set by a browser rule for that address for two minutes: TikTok's server refuses its files to
+anyone without its `tt_chain_token` cookie). A video that can't be previewed (a DASH quality kept as one
 file with no index, a protected or broken stream) keeps an empty box; sounds have none.
+**Refresh** (beside the list's heading) finds what the page plays now, for sites that change videos as you scroll
+and fetch the next ones before they're shown (TikTok, reels): it asks the page's video and sound players what they
+play, and the one playing (the biggest on screen) goes first, marked "Playing now". A player playing a file's own
+address is matched by it (and added if the list didn't have it); one playing through a `blob:` address by its length
+(within half a second; the closest wins) and picture size, against each file's own, read from its index in its
+first 512 KB with the page's cookies. Files no player on the page holds any more leave the list, but only when a
+player was matched: with no match nothing is lost. A file whose link has no file's name in it is listed under its
+page's title, as the app names it.
 Every item has **Add to Queue** and **Download Now** buttons under it (a click on the item itself adds it to the
 queue, or does what its site's rule says; Download Now starts it at once, says "Downloading", and with Ask for a name
 first its field's button says Download). Every stream also has a **Sound Only** button there, which adds just its sound (see Sound only above). A stream is named after

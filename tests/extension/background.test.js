@@ -164,3 +164,84 @@ test("another page in the tab forgets what the last one played", async () => {
   await b.get("noting");
   assert.equal((await b.items()).length, 0);
 });
+
+// ---- Refresh (§15) ----------------------------------------------------------------------------------------------
+
+// A tiny MP4 whose index comes first: `seconds` long, its picture `width` × `height`.
+function mp4(seconds, width = 720, height = 1280) {
+  const box = (type, ...parts) => {
+    const body = Buffer.concat(parts);
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(body.length + 8);
+    head.write(type, 4, "latin1");
+    return Buffer.concat([head, body]);
+  };
+  const mvhd = Buffer.alloc(100);
+  mvhd.writeUInt32BE(1000, 12); // timescale
+  mvhd.writeUInt32BE(Math.round(seconds * 1000), 16); // duration
+  const tkhd = Buffer.alloc(84);
+  tkhd.writeUInt32BE(width << 16, 76);
+  tkhd.writeUInt32BE(height << 16, 80);
+  const sound = Buffer.alloc(84); // a sound track: no picture size
+  const moov = box("moov", box("mvhd", mvhd), box("trak", box("tkhd", sound)), box("trak", box("tkhd", tkhd)));
+  return new Uint8Array(Buffer.concat([box("ftyp", Buffer.from("isom0000")), moov, box("mdat", Buffer.alloc(16))]));
+}
+
+const TIKTOK = { id: 1, active: true, title: "Funny dog | TikTok", url: "https://www.tiktok.com/foryou" };
+const clip = (n) => `https://v16-webapp-prime.tiktok.com/video/tos/${n}/?mime_type=video_mp4&tk=tt_chain_token`;
+
+test("an MP4's length and picture size are read from its index", () => {
+  const b = load();
+  assert.deepEqual(plain(b.get("mp4Facts")(mp4(12.5))), { seconds: 12.5, width: 720, height: 1280 });
+  assert.equal(b.get("mp4Facts")(new Uint8Array(64)), null, "no index: unknown");
+});
+
+test("Refresh puts the video playing now first and drops what the page no longer holds", async () => {
+  const lengths = { a: 10, b: 12.5, c: 30 };
+  const b = load({
+    tabs: [TIKTOK],
+    cookies: [{ name: "tt_chain_token", value: "secret" }],
+    fetch: (url) => ({ status: 206, body: mp4(lengths[url.split("/")[5]]) }),
+    // A blob: player playing the 12.5-second video, and the next one waiting below it.
+    script: () => [
+      { src: "blob:https://www.tiktok.com/1", playing: true, seconds: 12.52, width: 720, height: 1280, seen: 300000 },
+      { src: "blob:https://www.tiktok.com/2", playing: false, seconds: 30, width: 720, height: 1280, seen: 0 },
+    ],
+  });
+  await b.chrome.storage.session.set({ "media-1": ["a", "b", "c"].map((n, i) => ({ url: clip(n), kind: "video", size: 33e6, seen: i + 1, hidden: false })) });
+  const answer = await b.ask({ type: "refresh", tabId: 1 });
+  assert.deepEqual(plain(answer), { ok: true, playing: true, players: 2 });
+  const list = await b.get("listed")(1, TIKTOK, "smart", false);
+  assert.deepEqual(list.map((i) => [i.url.split("/")[5], !!i.playing]), [["b", true], ["c", false]], "the 10-second one is no longer on the page");
+  // Each file's start was read as its page would ask: the site's cookie and the page as Referer.
+  const rule = b.rules.added.find((r) => r.condition.urlFilter === `|${clip("a")}|`);
+  assert.deepEqual(plain(rule.action.requestHeaders), [
+    { header: "cookie", operation: "set", value: "tt_chain_token=secret" },
+    { header: "referer", operation: "set", value: TIKTOK.url },
+  ]);
+  assert.equal(b.fetches.find((f) => f.url === clip("a")).options.headers.Range, "bytes=0-524287");
+});
+
+test("Refresh keeps the list when nothing on the page matches, and adds a file a player plays by its address", async () => {
+  const b = load({
+    tabs: [PAGE],
+    fetch: () => ({ status: 403, body: "" }),
+    script: () => [{ src: "blob:https://www.example.com/1", playing: true, seconds: 8, width: 640, height: 360, seen: 1000 }],
+  });
+  await b.chrome.storage.session.set({ "media-1": [{ url: "https://cdn.example.com/a.mp4", kind: "video", size: 5e6, seen: 1, hidden: false }] });
+  assert.equal((await b.ask({ type: "refresh", tabId: 1 })).playing, false);
+  assert.equal((await b.items()).length, 1, "nothing matched: nothing dropped");
+
+  const direct = load({ tabs: [PAGE], script: () => [{ src: "https://cdn.example.com/now.mp4", playing: true, seconds: 8, width: 640, height: 360, seen: 1000 }] });
+  assert.equal((await direct.ask({ type: "refresh", tabId: 1 })).playing, true);
+  const [now] = await direct.items();
+  assert.deepEqual([now.url, now.kind, now.playing], ["https://cdn.example.com/now.mp4", "video", true]);
+});
+
+test("a file's preview in the list is asked for with the page's cookies and address", async () => {
+  const b = load({ tabs: [TIKTOK], cookies: [{ name: "tt_chain_token", value: "secret" }] });
+  await b.ask({ type: "media-access", url: clip("a"), page: TIKTOK.url });
+  const [rule] = b.rules.added;
+  assert.deepEqual(plain(rule.condition), { urlFilter: `|${clip("a")}|`, resourceTypes: ["media"] });
+  assert.deepEqual(plain(rule.action.requestHeaders).map((h) => h.header), ["cookie", "referer"]);
+});
