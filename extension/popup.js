@@ -43,42 +43,72 @@ async function show() {
   const list = $("items");
   list.replaceChildren();
   $("empty").hidden = state.items.length > 0;
-  for (const item of state.items) {
-    const li = document.createElement("li");
-    const button = document.createElement("button");
-    button.className = "item";
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = item.kind === "stream" ? tab.title || title(item) : title(item);
-    const detail = document.createElement("span");
-    detail.className = "detail";
-    const host = (() => { try { return new URL(item.url).hostname; } catch { return ""; } })();
-    detail.textContent = [KIND[item.kind], size(item.size), host].filter(Boolean).join(" · ");
-    button.append(name, detail);
-    button.title = item.url;
-    if (item.kind === "dash") {
-      button.disabled = true;
-      detail.textContent += " · not supported yet";
-    } else {
-      button.setAttribute("aria-label", `Add ${name.textContent} to the queue`);
-      button.onclick = async () => {
-        button.disabled = true;
-        detail.className = "detail";
-        detail.textContent = "Adding…";
-        const answer = await ask({ type: "add", tabId: tab.id, item });
-        if (answer && answer.ok) {
-          detail.className = "detail ok";
-          detail.textContent = "Added to the queue";
-        } else {
-          detail.className = "detail bad";
-          detail.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
-          button.disabled = false;
-        }
-      };
+  for (const item of state.items) list.append(row(tab, item, item.kind === "stream" ? tab.title || title(item) : title(item), [KIND[item.kind], size(item.size)]));
+  $("scan").onclick = async () => {
+    $("scan").disabled = true;
+    $("scan").textContent = "Looking through the page…";
+    const note = $("scan-note");
+    note.hidden = true;
+    const answer = await ask({ type: "scan", tabId: tab.id });
+    $("scan").disabled = false;
+    $("scan").textContent = "Find Files on This Page";
+    const found = $("found");
+    found.replaceChildren();
+    if (!answer || !answer.ok) {
+      note.className = "note bad";
+      note.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
+      note.hidden = false;
+      return;
     }
-    li.append(button);
-    list.append(li);
+    const files = answer.found || [];
+    if (!files.length) {
+      note.className = "note";
+      note.textContent = "No files or media found on this page.";
+      note.hidden = false;
+    }
+    for (const f of files) {
+      const item = { url: f.url, name: f.name, size: f.size || 0, kind: f.stream ? "stream" : "file", stream: f.stream };
+      found.append(row(tab, item, f.name, [f.kind, size(f.size)]));
+    }
+  };
+}
+
+// One item: its name, what it is (kind, size, site), and a click that adds it to the queue.
+function row(tab, item, label, facts) {
+  const li = document.createElement("li");
+  const button = document.createElement("button");
+  button.className = "item";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = label;
+  const detail = document.createElement("span");
+  detail.className = "detail";
+  const host = (() => { try { return new URL(item.url).hostname; } catch { return ""; } })();
+  detail.textContent = [...facts, host].filter(Boolean).join(" · ");
+  button.append(name, detail);
+  button.title = item.url;
+  if (item.kind === "dash") {
+    button.disabled = true;
+    detail.textContent += " · not supported yet";
+  } else {
+    button.setAttribute("aria-label", `Add ${label} to the queue`);
+    button.onclick = async () => {
+      button.disabled = true;
+      detail.className = "detail";
+      detail.textContent = "Adding…";
+      const answer = await ask({ type: "add", tabId: tab.id, item });
+      if (answer && answer.ok) {
+        detail.className = "detail ok";
+        detail.textContent = "Added to the queue";
+      } else {
+        detail.className = "detail bad";
+        detail.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
+        button.disabled = false;
+      }
+    };
   }
+  li.append(button);
+  return li;
 }
 
 show();

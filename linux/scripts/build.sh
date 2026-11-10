@@ -16,6 +16,7 @@ if [ "$INSTALL" = 1 ]; then
     builder --user --install --force-clean build org.herbsdownloadmanager.app.yml
     flatpak run --command=herbs-download-manager org.herbsdownloadmanager.app --self-check
     printf 'Installed org.herbsdownloadmanager.app (%s)\n' "$(sh "$ROOT/scripts/version.sh")"
+    sh "$ROOT/scripts/extension-to-downloads.sh"
 else
     builder --force-clean build org.herbsdownloadmanager.app.yml
     builder --run build org.herbsdownloadmanager.app.yml herbs-download-manager --self-check

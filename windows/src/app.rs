@@ -63,7 +63,7 @@ const C_FIND_DONE: u16 = 143;
 const C_RENAME: u16 = 144;
 const C_MOVE: u16 = 145;
 const C_NOTE: u16 = 146;
-// The private messages: WM_PROBED (add.rs) +1, WM_FEATURE (features.rs) +20, WM_TRAY +21, WM_QUEUE_DONE (queuedone.rs) +22.
+// The private messages: WM_PROBED (add.rs) +1, WM_SCANNED (add.rs) +2, WM_FEATURE (features.rs) +20, WM_TRAY +21, WM_QUEUE_DONE (queuedone.rs) +22.
 /// The notification area icon's messages (a click on the "Download finished" balloon).
 const WM_TRAY: u32 = WM_APP + 21;
 const NIN_BALLOONUSERCLICK: u32 = 0x405;

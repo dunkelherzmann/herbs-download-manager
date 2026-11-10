@@ -16,6 +16,8 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     private var nameEdited = false
     /// The size the server gave for the link, used to match it with a download already in the list.
     private var probedSize: UInt64?
+    /// The link is a web page: Download and Add open Add Links with the files found on it instead (§15).
+    private var probedPage = false
     private var probeTask: Task<Void, Never>?
     /// The download started while this window is open (enhancements.md), once the link proved resumable; Download or
     /// Add adopts it, Cancel discards it.
@@ -154,6 +156,7 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
     private func linkChanged() {
         probeTask?.cancel()
         probedSize = nil
+        probedPage = false
         dropEarly()
         let url = link.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else { size.stringValue = ""; return }
@@ -165,6 +168,10 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
             let result = await Task.detached { Result { try manager.probe(url: url) } }.value
             guard !Task.isCancelled, let self else { return }
             switch result {
+            case .success(let info) where info.page:
+                self.probedPage = true
+                self.size.stringValue = "A web page: Download lists the files and media on it"
+                self.sizeText = self.size.stringValue
             case .success(let info):
                 self.probedSize = info.size
                 if !self.nameEdited { self.name.stringValue = info.name }
@@ -219,6 +226,12 @@ final class NewDownloadWindowController: NSWindowController, NSTextFieldDelegate
             NSSound.beep()
             size.stringValue = "Enter a web link (http, https or ftp)"
             window?.makeFirstResponder(link)
+            return
+        }
+        if probedPage {
+            // Its files, listed to tick, in Add Links.
+            close()
+            (NSApp.delegate as? AppDelegate)?.mainWindow?.openLinks([url])
             return
         }
         let mirrorLinks = findLinks(text: mirrors.string).filter { $0 != url }

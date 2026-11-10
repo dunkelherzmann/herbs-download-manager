@@ -316,7 +316,10 @@ async fn send_file(
         head.push_str(line);
         head.push_str("\r\n");
     }
-    head.push_str("Content-Type: application/octet-stream\r\n");
+    // A file's own type when it gives one (a page, a playlist), else a file's.
+    if !file.headers.iter().any(|h| h.to_ascii_lowercase().starts_with("content-type:")) {
+        head.push_str("Content-Type: application/octet-stream\r\n");
+    }
     if file.ranges {
         head.push_str("Accept-Ranges: bytes\r\n");
     }

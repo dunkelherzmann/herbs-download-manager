@@ -168,6 +168,8 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
 
     // A6: ask the server about the link once it stops changing.
     let probed: Rc<RefCell<Option<u64>>> = Rc::default();
+    // The link is a web page: Download and Add open Add Links with the files found on it instead (§15).
+    let page: Rc<Cell<bool>> = Rc::default();
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::default();
     // The download started while this window is open (enhancements.md), once the link proved resumable: Download or
     // Add adopts it, Cancel discards it.
@@ -176,7 +178,10 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         let (manager, name, size, probed, pending) = (ctx.manager.clone(), name.clone(), size.clone(), probed.clone(), pending.clone());
         let folder = folder.clone();
         let early = early.clone();
+        let page = page.clone();
         link_entry.connect_changed(move |entry| {
+            page.set(false);
+            let page = page.clone();
             if let Some(id) = pending.borrow_mut().take() {
                 id.remove();
             }
@@ -196,6 +201,10 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                 glib::spawn_future_local(async move {
                     let result = gio::spawn_blocking(move || manager.probe(&url)).await;
                     match result {
+                        Ok(Ok(p)) if p.page => {
+                            page.set(true);
+                            size.set_label("A web page: Download lists the files and media on it");
+                        }
                         Ok(Ok(p)) => {
                             if name.text().is_empty() {
                                 name.set_text(&p.name);
@@ -231,6 +240,12 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
             if hd_core::links::find(&url).is_empty() {
                 size.set_label("Enter a web link (http, https or ftp)");
                 link_entry.grab_focus();
+                return;
+            }
+            if page.get() {
+                // Its files, listed to tick, in Add Links.
+                window.close();
+                add_links(&ctx, vec![url]);
                 return;
             }
             let buffer = mirrors.buffer();
@@ -269,6 +284,8 @@ struct Item {
     row: gtk::ListBoxRow,
     name_label: gtk::Label,
     size_label: gtk::Label,
+    /// A stream a page scan found: added as one (§15).
+    stream: bool,
 }
 
 /// Add Links (§5.3): the links, each with a checkbox, name, size and link; a filter; Check All and Uncheck All;
@@ -295,24 +312,7 @@ impl AddLinks {
             fresh.push(url);
         }
         for url in &fresh {
-            let name = reqwest_name(url);
-            let check = gtk::CheckButton::builder().active(true).build();
-            check.set_tooltip_text(Some("Download this link"));
-            check.update_property(&[gtk::accessible::Property::Label(&format!("Download {name}"))]);
-            let name_label = gtk::Label::builder().label(&name).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
-            let size_label = gtk::Label::builder().label("Checking…").width_chars(14).xalign(0.0).build();
-            let link = gtk::Label::builder().label(url).xalign(0.0).width_chars(30).max_width_chars(30).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
-            link.add_css_class("dim-label");
-            let line = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-            line.append(&check);
-            line.append(&name_label);
-            line.append(&size_label);
-            line.append(&link);
-            let row = gtk::ListBoxRow::builder().child(&line).build();
-            self.list.append(&row);
-            let this = self.clone();
-            check.connect_toggled(move |_| this.update());
-            self.items.borrow_mut().push(Item { url: url.clone(), name, size: None, size_text: "Checking…".into(), check, row, name_label, size_label });
+            self.append_row(url, reqwest_name(url), None, "Checking…", false, true);
         }
         self.window.set_title(Some(&title(self.items.borrow().len())));
         self.update();
@@ -328,6 +328,13 @@ impl AddLinks {
                     let manager = this.manager.clone();
                     let u = url.clone();
                     let result = gio::spawn_blocking(move || manager.probe(&u)).await;
+                    // A web page: what's on it takes its place (§15).
+                    if let Ok(Ok(p)) = &result
+                        && p.page
+                    {
+                        this.scan_page(&url).await;
+                        continue;
+                    }
                     for item in this.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
                         match &result {
                             Ok(Ok(p)) => {
@@ -347,12 +354,74 @@ impl AddLinks {
         }
     }
 
+    /// A row for one link, checked or not, with what's known of it so far.
+    fn append_row(&self, url: &str, name: String, size: Option<u64>, size_text: &str, stream: bool, checked: bool) {
+        let check = gtk::CheckButton::builder().active(checked).build();
+        check.set_tooltip_text(Some("Download this link"));
+        check.update_property(&[gtk::accessible::Property::Label(&format!("Download {name}"))]);
+        let name_label = gtk::Label::builder().label(&name).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
+        let size_label = gtk::Label::builder().label(size_text).width_chars(14).xalign(0.0).build();
+        let link = gtk::Label::builder().label(url).xalign(0.0).width_chars(30).max_width_chars(30).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
+        link.add_css_class("dim-label");
+        let line = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        line.append(&check);
+        line.append(&name_label);
+        line.append(&size_label);
+        line.append(&link);
+        let row = gtk::ListBoxRow::builder().child(&line).build();
+        self.list.append(&row);
+        let this = self.clone();
+        check.connect_toggled(move |_| this.update());
+        self.items.borrow_mut().push(Item { url: url.to_string(), name, size, size_text: size_text.into(), check, row, name_label, size_label, stream });
+    }
+
+    /// Replaces a web page's row with the files and media found on it, each checked already; a page with nothing on
+    /// it, or that couldn't be read, stays as an unchecked row that says so.
+    async fn scan_page(&self, url: &str) {
+        for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
+            item.size_text = "Scanning page…".into();
+            item.size_label.set_label(&item.size_text);
+        }
+        let (manager, u) = (self.manager.clone(), url.to_string());
+        let scanned = gio::spawn_blocking(move || manager.scan_page(&u)).await.unwrap_or_else(|_| Err("The scan stopped".into()));
+        match scanned {
+            Ok(scan) if !scan.found.is_empty() => {
+                let page_row = self.items.borrow().iter().find(|i| i.url == url).map(|i| i.row.clone());
+                if let Some(row) = page_row {
+                    self.list.remove(&row);
+                }
+                self.items.borrow_mut().retain(|i| i.url != url);
+                let known: Vec<String> = self.items.borrow().iter().map(|i| i.url.clone()).collect();
+                for f in scan.found.into_iter().filter(|f| !known.contains(&f.url)) {
+                    let text = match f.size {
+                        Some(n) => format!("{}, {}", format::bytes(n), f.kind.word()),
+                        None => f.kind.word().to_string(),
+                    };
+                    self.append_row(&f.url, f.name, f.size, &text, f.kind == hd_core::media::scan::Kind::Stream, true);
+                }
+                self.window.set_title(Some(&title(self.items.borrow().len())));
+            }
+            result => {
+                let text = match result {
+                    Ok(_) => "Web page: no files found".to_string(),
+                    Err(e) => format!("Web page: {e}"),
+                };
+                for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
+                    item.check.set_active(false);
+                    item.size_text = text.clone();
+                    item.size_label.set_label(&text);
+                }
+            }
+        }
+        self.update();
+    }
+
     fn checked(&self) -> Vec<PendingLink> {
         self.items
             .borrow()
             .iter()
             .filter(|i| i.check.is_active())
-            .map(|i| PendingLink { url: i.url.clone(), name: Some(i.name.clone()), size: i.size, ..Default::default() })
+            .map(|i| PendingLink { url: i.url.clone(), name: Some(i.name.clone()), size: i.size, stream: i.stream, ..Default::default() })
             .collect()
     }
 

@@ -137,10 +137,14 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Find a page's downloadable files and media:** the files a page links to or plays, never its scripts, styles or bits of HTML, listed to tick and add to the queue. *Requested 2026-11-10.* From the browser extension, and in the app itself: a web page's address typed in, pasted or dragged into the app is scanned, and its media and files are listed to add to the queue.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Find a page's downloadable files and media:** the files a page links to or plays, never its scripts, styles or bits of HTML, listed to tick and add to the queue. *Requested 2026-11-10.* From the browser extension, and in the app itself: a web page's address typed in, pasted or dragged into the app is scanned, and its media and files are listed to add to the queue. Done in #71: Add Links and New Download turn a page's address into the files and media on it, `hdm scan` and the MCP tool `scan_page` do the same, and the extension's list has Find Files on This Page (SPECIFICATION.md §15).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Each new version of the browser extension goes into the Downloads folder** with its version in the name ("Herb's DM extension 1.1"), ready to load in the browser. *Requested 2026-11-10.* Each app's install step copies it when that version isn't there yet (`scripts/extension-to-downloads.sh`, and `windows/scripts/build.ps1`); every change to the extension raises its version. Done in #71.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Feature tests watch what the app does in the background** (asked 2026-11-10, Linux and Windows). The feature test run goes through the app-observer skill: a crash, a hang, a write outside the test folder (Linux), or a change to the real app's data, the browsers' native-host folders and registry keys, or the startup programs (Windows) fails the run. `HD_NO_OBSERVE=1` turns it off.
   - [x] Linux (`linux/scripts/features.sh`)
   - [x] Windows (`windows/scripts/features.ps1`)

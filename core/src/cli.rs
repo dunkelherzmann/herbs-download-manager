@@ -20,6 +20,7 @@ hdm controls Herb's Download Manager while it runs.
   hdm resume ID…
   hdm remove ID… [--delete-files]
   hdm note ID TEXT…           (an empty TEXT removes the note)
+  hdm scan PAGE [--json] [--add]   lists a web page's files and media; --add puts them all in the queue
   hdm mcp                     an MCP server on standard input and output, for AI assistants
 
 add starts the downloads now, or with --queue leaves them waiting in the queue; they go to the folder set in
@@ -64,6 +65,25 @@ pub fn main(args: Vec<String>) -> i32 {
                     eprintln!("hdm: {e}");
                     1
                 }
+                Ok(Answer { found: Some(found), message, .. }) => {
+                    if as_json {
+                        println!("{}", serde_json::to_string_pretty(&found).unwrap_or_default());
+                    } else {
+                        print!("{}", found_table(message.as_deref().unwrap_or(""), &found));
+                    }
+                    // --add: every file into the queue, a stream under its name.
+                    if request.queue {
+                        let mut failed = 0;
+                        for f in &found {
+                            let add = Request { command: "add".into(), urls: vec![f.url.clone()], queue: true, stream: f.stream, name: Some(f.name.clone()), referer: Some(request.urls[0].clone()), ..Default::default() };
+                            if !matches!(control::send(&dir, &add), Ok(Answer { ok: true, .. })) {
+                                failed += 1;
+                            }
+                        }
+                        println!("Added {} to the queue{}.", found.len() - failed, if failed > 0 { format!(" ({failed} couldn't be added)") } else { String::new() });
+                    }
+                    0
+                }
                 Ok(answer) => {
                     match (&answer.downloads, as_json) {
                         (Some(list), true) => println!("{}", serde_json::to_string_pretty(list).unwrap_or_default()),
@@ -92,7 +112,8 @@ pub fn parse(args: &[String]) -> Result<(Request, bool), String> {
         match arg.as_str() {
             "--filter" if r.command == "list" => r.filter = Some(value("--filter")?),
             "--search" if r.command == "list" => r.search = value("--search")?,
-            "--json" if r.command == "list" => json = true,
+            "--json" if r.command == "list" || r.command == "scan" => json = true,
+            "--add" if r.command == "scan" => r.queue = true,
             "--folder" if r.command == "add" => r.folder = Some(absolute(&value("--folder")?)),
             "--queue" if r.command == "add" => r.queue = true,
             "--delete-files" if r.command == "remove" => r.delete_files = true,
@@ -107,12 +128,14 @@ pub fn parse(args: &[String]) -> Result<(Request, bool), String> {
     match r.command.as_str() {
         "list" if words.is_empty() => {}
         "add" => r.urls = words,
+        "scan" if words.len() == 1 => r.urls = words,
         "pause" | "resume" | "remove" => r.ids = ids(&words)?,
         "note" if !words.is_empty() => {
             r.ids = ids(&words[..1])?;
             r.text = words[1..].join(" ");
         }
         "list" | "note" => return Err(format!("{} doesn't take those words", r.command)),
+        "scan" => return Err("scan takes the address of one web page".into()),
         other => return Err(format!("no command “{other}”")),
     }
     Ok((r, json))
@@ -152,6 +175,21 @@ pub fn table(list: &[control::Download]) -> String {
     out
 }
 
+/// `hdm scan`'s table: kind, size and name, then the link.
+pub fn found_table(title: &str, found: &[control::FoundFile]) -> String {
+    let mut out = if title.is_empty() { String::new() } else { format!("{title}\n") };
+    if found.is_empty() {
+        out.push_str("No files or media found on this page.\n");
+        return out;
+    }
+    let size = |f: &control::FoundFile| f.size.map(format::bytes).unwrap_or_else(|| "–".into());
+    let (wk, ws) = (found.iter().map(|f| f.kind.chars().count()).max().unwrap_or(0), found.iter().map(|f| size(f).chars().count()).max().unwrap_or(0));
+    for f in found {
+        out.push_str(&format!("{:<wk$}  {:>ws$}  {}  {}\n", f.kind, size(f), f.name, f.url));
+    }
+    out
+}
+
 const PROTOCOLS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 /// The MCP tools: name, description, input schema, read-only, destructive.
@@ -183,6 +221,10 @@ fn tools() -> Value {
          "inputSchema": {"type": "object", "required": ["ids"], "properties": {"ids": ids,
              "delete_files": {"type": "boolean", "description": "Move the downloaded files to the Trash too"}}},
          "annotations": {"readOnlyHint": false, "destructiveHint": true}},
+        {"name": "scan_page", "title": "Scan a web page for files",
+         "description": "Reads a web page and lists the files and media it links to or plays (videos, streams, sounds, pictures, documents, archives, programs), each checked with its server: name, size, kind and link. Pages, scripts and styles are left out. Add one with add_downloads.",
+         "inputSchema": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string", "description": "The web page's address"}}},
+         "annotations": {"readOnlyHint": true, "openWorldHint": true}},
         {"name": "set_note", "title": "Set a download's note",
          "description": "Sets the note shown in the download's Note column and found by the search; an empty note removes it.",
          "inputSchema": {"type": "object", "required": ["id", "note"], "properties": {
@@ -209,6 +251,7 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
         "pause_downloads" => Request { command: "pause".into(), ids: ids(), ..Default::default() },
         "resume_downloads" => Request { command: "resume".into(), ids: ids(), ..Default::default() },
         "remove_downloads" => Request { command: "remove".into(), ids: ids(), delete_files: flag("delete_files"), ..Default::default() },
+        "scan_page" => Request { command: "scan".into(), urls: text("url").into_iter().collect(), ..Default::default() },
         "set_note" => Request {
             command: "note".into(),
             ids: a.get("id").and_then(Value::as_u64).into_iter().collect(),
@@ -220,7 +263,7 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
 }
 
 /// The browser extension's side (§13): native messaging, one message at a time, each a 32-bit length in the
-/// computer's byte order followed by that many bytes of JSON. Only `add` and `ping` are passed on to the app, which
+/// computer's byte order followed by that many bytes of JSON. Only `add`, `scan` and `ping` are passed on to the app, which
 /// answers as for the command line ({ok, error, message}). Ends when the browser closes the pipe.
 pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32 {
     /// Browsers send at most 4 GB, but a link and its cookies are far less.
@@ -246,6 +289,11 @@ pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32
             },
             Ok(r) if r.command == "add" => {
                 let request = Request { command: "add".into(), ids: vec![], text: String::new(), delete_files: false, ..r };
+                control::send(dir, &request).unwrap_or_else(|e| Answer { error: Some(e), ..Default::default() })
+            }
+            // The extension's "Find Files on This Page": the app reads the page with the browser's cookies.
+            Ok(r) if r.command == "scan" => {
+                let request = Request { command: "scan".into(), urls: r.urls, cookies: r.cookies, referer: r.referer, ..Default::default() };
                 control::send(dir, &request).unwrap_or_else(|e| Answer { error: Some(e), ..Default::default() })
             }
             Ok(r) => Answer { error: Some(format!("The browser can't ask for “{}”.", r.command)), ..Default::default() },
@@ -293,6 +341,7 @@ pub fn mcp_reply(line: &str, dir: &Path) -> Option<String> {
                 Err(e) => (e, true),
                 Ok(Answer { ok: false, error, .. }) => (error.unwrap_or_default(), true),
                 Ok(Answer { downloads: Some(list), .. }) => (serde_json::to_string_pretty(&list).unwrap_or_default(), false),
+                Ok(Answer { found: Some(found), .. }) => (serde_json::to_string_pretty(&found).unwrap_or_default(), false),
                 Ok(answer) => (answer.message.unwrap_or_default(), false),
             };
             reply(&id, json!({"content": [{"type": "text", "text": text}], "isError": is_error}))

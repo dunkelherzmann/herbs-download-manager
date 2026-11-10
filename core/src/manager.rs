@@ -1444,10 +1444,19 @@ pub struct Probe {
     pub name: String,
     pub size: Option<u64>,
     pub resumable: bool,
+    /// The link is a web page (HTML): Add Links scans it for its files instead (§15).
+    pub page: bool,
 }
 
 impl Manager {
     /// Asks the server about a link with a one-byte request: the file's name, size and whether it can resume.
+    /// Reads a web page and lists the files and media it links to or plays, each checked with its server (§15). Blocks
+    /// the calling thread (never the app's main thread) while it reads and checks.
+    pub fn scan_page(&self, url: &str) -> Result<crate::media::scan::Scan, String> {
+        let (client, vault, url) = (self.client.clone(), self.inner.vault.clone(), url.to_string());
+        self.handle.block_on(async move { crate::media::scan::scan(&client, &url, vault).await })
+    }
+
     /// Blocks the calling thread (never the app's main thread) for up to 20 seconds.
     pub fn probe(&self, url: &str) -> Result<Probe, String> {
         let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
@@ -1475,6 +1484,11 @@ impl Manager {
                 name: crate::http::file_name(response.headers(), response.url()),
                 size,
                 resumable: ranged && size.is_some(),
+                page: response
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|t| t.to_ascii_lowercase().contains("html")),
             })
         })
     }

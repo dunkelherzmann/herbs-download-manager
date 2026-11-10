@@ -63,6 +63,12 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Don't let sibling controls overlap (a tab control's body under its pages): WM_PRINT paints siblings in its own
   order, so the pictures showed empty pages. Make the tab control just the strip and put the pages below it.
 
+## The browser extension
+
+- Every change to `extension/` raises `version` in `extension/manifest.json` (1.1 → 1.2): each install step copies a
+  version Herbert hasn't got yet into his Downloads folder as "Herb's DM extension <version>" (his request,
+  2026-11-10), and the app's Show Extension Folder copy is rewritten from the same files.
+
 ## Feature tests
 
 `tests/features.scenario` is run by each app through its own command code (`core/src/scenario.rs` has the language,

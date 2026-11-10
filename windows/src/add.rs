@@ -25,6 +25,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{BOOL, PCWSTR, PWSTR, w};
 
 const WM_PROBED: u32 = WM_APP + 1;
+/// A page scan's answer (§15), posted back to Add Links (WM_APP + 2: see app.rs's list of private messages).
+const WM_SCANNED: u32 = WM_APP + 2;
 const TIMER_PROBE: usize = 10;
 const TIMER_EARLY: usize = 11;
 
@@ -128,6 +130,23 @@ fn probe_in_background(window: HWND, manager: Manager, urls: Vec<String>) {
             }
         });
     }
+}
+
+/// A page scan's answer.
+struct Scanned {
+    url: String,
+    result: Result<hd_core::media::scan::Scan, String>,
+}
+
+fn scan_in_background(window: HWND, manager: Manager, url: String) {
+    let handle = window.0 as isize;
+    std::thread::spawn(move || {
+        let result = manager.scan_page(&url);
+        let answer = Box::new(Scanned { url, result });
+        unsafe {
+            let _ = PostMessageW(Some(HWND(handle as *mut _)), WM_SCANNED, WPARAM(0), LPARAM(Box::into_raw(answer) as isize));
+        }
+    });
 }
 
 /// Chooses a folder (the shell's folder browser).
@@ -244,6 +263,10 @@ struct Form {
     size_text: String,
     /// Add Links' rows: url, name, size, size text, checked.
     items: Vec<(String, String, Option<u64>, String, bool)>,
+    /// Rows that are streams a page scan found: added as streams (§15).
+    streams: std::collections::HashSet<String>,
+    /// New Download's link is a web page: Download and Add open Add Links with its files instead.
+    page: bool,
     shown: Vec<usize>,
     batch: Vec<String>,
 }
@@ -329,6 +352,8 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 early: None,
                 size_text: String::new(),
                 items: Vec::new(),
+                streams: Default::default(),
+                page: false,
                 shown: Vec::new(),
                 batch: Vec::new(),
             })
@@ -534,6 +559,14 @@ pub fn batch(ctx: &Ctx) {
 
 fn submit(hwnd: HWND, start: bool) {
     let Some((ctx, kind)) = with_form(hwnd, |f| (f.ctx.clone(), f.kind)) else { return };
+    // New Download with a web page: its files, listed to tick, in Add Links (§15).
+    if let Some(url) = with_form(hwnd, |f| (f.kind == FormKind::NewDownload && f.page).then(|| text_of(f.controls[&ID_LINK]).trim().to_string())).flatten() {
+        unsafe {
+            let _ = DestroyWindow(hwnd);
+        }
+        add_links(&ctx, vec![url]);
+        return;
+    }
     let request = with_form(hwnd, |f| -> Option<(Vec<PendingLink>, PathBuf, u32)> {
         match f.kind {
             FormKind::NewDownload => {
@@ -563,7 +596,7 @@ fn submit(hwnd: HWND, start: bool) {
                     .items
                     .iter()
                     .filter(|i| i.4)
-                    .map(|i| PendingLink { url: i.0.clone(), name: Some(i.1.clone()), size: i.2, ..Default::default() })
+                    .map(|i| PendingLink { url: i.0.clone(), name: Some(i.1.clone()), size: i.2, stream: f.streams.contains(&i.0), ..Default::default() })
                     .collect();
                 if links.is_empty() {
                     return None;
@@ -675,6 +708,43 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 }
                 LRESULT(0)
             }
+            WM_SCANNED => {
+                let answer = Box::from_raw(lparam.0 as *mut Scanned);
+                with_form(hwnd, |f| {
+                    let Some(at) = f.items.iter().position(|i| i.0 == answer.url) else { return };
+                    match &answer.result {
+                        Ok(scan) if !scan.found.is_empty() => {
+                            let known: Vec<String> = f.items.iter().map(|i| i.0.clone()).collect();
+                            let rows: Vec<(String, String, Option<u64>, String, bool)> = scan
+                                .found
+                                .iter()
+                                .filter(|x| !known.contains(&x.url))
+                                .map(|x| {
+                                    let text = match x.size {
+                                        Some(n) => format!("{}, {}", format::bytes(n), x.kind.word()),
+                                        None => x.kind.word().to_string(),
+                                    };
+                                    (x.url.clone(), x.name.clone(), x.size, text, true)
+                                })
+                                .collect();
+                            for x in scan.found.iter().filter(|x| x.kind == hd_core::media::scan::Kind::Stream) {
+                                f.streams.insert(x.url.clone());
+                            }
+                            f.items.splice(at..=at, rows);
+                        }
+                        Ok(_) => {
+                            f.items[at].3 = "Web page: no files found".into();
+                            f.items[at].4 = false;
+                        }
+                        Err(e) => {
+                            f.items[at].3 = format!("Web page: {e}");
+                            f.items[at].4 = false;
+                        }
+                    }
+                });
+                show_items(hwnd);
+                LRESULT(0)
+            }
             WM_PROBED => {
                 let answer = Box::from_raw(lparam.0 as *mut Probed);
                 with_form(hwnd, |f| match f.kind {
@@ -682,7 +752,13 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         if text_of(f.controls[&ID_LINK]).trim() != answer.url {
                             return;
                         }
+                        f.page = false;
                         match &answer.result {
+                            Ok(p) if p.page => {
+                                f.page = true;
+                                f.size_text = "A web page: Download lists the files and media on it".into();
+                                set_text(f.controls[&24], &f.size_text);
+                            }
                             Ok(p) => {
                                 if text_of(f.controls[&21]).is_empty() {
                                     set_text(f.controls[&21], &p.name);
@@ -708,6 +784,14 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         }
                     }
                     _ => {
+                        // A web page: what's on it takes its place (§15).
+                        if answer.result.as_ref().is_ok_and(|p| p.page) {
+                            for item in f.items.iter_mut().filter(|i| i.0 == answer.url) {
+                                item.3 = "Scanning page…".into();
+                            }
+                            scan_in_background(hwnd, f.ctx.manager.clone(), answer.url.clone());
+                            return;
+                        }
                         for item in f.items.iter_mut().filter(|i| i.0 == answer.url) {
                             match &answer.result {
                                 Ok(p) => {

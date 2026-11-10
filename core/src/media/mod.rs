@@ -8,6 +8,7 @@ pub mod hls;
 pub mod download;
 pub mod join;
 pub mod mp4;
+pub mod scan;
 pub mod ts;
 
 use std::io::{Read, Seek, SeekFrom, Write};

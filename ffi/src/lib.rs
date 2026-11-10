@@ -321,6 +321,26 @@ pub struct LinkInfo {
     pub name: String,
     pub size: Option<u64>,
     pub resumable: bool,
+    /// A web page: Add Links scans it for its files (`scan_page`).
+    pub page: bool,
+}
+
+/// One file a page scan found (§15).
+#[derive(uniffi::Record)]
+pub struct FoundLink {
+    pub url: String,
+    pub name: String,
+    pub size: Option<u64>,
+    /// "Video stream", "Video", "Sound", "Picture"…
+    pub kind: String,
+    /// Added as a stream (joined into one MP4 under `name`).
+    pub stream: bool,
+}
+
+#[derive(uniffi::Record)]
+pub struct PageScan {
+    pub title: String,
+    pub found: Vec<FoundLink>,
 }
 
 /// The download list, kept in a folder (the app's data folder).
@@ -351,6 +371,7 @@ impl DownloadManager {
         connections: u32,
         start: bool,
         early: Option<u64>,
+        stream: bool,
     ) -> AddResult {
         let s = self.inner.settings();
         let added = self.inner.add_or_mirror(manager::NewDownload {
@@ -364,7 +385,7 @@ impl DownloadManager {
             start,
             size,
             early,
-            stream: false,
+            stream,
         });
         AddResult { id: added.id(), as_mirror: matches!(added, manager::Added::MirrorOf(_)) }
     }
@@ -496,8 +517,27 @@ impl DownloadManager {
     pub fn probe(&self, url: String) -> Result<LinkInfo, CoreError> {
         self.inner
             .probe(&url)
-            .map(|p| LinkInfo { name: p.name, size: p.size, resumable: p.resumable })
+            .map(|p| LinkInfo { name: p.name, size: p.size, resumable: p.resumable, page: p.page })
             .map_err(|message| CoreError::Message { message })
+    }
+
+    /// Reads a web page and lists its files and media, each checked. Blocks: call it off the main thread.
+    pub fn scan_page(&self, url: String) -> Result<PageScan, CoreError> {
+        let scan = self.inner.scan_page(&url).map_err(|message| CoreError::Message { message })?;
+        Ok(PageScan {
+            title: scan.title,
+            found: scan
+                .found
+                .into_iter()
+                .map(|f| FoundLink {
+                    stream: f.kind == hd_core::media::scan::Kind::Stream,
+                    kind: f.kind.word().into(),
+                    url: f.url,
+                    name: f.name,
+                    size: f.size,
+                })
+                .collect(),
+        })
     }
 
     /// The Download window's view (§6), or nothing if the download was removed.

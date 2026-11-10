@@ -220,10 +220,25 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       await showState();
       await countFor(message.tabId);
       reply({ on: await isOn() });
+    } else if (message.type === "scan") {
+      // The app reads the page (with the browser's cookies for it) and checks every file it mentions.
+      const tab = await api.tabs.get(message.tabId).catch(() => null);
+      if (!tab || !web(tab.url)) {
+        reply({ ok: false, error: "This tab has no web page to look through." });
+        return;
+      }
+      try {
+        const cookies = await cookiesFor(tab.url);
+        reply(await api.runtime.sendNativeMessage(HOST, { command: "scan", urls: [tab.url], cookies, referer: tab.url }));
+      } catch {
+        reply({ ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` });
+      }
     } else if (message.type === "add") {
       const tab = await api.tabs.get(message.tabId).catch(() => null);
       const item = message.item;
-      const answer = await send(item.url, tab && tab.url, { queue: true, stream: item.kind === "stream", name: nameFor(item, tab && tab.title) });
+      // A file the app found on the page comes with its name; what the tab played is named here.
+      const name = item.name || nameFor(item, tab && tab.title);
+      const answer = await send(item.url, tab && tab.url, { queue: true, stream: item.kind === "stream" || item.stream === true, name });
       reply(answer || { ok: false, error: `${NAME} didn't answer.` });
     }
   })();

@@ -22,5 +22,15 @@ if (-not $NoDesktop) {
     Copy-Item $exe (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Herbs Download Manager.exe') -Force
     Copy-Item (Join-Path $dist 'hdm.exe') (Join-Path ([Environment]::GetFolderPath('Desktop')) 'hdm.exe') -Force
     Write-Host 'Copied to the Desktop'
+    # Each new version of the browser extension goes to Downloads with its version in the name (Herbert, 2026-11-10).
+    $version = (Get-Content (Join-Path $root 'extension\manifest.json') -Raw | ConvertFrom-Json).version
+    $downloads = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
+    $ext = Join-Path $downloads "Herb's DM extension $version"
+    if (Test-Path $ext) {
+        Write-Host "Extension $version already in $downloads"
+    } else {
+        Copy-Item -Recurse (Join-Path $root 'extension') $ext
+        Write-Host "Extension $version copied to $ext"
+    }
 }
 Write-Host "Built dist\HerbsDownloadManager.exe ($((Get-Item $exe).Length / 1MB -as [int]) MB)"

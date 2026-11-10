@@ -13,10 +13,20 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         var name: String
         var size: UInt64?
         var sizeText = "Checking…"
+        /// A stream a page scan found: added as one (§15).
+        var stream = false
         init(url: String) {
             self.url = url
             name = URL(string: url)?.lastPathComponent.removingPercentEncoding ?? url
             if name.isEmpty || name == "/" { name = url }
+        }
+        /// A file a page scan found, already checked.
+        init(found: FoundLink) {
+            url = found.url
+            name = found.name
+            size = found.size
+            stream = found.stream
+            sizeText = found.size.map { "\(bytesText(bytes: $0)), \(found.kind)" } ?? found.kind
         }
     }
 
@@ -164,6 +174,13 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                     let result = await Task.detached { Result { try manager.probe(url: url) } }.value
                     guard let self, !Task.isCancelled else { return }
                     switch result {
+                    case .success(let info) where info.page:
+                        // A web page: what's on it takes its place (§15).
+                        item.sizeText = "Scanning page…"
+                        self.table.reloadData()
+                        let scanned = await Task.detached { Result { try manager.scanPage(url: url) } }.value
+                        guard !Task.isCancelled else { return }
+                        self.replace(page: item, with: scanned)
                     case .success(let info):
                         item.name = info.name
                         item.size = info.size
@@ -176,6 +193,26 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                 }
             })
         }
+    }
+
+    /// A web page's row gives way to the files and media found on it, each checked; a page with nothing on it, or
+    /// that couldn't be read, stays as an unchecked row that says so.
+    private func replace(page item: Item, with scanned: Result<PageScan, Error>) {
+        let known = Set(items.map(\.url))
+        switch scanned {
+        case .success(let scan) where !scan.found.isEmpty:
+            let found = scan.found.filter { !known.contains($0.url) }.map(Item.init(found:))
+            if let at = items.firstIndex(where: { $0 === item }) { items.replaceSubrange(at...at, with: found) }
+            window?.title = Self.title(items.count)
+        case .success:
+            item.checked = false
+            item.sizeText = "Web page: no files found"
+        case .failure(let error):
+            item.checked = false
+            item.sizeText = "Web page: \(errorText(error))"
+        }
+        applyFilter()
+        update()
     }
 
     // MARK: table
@@ -287,7 +324,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
         let links: [PendingLink] = mirrorsBox.state == .on
             ? [PendingLink(url: chosen[0].url, mirrors: chosen.dropFirst().map(\.url), name: chosen[0].name,
                            size: chosen.compactMap(\.size).first)]
-            : chosen.map { PendingLink(url: $0.url, name: $0.name, size: $0.size) }
+            : chosen.map { PendingLink(url: $0.url, name: $0.name, size: $0.size, stream: $0.stream) }
         let folder = self.folder
         close()
         let window = (NSApp.delegate as? AppDelegate)?.mainWindow?.window

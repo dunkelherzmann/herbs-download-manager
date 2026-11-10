@@ -9,6 +9,8 @@ struct PendingLink {
     var size: UInt64?
     /// The download New Download started while it was open (`startEarly`), adopted instead of starting afresh.
     var early: UInt64?
+    /// A stream a page scan found (§15): joined into one MP4 under `name`, whatever its address says.
+    var stream = false
 }
 
 /// Skip, Replace or Keep Both, for a link whose file name is taken by a different file (SPECIFICATION.md §5.6).
@@ -75,7 +77,8 @@ extension AppModel {
                 }
             }
             let result = manager.add(url: link.url, mirrors: link.mirrors, folder: folder.path, name: name,
-                                     size: link.size, connections: connections, start: start, early: link.early)
+                                     size: link.size, connections: connections, start: start, early: link.early,
+                                     stream: link.stream)
             if result.asMirror { mirrored += 1 } else { new += 1 }
             decided[key] = .some(result.id)
         }

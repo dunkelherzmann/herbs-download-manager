@@ -626,6 +626,22 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
   media extension. DASH streams are listed but not added yet ("not supported yet").
-- Not yet: DASH, choosing a quality or a sound track (the best is taken), and scanning a page from the app
-  (enhancements.md).
+- **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
+  the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
+  Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
+  kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). A page with nothing on it stays as an unchecked row
+  saying "Web page: no files found". `hdm scan PAGE [--json] [--add]`, the MCP tool `scan_page` and the extension's
+  **Find Files on This Page** (read by the app with the browser's cookies) do the same.
+  - What's looked at: the page's links and sources (`href`, `src`, `data-src`, `srcset`, `content`, `poster`…),
+    full addresses anywhere in its scripts and data, and quoted paths ending in a known file type (`"clip/
+    index.m3u8"`, as players write them).
+  - What's left out before asking: pages (`.html`, `.php`…), the site's own scripts, styles, fonts and icons
+    (`.js`, `.css`, `.svg`, `.woff`…), stream pieces (`.ts`, `.m4s`), and links with no file name that don't look
+    like a download path (`/download/…`, `?file=…`).
+  - Each candidate is checked with its server (up to 400 on a page, 8 at once, 4 to one server): it's listed when
+    its type is a file's (video, sound, picture, document, archive, program, or any type sent as an attachment), at
+    least 50 KB for pictures (smaller are icons and thumbnails) and 10 KB for others. Broken links and protected
+    streams aren't listed. A master playlist hides its quality playlists; the page's one stream is named after the
+    page ("<title>.mp4"), several after their playlists. The same name and size under two addresses is listed once.
+- Not yet: DASH, and choosing a quality or a sound track (the best is taken) (enhancements.md).
 

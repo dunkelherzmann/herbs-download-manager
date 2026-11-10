@@ -14,9 +14,12 @@
     <input type="checkbox" id="on">
     <span>Take the browser's downloads</span>
   </label>
-  <h2>On this page</h2>
+  <h2>Played on this page</h2>
   <ul id="items"></ul>
-  <p id="empty" hidden>Nothing to download found yet. Play the video or sound, then look again.</p>
+  <p id="empty" hidden>Nothing played yet. Play the video or sound, then look again.</p>
+  <button id="scan" class="scan">Find Files on This Page</button>
+  <ul id="found"></ul>
+  <p id="scan-note" class="note" hidden></p>
   <script src="popup.js"></script>
 </body>
 </html>

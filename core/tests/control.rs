@@ -118,7 +118,7 @@ fn the_mcp_server_lists_its_tools_and_calls_them() {
 
     let tools = call(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}));
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["list_downloads", "add_downloads", "pause_downloads", "resume_downloads", "remove_downloads", "set_note"]);
+    assert_eq!(names, ["list_downloads", "add_downloads", "pause_downloads", "resume_downloads", "remove_downloads", "scan_page", "set_note"]);
 
     // Before the app listens, a tool says so instead of failing the protocol.
     let closed = call(json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_downloads", "arguments": {}}}));

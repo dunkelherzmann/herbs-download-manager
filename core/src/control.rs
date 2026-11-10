@@ -122,6 +122,21 @@ pub struct Answer {
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub downloads: Option<Vec<Download>>,
+    /// scan: the page's files and media.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub found: Option<Vec<FoundFile>>,
+}
+
+/// One file `scan` found on a page (§15).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FoundFile {
+    pub url: String,
+    pub name: String,
+    pub size: Option<u64>,
+    /// "Video stream", "Video", "Sound", "Picture", "Archive", "Document", "Program" or "File".
+    pub kind: String,
+    /// A stream: add it with `stream` and `name`, so it's joined into one MP4 under this name.
+    pub stream: bool,
 }
 
 impl Answer {
@@ -270,6 +285,25 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
     };
     let count = |n: usize| if n == 1 { "1 download".to_string() } else { format!("{n} downloads") };
     match r.command.as_str() {
+        "scan" => {
+            let [url] = r.urls.as_slice() else { return Answer::error("Give the address of one web page to scan.") };
+            // From the browser extension: the page is read with the browser's cookies.
+            browser_sign_ins(manager, &r);
+            match manager.scan_page(url) {
+                Err(e) => Answer::error(format!("Can't scan {url}: {e}")),
+                Ok(scan) => Answer {
+                    ok: true,
+                    message: Some(scan.title),
+                    found: Some(
+                        scan.found
+                            .into_iter()
+                            .map(|f| FoundFile { stream: f.kind == crate::media::scan::Kind::Stream, kind: f.kind.word().into(), url: f.url, name: f.name, size: f.size })
+                            .collect(),
+                    ),
+                    ..Default::default()
+                },
+            }
+        }
         "list" => {
             let filter = match r.filter.as_deref().unwrap_or("all") {
                 "all" => Filter::All,

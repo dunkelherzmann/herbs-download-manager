@@ -119,4 +119,5 @@ if [ "$INSTALL" = 1 ]; then
     else
         printf 'Installed /Applications/%s.app\n' "$NAME"
     fi
+    sh "$ROOT/scripts/extension-to-downloads.sh"
 fi
