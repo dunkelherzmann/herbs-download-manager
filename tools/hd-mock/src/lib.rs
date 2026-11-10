@@ -401,6 +401,15 @@ pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServe
         let mut dated = MockFile::new(sum.clone());
         dated.headers = vec!["Last-Modified: Sun, 06 Nov 1994 08:49:37 GMT".into()];
         server.put("/dated.bin", dated);
+        // A streamed video (SPECIFICATION.md §15): core/tests/media/h264-ts, at /clip/.
+        for (name, bytes) in [
+            ("index.m3u8", &include_bytes!("../../../core/tests/media/h264-ts/index.m3u8")[..]),
+            ("s0.ts", &include_bytes!("../../../core/tests/media/h264-ts/s0.ts")[..]),
+            ("s1.ts", &include_bytes!("../../../core/tests/media/h264-ts/s1.ts")[..]),
+            ("s2.ts", &include_bytes!("../../../core/tests/media/h264-ts/s2.ts")[..]),
+        ] {
+            server.put(&format!("/clip/{name}"), MockFile::new(bytes.to_vec()));
+        }
         server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
         servers.push(server);
     }

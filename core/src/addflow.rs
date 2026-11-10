@@ -120,6 +120,9 @@ pub struct AddSession {
 
 fn name_of(link: &PendingLink) -> String {
     link.name.clone().unwrap_or_else(|| {
+        if crate::media::download::is_stream_link(&link.url) {
+            return crate::media::download::stream_name(&link.url);
+        }
         reqwest::Url::parse(&link.url)
             .ok()
             .and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(str::to_string)))

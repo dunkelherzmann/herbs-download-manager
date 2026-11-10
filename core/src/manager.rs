@@ -73,6 +73,9 @@ pub struct Entry {
     /// The user's own note on it (the Note column, found by the search).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// A streamed video (an HLS playlist, §15): its pieces are downloaded and joined into one MP4.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stream: bool,
 }
 
 /// What the list shows for one download.
@@ -482,6 +485,10 @@ impl Manager {
             }
             self.cancel_early(token);
         }
+        let stream = crate::media::download::is_stream_link(&new.url);
+        // A stream's name is known now (it's joined under it at the end); a file's comes from the server.
+        let name = new.name.or_else(|| stream.then(|| crate::media::download::stream_name(&new.url)));
+        let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();
             let id = slots.iter().map(|s| s.entry.id).max().unwrap_or(0) + 1;
@@ -491,8 +498,8 @@ impl Manager {
                     url: new.url,
                     mirrors: new.mirrors,
                     folder: new.folder,
-                    name: new.name,
-                    dest: None,
+                    name,
+                    dest,
                     size: new.size,
                     downloaded: 0,
                     status: Status::Waiting,
@@ -502,6 +509,7 @@ impl Manager {
                     added: now(),
                     finished: None,
                     resume_at_launch: false,
+                    stream,
                     speed_limit: None,
                     checksum: None,
                     verified: None,
@@ -530,7 +538,7 @@ impl Manager {
     }
 
     fn start(&self, id: u64) {
-        let (req, running) = {
+        let (req, running, stream) = {
             let mut slots = self.inner.slots.lock().unwrap();
             let mut early = self.inner.early.lock().unwrap();
             let Some(slot) = slots.iter_mut().chain(early.iter_mut()).find(|s| s.entry.id == id) else { return };
@@ -556,8 +564,18 @@ impl Manager {
                 learned: self.inner.learned.clone(),
                 vault: self.inner.vault.clone(),
             };
+            let stream = e.stream.then(|| crate::media::download::StreamRequest {
+                url: e.url.clone(),
+                folder: e.folder.clone(),
+                name: e.name.clone().unwrap_or_else(|| crate::media::download::stream_name(&e.url)),
+                connections: e.connections,
+                retries: settings.retries,
+                limits: vec![self.inner.limiter.clone(), limiter.clone()],
+                vault: self.inner.vault.clone(),
+            });
             let progress = Progress::new();
-            progress.downloaded.store(e.downloaded, Ordering::SeqCst);
+            // A stream counts the pieces already in its parts folder itself.
+            progress.downloaded.store(if e.stream { 0 } else { e.downloaded }, Ordering::SeqCst);
             *progress.checksum.lock().unwrap() = e.checksum.clone();
             let running = Arc::new(Running {
                 restart: std::sync::atomic::AtomicBool::new(false),
@@ -570,14 +588,16 @@ impl Manager {
             slot.entry.status = Status::Connecting;
             slot.entry.needs_login = None;
             slot.running = Some(running.clone());
-            (req, running)
+            (req, running, stream)
         };
         let this = Manager { _runtime: None, ..self.clone() };
         let tuning = self.inner.tuning.clone();
         let client = self.client.clone();
         self.handle.spawn(async move {
-            let outcome =
-                transfer::download(&client, req, tuning, running.progress.clone(), running.control.clone()).await;
+            let outcome = match stream {
+                Some(s) => crate::media::download::download(&client, s, running.progress.clone(), running.control.clone()).await,
+                None => transfer::download(&client, req, tuning, running.progress.clone(), running.control.clone()).await,
+            };
             this.finished(id, &running, outcome);
         });
     }
@@ -670,6 +690,7 @@ impl Manager {
         let e = &mut slot.entry;
         if let Some(dest) = dest.or(e.dest.take()) {
             let _ = std::fs::remove_file(transfer::part_path(&dest));
+            let _ = std::fs::remove_dir_all(crate::media::download::parts_folder(&dest));
             if e.status == Status::Finished {
                 let _ = std::fs::remove_file(&dest);
             }
@@ -741,7 +762,8 @@ impl Manager {
             let _ = std::fs::remove_file(self.state_file(slot.entry.id));
             if delete_files && let Some(dest) = &slot.entry.dest {
                 let part = transfer::part_path(dest);
-                for file in [Some(part), (slot.entry.status == Status::Finished).then(|| dest.clone())].into_iter().flatten() {
+                let pieces = slot.entry.stream.then(|| crate::media::download::parts_folder(dest));
+                for file in [Some(part), pieces, (slot.entry.status == Status::Finished).then(|| dest.clone())].into_iter().flatten() {
                     if file.exists() && self.trash(&file).is_err() {
                         kept.push(file);
                     }
@@ -778,6 +800,7 @@ impl Manager {
                     added: now(),
                     finished: None,
                     resume_at_launch: false,
+                    stream: false,
                     speed_limit: None,
                     checksum: None,
                     verified: None,
@@ -895,6 +918,7 @@ impl Manager {
                     added: now(),
                     finished: finished.then(now),
                     resume_at_launch: false,
+                    stream: false,
                     speed_limit: None,
                     checksum: None,
                     verified: e.verified,
@@ -1386,7 +1410,10 @@ fn row(slot: &Slot) -> Row {
     }
 }
 
-fn name_from_url(url: &str) -> String {
+pub(crate) fn name_from_url(url: &str) -> String {
+    if crate::media::download::is_stream_link(url) {
+        return crate::media::download::stream_name(url);
+    }
     reqwest::Url::parse(url)
         .map(|u| crate::http::file_name(&reqwest::header::HeaderMap::new(), &u))
         .unwrap_or_else(|_| url.to_string())

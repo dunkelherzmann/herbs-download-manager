@@ -241,6 +241,12 @@ const PAUSE: u8 = 1;
 const ABORT: u8 = 2;
 
 impl Control {
+    /// For the stream engine (`media::download`): marks it running and returns what says when to stop.
+    pub(crate) fn begin(&self) -> watch::Receiver<u8> {
+        self.stop.send_replace(RUN);
+        self.stop.subscribe()
+    }
+
     pub fn pause(&self) {
         let _ = self.stop.send(PAUSE);
     }
@@ -265,6 +271,15 @@ impl Control {
 
     pub fn set_source_enabled(&self, url: &str, enabled: bool) {
         self.inbox.lock().unwrap().push(Command::Enable(url.to_string(), enabled));
+    }
+}
+
+/// Whether a running download was told to stop, and how it ends then.
+pub(crate) fn stop_outcome(rx: &watch::Receiver<u8>) -> Option<Outcome> {
+    match *rx.borrow() {
+        RUN => None,
+        PAUSE => Some(Outcome::Paused),
+        _ => Some(Outcome::Failed("Stopped".into())),
     }
 }
 

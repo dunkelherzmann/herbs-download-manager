@@ -592,8 +592,19 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
 
 - **HLS:** a master playlist's best quality is taken (the most pixels, then the most bits a second), with its
   separate sound track when it has one (the default of its group). Pieces may be MPEG-TS (`.ts`) or MP4 fragments
-  with an init section; byte ranges, AES-128 encryption and discontinuities are handled. A live stream (no end)
-  isn't downloaded. Protected streams (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused, never broken.
+  with an init section; byte ranges, AES-128 encryption and discontinuities are handled. Protected streams
+  (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused with "This stream is protected (DRM): it can't be
+  saved", never broken.
+- **In the list:** a link whose address ends in `.m3u8` (added in any way: New Download, Add Links, `hdm add`, the
+  browser extension) becomes a stream download, named after the playlist as `.mp4`: its own name, or the folder
+  it's in when the playlist has a generic one (`index`, `master`, `playlist`, `chunklist`…), else the site's name.
+  Its pieces download several at once (up to 6, within "Connections per download"), within the speed limits, each
+  retried like a source (S6), into `<name>.hdparts` beside the file. The size shown is estimated from the pieces so
+  far. Pause keeps the pieces already in, and Resume fetches only the rest; once every piece is in, the file is
+  joined (Finishing) and the folder goes. Delete with its file sends the folder to the Trash too.
+- **Live streams** (a playlist with no end) are recorded: the playlist is read again about once a piece's length,
+  and new pieces are added as they come. A live stream that ends finishes like any other; **Pause** ends the
+  recording and saves what was recorded.
 - **Joining:** MPEG-TS pieces with H.264 or H.265 video and AAC or MP3 sound become an MP4 with the same samples;
   MP4 fragments are copied sample by sample, keeping their init section's edit lists (the sound's start against the
   picture). The index (`moov`) goes first, so the file plays before it's read to the end. A piece whose
@@ -603,6 +614,6 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   join (`-c copy`): every decoded picture and sound block the same, at the same times (within a millisecond), sound
   and picture as far apart as before. ffmpeg is only the tests' reference; the app never uses it. macOS doesn't
   decode MP3 sound inside MP4 (ffmpeg's file behaves the same); other players do.
-- Not yet: DASH, downloading streams from the list (the add flow, progress, pause and resume), the browser
-  extension's list of a page's media, and scanning a page from the app (enhancements.md).
+- Not yet: DASH, choosing a quality or a sound track (the best is taken), streams whose address doesn't end in
+  `.m3u8`, the browser extension's list of a page's media, and scanning a page from the app (enhancements.md).
 

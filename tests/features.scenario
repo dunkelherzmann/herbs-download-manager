@@ -134,3 +134,9 @@ wait f15/small.bin finished 30
 do cancel-when-done sleep
 setting schedule-start off
 setting when-done nothing
+
+feature A streamed video becomes one MP4
+add f16 start $L/clip/index.m3u8
+wait f16/clip.mp4 finished 30
+expect f16/clip.mp4 file-size 78728
+expect-file f16/clip.mp4.hdparts absent
