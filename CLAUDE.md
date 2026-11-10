@@ -37,7 +37,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 - Each is its own Cargo workspace (`linux/`, `windows/`), excluded from the root one, so `scripts/check.sh` never
   builds GTK or Win32; build each on its machine in a throwaway worktree of the pushed branch
-  (`~/Projects/wt-hdm-linux`, `%USERPROFILE%\Projects\wt-hdm-windows`), then remove it.
+  (`~/Projects/wt-hdm-linux-<topic>`, `%USERPROFILE%\Projects\wt-hdm-windows-<topic>`), then remove it. Name it
+  after your task: sessions sharing one folder removed it under each other's builds (2026-11-10).
 - Linux: `sh linux/scripts/build.sh [--install]` runs flatpak-builder as the Flathub app `org.flatpak.Builder` (there
   is no `flatpak-builder` command on linux); Rust comes from the `rust-stable//25.08` SDK extension. For fast
   compile loops, run cargo inside the SDK with a kept target folder: `flatpak run --filesystem=home --share=network
