@@ -133,11 +133,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Windows
 - [x] **Natural wording in the spec's platform table:** "Built on Mac", "Built on Windows", "Built on Linux". *Requested 2026-11-09.* Done in the Download window PR for Linux.
 - [ ] **Make the repository public when releases are ready to go on it.** *Requested 2026-11-09.* Before switching it: a scan for secrets and private details (in the code and in the history), stale branches removed, a description and topics, and a README with install steps for Mac, Linux and Windows. Public repositories get GitHub Actions free, so the automatic checks on pull requests can come back then.
-- [ ] **Download a page's videos and sounds, streamed ones too,** as Video DownloadHelper and Mister Download Manager do: the browser extension notices the media a page plays (HLS `.m3u8` and DASH `.mpd` streams, and whole video and sound files), and the app downloads a stream's pieces (`.ts` or fragments) and joins them into one `.mp4`, without re-encoding. *Requested 2026-11-10, from studying both.* Protected (DRM) video stays out of reach.
+- [ ] **Download a page's videos and sounds, streamed ones too,** as Video DownloadHelper and Mister Download Manager do: the browser extension notices the media a page plays (HLS `.m3u8` and DASH `.mpd` streams, and whole video and sound files), and the app downloads a stream's pieces (`.ts` or fragments) and joins them into one `.mp4`, without re-encoding. *Requested 2026-11-10, from studying both.* Protected (DRM) video stays out of reach. Never transcoded: the pieces are only joined, so the file keeps the original quality (Herbert, 2026-11-10). When a video or sound plays on a page, the extension's button lists what can be downloaded, and clicking an item adds it to the app's queue.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **The browser extension finds a page's downloadable files:** the files a page links to or plays, never its scripts, styles or bits of HTML, listed to tick and add. *Requested 2026-11-10.*
+- [ ] **Find a page's downloadable files and media:** the files a page links to or plays, never its scripts, styles or bits of HTML, listed to tick and add to the queue. *Requested 2026-11-10.* From the browser extension, and in the app itself: a web page's address typed in, pasted or dragged into the app is scanned, and its media and files are listed to add to the queue.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
