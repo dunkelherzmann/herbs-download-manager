@@ -51,6 +51,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   and browser run there too. The worktree may have been removed by another session: check it exists first. Make the
   script remove an existing worktree before `git worktree add`, and print the commit it builds (`git log --oneline
   -1`): when `add` fails on a leftover folder, the build silently tests the old branch (pictures from it misled #75).
+  A copy started through master-control's `exec` runs elevated in the desktop session: ssh's `taskkill` can't stop
+  it, and its locked `dist\` .exe leaves the worktree half-deleted. Stop it with master-control's `exec` (`taskkill
+  /PID n`) too. `--capture` over ssh leaves combo boxes blank (even S7's): check their values with master-control's
+  `screenshot` of the window instead (#76).
 - Windows: `powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). Scripts are blocked on windows, so every `.ps1` runs with `-ExecutionPolicy Bypass`, which lifts the block for that one run without changing the system setting. `--capture
   FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
