@@ -146,12 +146,44 @@ async fn a_server_that_refuses_extra_connections_keeps_the_ones_it_accepted() {
     file.rate = Some(4 * MIB as u64);
     server.put("/limited.bin", file);
     let dir = folder("limited");
-    let (outcome, progress) = run(request(server.url("/limited.bin"), &dir, 16), fast()).await;
+    let (outcome, _) = run(request(server.url("/limited.bin"), &dir, 16), fast()).await;
     assert_eq!(std::fs::read(finished(&outcome)).unwrap(), data);
-    assert!(progress.peak.load(Ordering::SeqCst) <= 3);
+    // No check on the most connections at once here: the server frees a slot when it has sent a range's last byte,
+    // while the engine still counts that connection until it has read it, so one more it tries after a refusal can be
+    // let in a moment early (a slow machine saw four). The test below checks the limit where no range can finish.
     let refused = server.stats("/limited.bin").refused;
     assert!(refused >= 1, "the server turned some away");
     assert!(refused < 40, "refused connections wait instead of hammering ({refused})");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn connections_a_server_turns_away_never_count_as_receiving() {
+    let server = MockServer::start().await.unwrap();
+    let mut file = MockFile::new(pattern(8 * MIB, 11));
+    file.max_connections = Some(3);
+    // So slow that no range (256 KiB at least) can end within the minutes this test could take: the server never
+    // frees a slot, so every connection past the three is refused and nothing else can be let in.
+    file.rate = Some(1024);
+    server.put("/full.bin", file);
+    let dir = folder("full");
+    let tuning = Tuning { stall_timeout: Duration::from_secs(120), ..fast() };
+    let (control, progress, task) = spawn(request(server.url("/full.bin"), &dir, 16), tuning);
+    let started = Instant::now();
+    while progress.active.load(Ordering::SeqCst) < 3 {
+        assert!(started.elapsed() < Duration::from_secs(30), "three connections should start");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // Let it try again after a few refusal waits (200 ms each).
+    let refused = server.stats("/full.bin").refused;
+    while server.stats("/full.bin").refused < refused + 3 {
+        assert!(started.elapsed() < Duration::from_secs(60), "it should try again after each wait");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(progress.active.load(Ordering::SeqCst), 3, "it keeps the three the server accepted");
+    assert_eq!(progress.peak.load(Ordering::SeqCst), 3, "never more than the server accepted");
+    control.pause();
+    let outcome = tokio::time::timeout(Duration::from_secs(5), task).await.unwrap().unwrap();
+    assert_eq!(outcome, Outcome::Paused);
 }
 
 #[tokio::test(flavor = "multi_thread")]

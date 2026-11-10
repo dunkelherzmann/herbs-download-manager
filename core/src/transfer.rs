@@ -890,7 +890,7 @@ async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Resp
         if job.is_stopped() || id >= job.allowed() {
             break;
         }
-        let (src, (response, early)) = match first.take() {
+        let (src, (mut response, early)) = match first.take() {
             Some((src, r)) => (src, (r, Vec::new())),
             None => {
                 if job.segs.lock().unwrap().owned_by(id).is_none() && job.segs.lock().unwrap().take(id).is_none() {
@@ -928,11 +928,13 @@ async fn work(job: &Arc<Job>, id: usize, mut first: Option<(usize, reqwest::Resp
         stat.moving.store(false, Ordering::SeqCst);
         stat.slow_ticks.store(0, Ordering::SeqCst);
         stat.phase.store(DOWNLOADING, Ordering::SeqCst);
-        job.progress.active.fetch_add(1, Ordering::SeqCst);
-        job.progress.peak.fetch_max(job.progress.active.load(Ordering::SeqCst), Ordering::SeqCst);
-        let result = job.stream(id, src, response, early).await;
+        let now = job.progress.active.fetch_add(1, Ordering::SeqCst) + 1;
+        job.progress.peak.fetch_max(now, Ordering::SeqCst);
+        let result = job.stream(id, src, &mut response, early).await;
         stat.phase.store(IDLE, Ordering::SeqCst);
         job.progress.active.fetch_sub(1, Ordering::SeqCst);
+        // Only now let the connection go: it stops counting before the server can see it close and take another.
+        drop(response);
         stat.source.store(usize::MAX, Ordering::SeqCst);
         job.unuse(src);
         match result {
@@ -1315,7 +1317,7 @@ impl Job {
     }
 
     /// Reads a response into the file until the connection's range is done; `early` holds bytes already read from it.
-    async fn stream(&self, id: usize, src: usize, mut response: reqwest::Response, early: Vec<u8>) -> Result<(), Problem> {
+    async fn stream(&self, id: usize, src: usize, response: &mut reqwest::Response, early: Vec<u8>) -> Result<(), Problem> {
         let source = self.source(src);
         let stat = &self.conns[id];
         stat.received.fetch_add(early.len() as u64, Ordering::SeqCst);

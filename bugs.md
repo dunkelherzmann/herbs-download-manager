@@ -52,3 +52,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **The core test `a_server_that_refuses_extra_connections_keeps_the_ones_it_accepted` failed on GitHub Actions' macOS runner** (#101: four connections at once against a server that takes three) and passed everywhere else. *Found 2026-11-10.* The engine wasn't at fault: the test server frees a slot once it has sent a range's last byte, while the engine still counts that connection until it has read it, so the one more connection the engine tries after a refusal could be let in a moment early on a slow machine. That test now checks only that the download finishes and that refusals stay few; a new test checks the limit against a server so slow that no range can finish, where the engine must keep exactly the three it was given. The engine also stops counting a connection before letting it go, so the count can't outlast the connection on its own side. Proved by 250 runs of both tests under CPU stress, one of them with a single worker thread.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
