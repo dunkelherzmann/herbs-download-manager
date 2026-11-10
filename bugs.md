@@ -36,7 +36,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [x] **A streamed film failed with "A piece of the stream failed: 403 Forbidden".** *Reported 2026-11-10* (a 123-series page). Its playlist loaded but the pieces were refused: the link's token was valid for four hours and only from the browser's network (`ip_cidr`), and the downloader introduced itself as "HerbsDownloadManager/0.1.0" with no Referer or Origin, which guarded streams refuse. Fixed in #87: downloads the extension hands over (1.11) are asked for as the browser asked (User-Agent, Referer, Origin) with every request, and a refusal says when the link expired or that it's tied to the browser's network. Not tried on that site (it streams films without a licence); a test stream that refuses pieces to anything but the browser now downloads.
+- [x] **A streamed film failed with "A piece of the stream failed: 403 Forbidden".** *Reported 2026-11-10* (a film streaming page). Its playlist loaded but the pieces were refused: the link's token was valid for four hours and only from the browser's network (`ip_cidr`), and the downloader introduced itself as "HerbsDownloadManager/0.1.0" with no Referer or Origin, which guarded streams refuse. Fixed in #87: downloads the extension hands over (1.11) are asked for as the browser asked (User-Agent, Referer, Origin) with every request, and a refusal says when the link expired or that it's tied to the browser's network. Not tried on that site (it streams films without a licence); a test stream that refuses pieces to anything but the browser now downloads.
   - [x] Mac
   - [x] Linux
   - [x] Windows

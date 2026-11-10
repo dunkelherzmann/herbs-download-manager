@@ -7,6 +7,11 @@ server or from several mirrors of the same file, and pauses and resumes without 
 - **Mirrors**: give other servers that hold the same file, before, during or after adding a download, and the
   connections are spread over all of them.
 - **Pause and resume**, across quits, crashes and restarts.
+- **A queue and a scheduler**: waiting downloads start oldest first, a few at a time, by hand or at set times.
+- **Streamed video and sound** (HLS and DASH), joined into one MP4 by its own joiner, never re-encoded, in the
+  quality and sound track you choose. DRM-protected streams are refused.
+- **Find the files on a web page**: paste or drop a page's address and pick from what it holds.
+- **A browser extension** that hands the browser's downloads to the app and lists the media a page plays.
 - A simple window: menu bar, toolbar, status filters, the download list.
 - **A command line and an MCP server**, `hdm`, so scripts and AI assistants can list, add, pause, resume and remove
   downloads while the app runs.
@@ -15,8 +20,8 @@ How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
 
 ## Status
 
-Early development: the macOS version is being built first (it opens an empty window so far), then Linux and
-Windows. What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
+A testing app in active development, working on macOS, Linux and Windows. There are no signed releases yet, so you
+build it yourself (below). What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
 [windows/pending.md](windows/pending.md).
 
 ## Command line and MCP server
@@ -56,13 +61,28 @@ Safari isn't supported yet.
 
 ## Building
 
-On a Mac with Apple silicon, the Xcode Command Line Tools and Rust (rustup):
+Every version builds from this repository with Rust (rustup).
+
+**macOS** (Apple silicon, the Xcode Command Line Tools):
 
 ```sh
 macos/scripts/build.sh --install   # builds dist/Herb's Download Manager.app and copies it to /Applications
 scripts/test.sh                    # Rust tests, then the app's self-check
 cargo run -p hd-mock               # local test server: a 64 MiB file and two mirrors
 scripts/check.sh                   # a pushed branch on the Mac, Linux and Windows machines (in place of CI)
+```
+
+**Linux** (a Flatpak; needs `org.flatpak.Builder`, the GNOME 49 SDK and its Rust extension:
+`flatpak install --user flathub org.flatpak.Builder org.gnome.Sdk//49 org.freedesktop.Sdk.Extension.rust-stable//25.08`):
+
+```sh
+sh linux/scripts/build.sh --install   # then: flatpak run org.herbsdownloadmanager.app
+```
+
+**Windows** (the Visual Studio Build Tools): one portable `.exe`, put in `dist\` and on the Desktop.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1
 ```
 
 ## Support

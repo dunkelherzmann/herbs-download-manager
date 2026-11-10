@@ -160,7 +160,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [x] **Choose the quality and the sound track, with defaults in Settings,** as Video DownloadHelper does: a preferred quality (Highest by default, as before, then 2160p down to 360p) used when nothing else is picked, each found stream's own quality picker overriding it, and a preferred sound language (the stream's own by default) for streams that offer several sound tracks; HDR versions are left out when a standard one exists. `hdm add --quality/--sound` and the MCP tool too. Done in #76 (Settings S13 and S14, the extension's two lists under a stream, extension 1.5; SPECIFICATION.md §9, §12, §15). *Requested 2026-11-10, from studying Video DownloadHelper 10.6.7.2 (`.investigation/vdh.cany`).*
+- [x] **Choose the quality and the sound track, with defaults in Settings,** as Video DownloadHelper does: a preferred quality (Highest by default, as before, then 2160p down to 360p) used when nothing else is picked, each found stream's own quality picker overriding it, and a preferred sound language (the stream's own by default) for streams that offer several sound tracks; HDR versions are left out when a standard one exists. `hdm add --quality/--sound` and the MCP tool too. Done in #76 (Settings S13 and S14, the extension's two lists under a stream, extension 1.5; SPECIFICATION.md §9, §12, §15). *Requested 2026-11-10, from studying how Video DownloadHelper 10.6.7.2 presents it.*
   - [x] Mac
   - [x] Linux
   - [x] Windows
