@@ -62,6 +62,7 @@ const C_REMOVE_CONNECTION: u16 = 142;
 const C_FIND_DONE: u16 = 143;
 const C_RENAME: u16 = 144;
 const C_MOVE: u16 = 145;
+const C_NOTE: u16 = 146;
 /// The notification area icon's messages (a click on the "Download finished" balloon).
 const WM_TRAY: u32 = WM_APP + 21;
 const NIN_BALLOONUSERCLICK: u32 = 0x405;
@@ -85,8 +86,9 @@ thread_local! {
 /// Commands that arrive with their own windows later in `windows\pending.md`; their items show, disabled.
 const LATER: [u16; 0] = [];
 
-/// L1–L10: title, width; Date Finished and Location start hidden, as on the Mac.
-const COLUMNS: [(&str, i32, bool); 10] = [
+/// L1–L11: title, width; Date Finished and Location start hidden, as on the Mac. Note (L11) is the last column here
+/// but shows second, after Name (`COLUMN_ORDER`).
+const COLUMNS: [(&str, i32, bool); 11] = [
     ("Name", 230, true),
     ("Status", 130, true),
     ("Size", 140, true),
@@ -97,7 +99,10 @@ const COLUMNS: [(&str, i32, bool); 10] = [
     ("Date Added", 140, true),
     ("Date Finished", 140, false),
     ("Location", 220, false),
+    ("Note", 160, true),
 ];
+/// Where each column shows, left to right.
+const COLUMN_ORDER: [i32; 11] = [0, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /// T1–T11 (§3): command, Segoe Fluent Icons glyph, name, hover text. 0 is a separator.
 const TOOLS: [(u16, char, &str, &str); 14] = [
@@ -137,8 +142,8 @@ struct State {
     shown: Vec<u64>,
     rows: Vec<Row>,
     sort: (usize, bool),
-    columns: [bool; 10],
-    widths: [i32; 10],
+    columns: [bool; 11],
+    widths: [i32; 11],
     find_open: bool,
     /// View ▸ Show Sidebar (IsWindowVisible can't tell before the window first shows).
     sidebar_shown: bool,
@@ -229,6 +234,7 @@ fn cell_text(column: usize, r: &Row) -> String {
         7 => date_text(Some(r.added)),
         8 => date_text(r.finished),
         9 => r.folder.display().to_string(),
+        10 => r.note.clone(),
         _ => String::new(),
     }
 }
@@ -244,6 +250,7 @@ fn compare(column: usize, a: &Row, b: &Row) -> std::cmp::Ordering {
         6 => a.sources_known.cmp(&b.sources_known),
         8 => a.finished.cmp(&b.finished),
         9 => a.folder.cmp(&b.folder),
+        10 => a.note.to_lowercase().cmp(&b.note.to_lowercase()),
         _ => a.added.cmp(&b.added).then(a.id.cmp(&b.id)),
     }
 }
@@ -372,7 +379,7 @@ pub fn run() {
         }
         let search_button = child(w!("BUTTON"), "\u{E721}", BS_PUSHBUTTON as u32 | BS_FLAT as u32, Default::default(), C_FIND);
         set_font(search_button, glyph_font);
-        crate::a11y::explain(search_button, "Search", "Search: show only downloads whose name or link contains some text (Ctrl+F)");
+        crate::a11y::explain(search_button, "Search", "Search: show only downloads whose name, link or note contains some text (Ctrl+F)");
 
         // Sidebar (§2.1): each filter with its count, its file-type groups under it.
         let sidebar = child(WC_TREEVIEWW, "", (TVS_HASBUTTONS | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_LINESATROOT) as u32,
@@ -398,8 +405,8 @@ pub fn run() {
         let images = SHGetFileInfoW(w!(".txt"), FILE_ATTRIBUTE_NORMAL, Some(&mut file_info), std::mem::size_of::<SHFILEINFOW>() as u32,
                                     SHGFI_USEFILEATTRIBUTES | SHGFI_SYSICONINDEX | SHGFI_SMALLICON);
         SendMessageW(list, LVM_SETIMAGELIST, Some(WPARAM(LVSIL_SMALL as usize)), Some(LPARAM(images as isize)));
-        let mut widths = [0; 10];
-        let mut shown_columns = [true; 10];
+        let mut widths = [0; 11];
+        let mut shown_columns = [true; 11];
         for (i, (name, width, shown)) in COLUMNS.iter().enumerate() {
             let text = wide(name);
             let column = LVCOLUMNW {
@@ -412,6 +419,7 @@ pub fn run() {
             widths[i] = *width;
             shown_columns[i] = *shown;
         }
+        SendMessageW(list, LVM_SETCOLUMNORDERARRAY, Some(WPARAM(COLUMN_ORDER.len())), Some(LPARAM(COLUMN_ORDER.as_ptr() as isize)));
 
         // The find bar (§2), at the top right of the list, as in Herb's Terminal.
         let find_edit = child(w!("EDIT"), "", ES_AUTOHSCROLL as u32 | WS_BORDER.0, Default::default(), ID_SEARCH);
@@ -420,7 +428,7 @@ pub fn run() {
         let find_done = child(w!("BUTTON"), "Done", BS_PUSHBUTTON as u32, Default::default(), C_FIND_DONE);
         set_font(find_done, text_font);
         crate::a11y::tip(find_done, "Done: hide the search and show every download (Esc)");
-        crate::a11y::explain(find_edit, "Search downloads", "Show only downloads whose name or link contains this text");
+        crate::a11y::explain(find_edit, "Search downloads", "Show only downloads whose name, link or note contains this text");
         crate::a11y::explain(sidebar, "Filters", "Show downloads by status; open a filter for its file types");
         crate::a11y::explain(list, "Downloads", "Your downloads: double-click to open, right-click for more, click a column title to sort");
         let _ = ShowWindow(find_edit, SW_HIDE);
@@ -677,11 +685,10 @@ fn refresh() {
             SendMessageW(s.sidebar, TVM_SETITEMW, None, Some(LPARAM(&tv as *const _ as isize)));
         }
 
-        let needle = s.search.to_lowercase();
         let mut shown: Vec<Row> = rows
             .iter()
             .filter(|r| s.filter.matches(&r.status) && s.kind.is_none_or(|k| r.kind == k))
-            .filter(|r| needle.is_empty() || r.name.to_lowercase().contains(&needle) || r.url.to_lowercase().contains(&needle))
+            .filter(|r| r.matches(&s.search))
             .cloned()
             .collect();
         let (column, ascending) = s.sort;
@@ -780,6 +787,7 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
         C_DELETE | C_COPY_LINK => !selected.is_empty(),
         C_OPEN => selected.len() == 1 && selected[0].status == Status::Finished,
         C_SHOW_IN_FOLDER => selected.len() == 1,
+        C_NOTE => selected.len() == 1,
         C_RENAME | C_MOVE => selected.len() == 1 && selected[0].status == Status::Finished && selected[0].path.as_ref().is_some_and(|p| p.exists()),
         C_ADD_CONNECTION => selected.len() == 1 && unfinished && selected[0].allowed_connections < 32,
         C_REMOVE_CONNECTION => selected.len() == 1 && unfinished && selected[0].allowed_connections > 1,
@@ -837,7 +845,7 @@ unsafe fn show_main_menu(hwnd: HWND, button: HWND) {
         ("Tasks", 0), ("Resume\tCtrl+R", C_RESUME), ("Pause\tCtrl+.", C_PAUSE), ("-", 0),
         ("Start Queue\tCtrl+Shift+R", C_START_QUEUE), ("Stop Queue", C_STOP_QUEUE), ("-", 0),
         ("Stop All\tCtrl+Alt+.", C_STOP_ALL), ("-", 0), ("Add Mirror…\tCtrl+Alt+M", C_ADD_MIRROR), ("Properties\tCtrl+I", C_PROPERTIES), ("-", 0),
-        ("Rename…\tF2", C_RENAME), ("Move To…", C_MOVE), ("-", 0),
+        ("Rename…\tF2", C_RENAME), ("Move To…", C_MOVE), ("Note…", C_NOTE), ("-", 0),
         ("Delete", 0), ("Selected\tDelete", C_DELETE), ("All Finished", C_DELETE_FINISHED), ("All Unfinished", C_DELETE_UNFINISHED),
         ("All Missing Files", C_DELETE_MISSING), ("Entire List", C_DELETE_ALL), (")", 0), (")", 0),
         ("View", 0), ("Show Sidebar", C_SIDEBAR), ("Keep on Top\tCtrl+Alt+T", C_KEEP_ON_TOP), ("Columns", 0),
@@ -876,7 +884,7 @@ unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
         COLUMNS.iter().enumerate().skip(1).map(|(i, (name, _, _))| (*name, C_COLUMN + i as u16)).collect()
     } else {
         vec![
-            ("Open", C_OPEN), ("Show in Folder", C_SHOW_IN_FOLDER), ("Rename…", C_RENAME), ("Move To…", C_MOVE), ("-", 0),
+            ("Open", C_OPEN), ("Show in Folder", C_SHOW_IN_FOLDER), ("Rename…", C_RENAME), ("Move To…", C_MOVE), ("Note…", C_NOTE), ("-", 0),
             ("Resume", C_RESUME), ("Pause", C_PAUSE),
             ("Restart", C_RESTART), ("-", 0), ("Add Mirror…", C_ADD_MIRROR), ("Connections", 0),
             ("Add Connection", C_ADD_CONNECTION), ("Remove Connection", C_REMOVE_CONNECTION), (")", 0), ("-", 0),
@@ -1198,6 +1206,18 @@ fn command(hwnd: HWND, id: u16) {
                     && let Err(e) = ctx.manager.rename_file(r.id, &v[0])
                 {
                     message(hwnd, &e);
+                }
+                refresh();
+            }
+            C_NOTE => {
+                if let Some(r) = sel.first()
+                    && let Some(ctx) = add_ctx()
+                    && let Some((v, _)) = crate::signins::form(&ctx, hwnd, "Note",
+                                                               &format!("Note on “{}”. Shown in the Note column and found by the search; leave it blank to remove it.", r.name),
+                                                               &[crate::signins::Field { label: "Note", value: &r.note, secret: false, help: "Your note on this download" }],
+                                                               None, "Save")
+                {
+                    ctx.manager.set_note(r.id, &v[0]);
                 }
                 refresh();
             }

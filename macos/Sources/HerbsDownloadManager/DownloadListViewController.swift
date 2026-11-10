@@ -15,6 +15,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 
     static let columns: [Column] = [
         Column(id: "name", title: "Name", width: 280, hiddenByDefault: false),
+        Column(id: "note", title: "Note", width: 180, hiddenByDefault: false),
         Column(id: "status", title: "Status", width: 150, hiddenByDefault: false),
         Column(id: "size", title: "Size", width: 140, hiddenByDefault: false),
         Column(id: "speed", title: "Speed", width: 90, hiddenByDefault: false),
@@ -77,8 +78,14 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         table.target = self
         table.doubleAction = #selector(openRow(_:))
         table.sortDescriptors = [NSSortDescriptor(key: "added", ascending: false)]
-        table.autosaveName = "DownloadList"
+        table.autosaveName = TestCopy.autosave("DownloadList")
         table.autosaveTableColumns = true
+        // A layout saved before the Note column existed puts it last, past the window's edge: place it after Name once.
+        let placed = TestCopy.autosave("NoteColumnPlaced")
+        if !UserDefaults.standard.bool(forKey: placed), let from = table.tableColumns.firstIndex(where: { $0.identifier.rawValue == "note" }) {
+            table.moveColumn(from, toColumn: 1)
+            UserDefaults.standard.set(true, forKey: placed)
+        }
         table.setAccessibilityIdentifier("downloads")
         table.setAccessibilityLabel("Downloads")
         table.registerForDraggedTypes([.string, .URL, .fileURL, .html])
@@ -123,11 +130,10 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 
     func reload() {
         let selected = Set(selectedRows.map(\.id))
-        let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
         var rows = AppModel.shared.rows.filter { row in
             filterMatches(filter: filter, status: row.status)
                 && (kind == nil || row.kind == kind)
-                && (needle.isEmpty || row.name.lowercased().contains(needle) || row.url.lowercased().contains(needle))
+                && searchMatches(row: row, text: search)
         }
         if let sort = table.sortDescriptors.first, let key = sort.key {
             rows.sort { a, b in
@@ -165,6 +171,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case "added": return cmp(a.added, b.added)
         case "finished": return cmp(a.finished ?? 0, b.finished ?? 0)
         case "location": return a.folder.localizedStandardCompare(b.folder)
+        case "note": return a.note.localizedStandardCompare(b.note)
         default: return .orderedSame
         }
     }
@@ -225,6 +232,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case "added": text = Self.dateFormat.string(from: Date(timeIntervalSince1970: TimeInterval(item.added)))
         case "finished": text = item.finished.map { Self.dateFormat.string(from: Date(timeIntervalSince1970: TimeInterval($0))) } ?? ""
         case "location": text = (item.folder as NSString).abbreviatingWithTildeInPath
+        case "note": text = item.note
         default: text = ""
         }
         cell.textField?.stringValue = text
@@ -233,7 +241,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         } else {
             cell.textField?.textColor = .labelColor
         }
-        cell.textField?.toolTip = id == "status" || id == "location" ? text : nil
+        cell.textField?.toolTip = id == "status" || id == "location" || id == "note" ? text : nil
         return cell
     }
 
@@ -312,6 +320,9 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         if rows.count == 1, rows[0].status.isFinished {
             menu.addItem(withTitle: "Rename…", action: #selector(W.renameFile(_:)), keyEquivalent: "")
             menu.addItem(withTitle: "Move To…", action: #selector(W.moveFile(_:)), keyEquivalent: "")
+        }
+        if rows.count == 1 {
+            menu.addItem(withTitle: "Note…", action: #selector(W.editNote(_:)), keyEquivalent: "")
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Resume", action: #selector(W.resumeSelected(_:)), keyEquivalent: "")

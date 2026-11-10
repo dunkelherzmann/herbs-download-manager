@@ -69,6 +69,9 @@ pub struct Entry {
     /// The host that asked for a user name and password when it last ran (enhancements.md: links that need a login).
     #[serde(default)]
     pub needs_login: Option<String>,
+    /// The user's own note on it (the Note column, found by the search).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// What the list shows for one download.
@@ -103,6 +106,22 @@ pub struct Row {
     pub resumable: bool,
     /// A failed download's host that asks for a user name and password.
     pub needs_login: Option<String>,
+    /// The user's note, "" for none.
+    pub note: String,
+}
+
+impl Row {
+    /// The search (T10): whether the name, the link or the note contains `text`, ignoring case; blank text matches
+    /// every row.
+    pub fn matches(&self, text: &str) -> bool {
+        search_matches(text, &[&self.name, &self.url, &self.note])
+    }
+}
+
+/// Whether any of `fields` contains `text`, ignoring case; blank text matches.
+pub fn search_matches(text: &str, fields: &[&str]) -> bool {
+    let needle = text.trim().to_lowercase();
+    needle.is_empty() || fields.iter().any(|s| s.to_lowercase().contains(&needle))
 }
 
 /// What `add` needs.
@@ -446,6 +465,7 @@ impl Manager {
                     checksum: None,
                     verified: None,
                     needs_login: None,
+                    note: None,
                 },
                 running: None,
             });
@@ -719,6 +739,7 @@ impl Manager {
                     checksum: None,
                     verified: None,
                     needs_login: None,
+                    note: None,
                 },
                 running: None,
             });
@@ -835,6 +856,7 @@ impl Manager {
                     checksum: None,
                     verified: e.verified,
                     needs_login: None,
+                    note: None,
                 },
                 running: None,
             });
@@ -1049,6 +1071,17 @@ impl Manager {
         }
     }
 
+    /// Note… : the download's own note; blank removes it. Line breaks become spaces, so it fits one line of the list.
+    pub fn set_note(&self, id: u64, note: &str) {
+        let note = note.split_whitespace().collect::<Vec<_>>().join(" ");
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return };
+            slot.entry.note = (!note.is_empty()).then_some(note);
+        }
+        self.save();
+    }
+
     /// One download's own speed limit (the Options tab), in bytes per second; `None` is none. Applies at once.
     pub fn set_speed_limit(&self, id: u64, limit: Option<u64>) {
         let limit = limit.filter(|&l| l > 0);
@@ -1197,6 +1230,7 @@ fn row(slot: &Slot) -> Row {
         live,
         resumable,
         needs_login: if slot.running.is_none() { e.needs_login.clone() } else { None },
+        note: e.note.clone().unwrap_or_default(),
     }
 }
 

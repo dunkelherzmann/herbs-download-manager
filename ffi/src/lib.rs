@@ -220,6 +220,8 @@ pub struct DownloadRow {
     pub resumable: bool,
     /// A failed download's host that asks for a user name and password.
     pub needs_login: Option<String>,
+    /// The user's note, "" for none.
+    pub note: String,
 }
 
 impl From<manager::Row> for DownloadRow {
@@ -251,6 +253,7 @@ impl From<manager::Row> for DownloadRow {
             live: r.live,
             resumable: r.resumable,
             needs_login: r.needs_login,
+            note: r.note,
         }
     }
 }
@@ -506,6 +509,12 @@ impl DownloadManager {
 }
 
 /// Whether a row shows under a sidebar filter.
+/// The search (T10): whether the row's name, link or note contains `text`, ignoring case.
+#[uniffi::export]
+pub fn search_matches(row: &DownloadRow, text: String) -> bool {
+    manager::search_matches(&text, &[&row.name, &row.url, &row.note])
+}
+
 #[uniffi::export]
 pub fn filter_matches(filter: Filter, status: DownloadStatus) -> bool {
     let s = match status {
@@ -843,6 +852,11 @@ impl DownloadManager {
     /// Rename…: a finished download's file gets a new name in its folder; returns the new path.
     pub fn rename_file(&self, id: u64, name: String) -> Result<String, CoreError> {
         self.inner.rename_file(id, &name).map(|p| p.display().to_string()).map_err(|message| CoreError::Message { message })
+    }
+
+    /// Note…: the download's own note; blank removes it.
+    pub fn set_note(&self, id: u64, note: String) {
+        self.inner.set_note(id, &note);
     }
 
     /// Move To…: a finished download's file goes to `target` (a full path); returns it.

@@ -112,3 +112,13 @@ do move f13/renamed.bin f13-moved
 expect-file f13-moved/renamed.bin exists
 expect-file f13/renamed.bin absent
 setting keep-server-date off
+
+feature A note on a download, found by the search
+add f14 start $L/small.bin
+wait f14/small.bin finished 30
+do note f14/small.bin "for the old laptop"
+expect f14/small.bin note for the old laptop
+expect f14/small.bin matches Laptop
+expect f14/small.bin not-matches desktop
+do note f14/small.bin ""
+expect f14/small.bin not-matches laptop

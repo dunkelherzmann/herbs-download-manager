@@ -18,3 +18,7 @@ No bugs reported yet.
   - [x] Mac (already)
   - [x] Linux
   - [x] Windows
+- [x] **Mac test copies saved their window size and column layout over the real app's** (*found in testing*, 2026-11-10). A test copy run with `HD_DATA_DIR` kept its own list but saved the main window's frame, the sidebar's width, the Settings window's place and the list's columns under the same names as the real app, so running tests could change Herbert's layout. Test copies now save them under names of their own. Fixed in #55.
+  - [x] Mac
+  - [x] Linux (not affected: the GTK app saves no window layout)
+  - [x] Windows (not affected: nothing saved)

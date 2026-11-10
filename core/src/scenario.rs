@@ -11,14 +11,15 @@
 //! add-as-mirrors FOLDER URL…       Add Links' "Treat as mirrors of one file", started
 //! do COMMAND [ROW] [ARG…]          an app command with ROW selected: resume, pause, restart, delete,
 //!                                  delete-files, add-mirror (ARG: links), set-checksum (ARG: algorithm, value),
-//!                                  rename (ARG: new name), move (ARG: a folder under $DL),
+//!                                  rename (ARG: new name), move (ARG: a folder under $DL), note (ARG: text),
 //!                                  start-queue, stop-queue, stop-all
 //! setting KEY VALUE                downloads-at-once, speed-limit (bytes a second, 0 for none),
 //!                                  when-file-exists (ask, keep-both, skip, replace), look-for-checksum-files (on, off),
 //!                                  keep-server-date (on, off)
 //! wait ROW STATE SECONDS           finished, paused, failed, running or waiting
 //! expect ROW CHECK [VALUE]         file-size N, file-date SECONDS, sources N, status-contains TEXT,
-//!                                  verified-contains TEXT, gone
+//!                                  verified-contains TEXT, note TEXT, matches TEXT (the search finds it),
+//!                                  not-matches TEXT, gone
 //! expect-running N                 how many downloads run now
 //! sign-in SITE USER PASSWORD       saves a sign-in (as plain text in the test's own data folder)
 //! expect-file PATH exists|absent   a path under $DL
@@ -187,6 +188,9 @@ impl Run<'_> {
                             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
                         (secs == value.parse().ok()).then_some(()).ok_or(format!("{spec}'s file is dated {secs:?}, not {value}"))
                     }
+                    "note" => (r.note == value).then_some(()).ok_or(format!("{spec}'s note is “{}”", r.note)),
+                    "matches" => r.matches(&value).then_some(()).ok_or(format!("searching for “{value}” doesn't find {spec}")),
+                    "not-matches" => (!r.matches(&value)).then_some(()).ok_or(format!("searching for “{value}” finds {spec}")),
                     "verified-contains" => {
                         let note = self.manager.detail(r.id).and_then(|d| d.verified).unwrap_or_default();
                         note.contains(&value).then_some(()).ok_or(format!("{spec}'s checksum note is “{note}”"))
@@ -335,6 +339,10 @@ impl Host for DirectHost {
             }
             "rename" => m.rename_file(ids[0], &args[0]).map(|_| ()),
             "move" => m.move_file(ids[0], Path::new(&args[0])).map(|_| ()),
+            "note" => {
+                m.set_note(ids[0], &args.join(" "));
+                Ok(())
+            }
             "set-checksum" => {
                 let algorithm = crate::checksum::Algorithm::ALL.into_iter().find(|a| a.name().eq_ignore_ascii_case(&args[0]) || a.extension() == args[0])
                     .ok_or("no such algorithm")?;

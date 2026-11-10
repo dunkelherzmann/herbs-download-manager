@@ -12,8 +12,9 @@ use hd_core::format::{self, FileKind, Filter};
 use hd_core::manager::{Row, Status};
 
 /// Column ids, titles and their initial widths; L1 (Name) can't be hidden.
-pub const COLUMNS: [(&str, &str, i32); 10] = [
+pub const COLUMNS: [(&str, &str, i32); 11] = [
     ("name", "Name", 200),
+    ("note", "Note", 160),
     ("status", "Status", 120),
     ("size", "Size", 140),
     ("speed", "Speed", 80),
@@ -72,6 +73,7 @@ fn cell_text(column: &str, r: &Row) -> String {
         "added" => date_text(Some(r.added)),
         "finished" => date_text(r.finished),
         "location" => r.folder.display().to_string(),
+        "note" => r.note.clone(),
         _ => String::new(),
     }
 }
@@ -166,12 +168,11 @@ impl DownloadList {
     /// Shows `rows` filtered by status, file type and search text, updating cells in place when the same downloads
     /// are listed and rebuilding the list only when they change.
     pub fn show(&self, all: &[Row], filter: Filter, kind: Option<FileKind>, search: &str) -> usize {
-        let needle = search.to_lowercase();
         let shown: Vec<&Row> = all
             .iter()
             .filter(|r| filter.matches(&r.status))
             .filter(|r| kind.is_none_or(|k| r.kind == k))
-            .filter(|r| needle.is_empty() || r.name.to_lowercase().contains(&needle) || r.url.to_lowercase().contains(&needle))
+            .filter(|r| r.matches(search))
             .collect();
         *self.rows.borrow_mut() = shown.iter().map(|r| (r.id, (*r).clone())).collect();
         let ids: Vec<u64> = shown.iter().map(|r| r.id).collect();
@@ -187,7 +188,7 @@ impl DownloadList {
             }
             // Keep a sort by a changing column (speed, status…) current.
             if let Some(column) = self.view.sorter().and_downcast::<gtk::ColumnViewSorter>().and_then(|s| s.primary_sort_column())
-                && !matches!(column.id().as_deref(), Some("name" | "added" | "finished" | "location"))
+                && !matches!(column.id().as_deref(), Some("name" | "added" | "finished" | "location" | "note"))
             {
                 self.sorter.changed(gtk::SorterChange::Different);
             }
@@ -246,6 +247,7 @@ fn compare(key: &str, a: &Row, b: &Row) -> std::cmp::Ordering {
         "mirrors" => a.sources_known.cmp(&b.sources_known),
         "finished" => a.finished.cmp(&b.finished),
         "location" => a.folder.cmp(&b.folder),
+        "note" => a.note.to_lowercase().cmp(&b.note.to_lowercase()),
         _ => a.added.cmp(&b.added).then(a.id.cmp(&b.id)),
     }
 }
@@ -276,6 +278,11 @@ fn show_cell(key: &str, widget: &gtk::Widget, r: &Row) {
         }
         line.update_property(&[gtk::accessible::Property::Label(&format!("{}, {}", r.name, r.status_text))]);
     } else if let Some(label) = widget.downcast_ref::<gtk::Label>() {
-        label.set_label(&cell_text(key, r));
+        let text = cell_text(key, r);
+        // A long note is cut short in its column: the whole of it shows on hover.
+        if key == "note" {
+            label.set_tooltip_text(Some(&text).filter(|t| !t.is_empty()).map(|t| t.as_str()));
+        }
+        label.set_label(&text);
     }
 }

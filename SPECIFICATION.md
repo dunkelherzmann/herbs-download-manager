@@ -41,7 +41,7 @@ The layout, top to bottom:
 
 1. **Title bar**: the window controls, the title "Herb's Download Manager", the toolbar (§3), **Search** (🔍, T10)
    and, at the right end on macOS, the **Main Menu** (☰, §4). Search opens a find bar at the top right of the list,
-   as in Herb's Terminal: it shows only downloads whose name or link contains the text as you type, and Done (Esc)
+   as in Herb's Terminal: it shows only downloads whose name, link or note contains the text as you type, and Done (Esc)
    hides it and shows every download again. Every menu is in the window, so on a wide screen no
    command needs a trip to the top of the screen.
 2. **Toolbar** (§3).
@@ -83,6 +83,7 @@ Columns, all sortable, every column but Name can be hidden from the header's con
 | L8 | Date Added | default sort, newest first |
 | L9 | Date Finished | |
 | L10 | Location | destination folder |
+| L11 | Note | the user's own note (§4.1); shown by default, after Name |
 
 Double-clicking a finished download opens the file; an unfinished one opens its Download window (§6).
 
@@ -101,7 +102,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T6 | Stop All | "Stop All: stop the queue and pause every running download" | ⌥⌘. / Ctrl+Alt+. |
 | T7 | Delete | "Delete: remove the selected downloads from the list" | ⌘⌫ / Delete |
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
-| T10 | Search (🔍): opens the find bar (§2) | "Search: show only downloads whose name or link contains some text" | ⌘F / Ctrl+F |
+| T10 | Search (🔍): opens the find bar (§2) | "Search: show only downloads whose name, link or note contains some text" | ⌘F / Ctrl+F |
 | T11 | Keep on Top (📌, between Settings and Search; filled and tinted while on). On Linux it is shown disabled: GTK 4 and Wayland don't let an app keep itself above others, so its hover text points to the window manager's Always on Top (right-click the title bar) | "Keep on Top: keep Herb's DM above every other app's windows" | ⌃⌘T / Ctrl+Alt+T |
 | T9 | Main Menu (☰, after the search field on macOS; the left corner on Linux and Windows) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
 
@@ -136,7 +137,7 @@ and Paste in text fields included.
 | Herb's DM (macOS menu bar only) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
 | File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · — · Close Window ⌘W · (Linux, Windows: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
-| Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
+| Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Rename… · Move To… · Note… · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
 | Window | standard (macOS) |
 | Help | Herb's Download Manager on GitHub |
@@ -144,7 +145,7 @@ and Paste in text fields included.
 
 ### 4.1 Download context menu
 
-Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in Folder) · Rename… · Move To… · — · Resume · Pause ·
+Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in Folder) · Rename… · Move To… · Note… · — · Resume · Pause ·
 Restart · — · **Add Mirror…** · **Connections ▸** (Add Connection, Remove Connection, the live list) · — ·
 Copy Link · Properties · — · Delete. Items that don't apply are hidden (Connections for finished downloads) or
 disabled.
@@ -154,6 +155,10 @@ also in the Main Menu's Tasks. Rename asks for the new name, with the part befor
 for a folder, and the file keeps its name. The download stays in the list with its new name and folder. An existing
 file is never replaced: the app says "A file named “x” is already there". A move to another drive copies the file,
 checks the copy's size and only then removes the original.
+
+**Note…** (also in the Main Menu's Tasks) works on one download, finished or not: it asks for a line of text,
+shown in the Note column (L11) and found by the search (T10). Line breaks become spaces; a blank note removes it.
+The note is saved with the list.
 
 ## 5. Adding downloads
 

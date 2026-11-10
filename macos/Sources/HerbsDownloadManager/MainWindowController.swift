@@ -43,7 +43,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         Button(id: "settings", label: "Settings", symbol: "gearshape",
                help: "Settings (⌘,)", action: #selector(showSettings(_:))),
         Button(id: "search", label: "Search", symbol: "magnifyingglass",
-               help: "Search: show only downloads whose name or link contains some text (⌘F)",
+               help: "Search: show only downloads whose name, link or note contains some text (⌘F)",
                action: #selector(toggleSearch(_:))),
     ]
 
@@ -83,7 +83,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         let listItem = NSSplitViewItem(viewController: list)
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(listItem)
-        split.splitView.autosaveName = "MainSplit"
+        split.splitView.autosaveName = TestCopy.autosave("MainSplit")
 
         footer.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
         footer.textColor = .secondaryLabelColor
@@ -131,7 +131,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         host.addChild(split)
         window.contentViewController = host
         window.setContentSize(NSSize(width: 1100, height: 640))
-        window.setFrameAutosaveName("MainWindow")
+        window.setFrameAutosaveName(TestCopy.autosave("MainWindow"))
         if !window.setFrameUsingName("MainWindow") { window.center() }
 
         sidebar.onSelect = { [weak self] filter, kind in
@@ -259,7 +259,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         case #selector(newDownload(_:)), #selector(addFromClipboard(_:)), #selector(batchDownload(_:)),
              #selector(importLinks(_:)): return true
         case #selector(showDownloadWindow(_:)), #selector(showProperties(_:)): return !selected.isEmpty
-        case #selector(addMirror(_:)): return selected.count == 1
+        case #selector(addMirror(_:)), #selector(editNote(_:)): return selected.count == 1
         default: return true
         }
     }
@@ -494,6 +494,30 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     @objc func showInFinder(_ sender: Any?) {
         guard let path = targets.first?.path else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    /// Note…: the download's own note, shown in the Note column and found by the search. A blank note removes it.
+    @objc func editNote(_ sender: Any?) {
+        guard let row = targets.first, let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Note on “\(row.name)”"
+        alert.informativeText = "Shown in the Note column and found by the search. Leave it blank to remove it."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        field.stringValue = row.note
+        field.placeholderString = "What it's for, where it came from…"
+        field.toolTip = "Your note on this download"
+        field.setAccessibilityLabel("Note")
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated {
+                guard response == .alertFirstButtonReturn else { return }
+                AppModel.shared.manager.setNote(id: row.id, note: field.stringValue)
+                AppModel.shared.refresh()
+            }
+        }
     }
 
     /// Rename… a finished download's file, in a sheet with its name selected up to the extension.

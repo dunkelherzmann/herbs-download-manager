@@ -849,3 +849,22 @@ fn cancel_discards_an_early_download_and_a_finished_one_is_adopted_as_finished()
     assert_eq!(m.rows().into_iter().find(|r| r.id == id).unwrap().status, Status::Finished);
     assert_eq!(std::fs::read(dir.join("files/f.bin")).unwrap(), data);
 }
+
+#[test]
+fn a_note_is_kept_found_by_the_search_and_removed_when_blank() {
+    let dir = folder("note");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new("http://127.0.0.1:9/linux.iso".into(), &dir, false));
+    assert_eq!(m.rows()[0].note, "");
+    m.set_note(id, "  for the\nold laptop ");
+    assert_eq!(m.rows()[0].note, "for the old laptop", "one line, trimmed");
+    let row = m.rows()[0].clone();
+    assert!(row.matches("OLD LAPTOP") && row.matches("linux") && row.matches("127.0.0.1") && row.matches(" "));
+    assert!(!row.matches("desktop"));
+    drop(m);
+    let m = Manager::open(&dir).unwrap();
+    assert_eq!(m.rows()[0].note, "for the old laptop", "the note is saved");
+    m.set_note(id, "  ");
+    assert_eq!(m.rows()[0].note, "");
+    assert!(!m.rows()[0].matches("laptop"));
+}

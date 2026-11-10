@@ -63,6 +63,7 @@ fn main_menu() -> gio::Menu {
     let file = gio::Menu::new();
     item(&file, "Rename…", "rename-file");
     item(&file, "Move To…", "move-file");
+    item(&file, "Note…", "note");
     tasks.append_section(None, &file);
     let delete = gio::Menu::new();
     item(&delete, "Selected", "delete");
@@ -113,6 +114,7 @@ fn context_menu() -> gio::Menu {
     item(&open, "Show in Folder", "show-in-folder");
     item(&open, "Rename…", "rename-file");
     item(&open, "Move To…", "move-file");
+    item(&open, "Note…", "note");
     menu.append_section(None, &open);
     let run = gio::Menu::new();
     item(&run, "Resume", "resume");
@@ -173,7 +175,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     // The toolbar (§3), right to left from the window controls: T10 Search, T11 Keep on Top, T8 Settings, T7 Delete,
     // T6 Stop All, T5–T4 the queue, T3–T2 Pause and Resume, T1 New Download.
     let tools: Vec<gtk::Widget> = vec![
-        tool("system-search-symbolic", "find", "Search", "Search: show only downloads whose name or link contains some text (Ctrl+F)").upcast(),
+        tool("system-search-symbolic", "find", "Search", "Search: show only downloads whose name, link or note contains some text (Ctrl+F)").upcast(),
         tool("view-pin-symbolic", "keep-on-top", "Keep on Top",
              "Keep on Top: Linux desktops don't let an app keep itself above others; use the title bar's right-click menu ▸ Always on Top").upcast(),
         tool("emblem-system-symbolic", "settings", "Settings", "Settings (Ctrl+,)").upcast(),
@@ -503,6 +505,7 @@ fn enable(window: &adw::ApplicationWindow, selected: &[Row], rows: &[Row]) {
     let finished_file = selected.len() == 1 && selected[0].status == Status::Finished && selected[0].path.as_ref().is_some_and(|p| p.exists());
     set("rename-file", finished_file);
     set("move-file", finished_file);
+    set("note", selected.len() == 1);
     set("add-connection", selected.len() == 1 && unfinished && selected[0].allowed_connections < 32);
     set("remove-connection", selected.len() == 1 && unfinished && selected[0].allowed_connections > 1);
     set("delete-finished", rows.iter().any(|r| r.status == Status::Finished));
@@ -578,6 +581,28 @@ fn add_actions(
                 gtk::FileLauncher::new(Some(&gio::File::for_path(target))).open_containing_folder(
                     Some(&window2), None::<&gio::Cancellable>, |_| {});
             }
+        }));
+    }
+    // Note…: the download's own note (§4.1).
+    {
+        let (ui, refresh, window2) = (ui.clone(), refresh.clone(), window.clone());
+        add("note", &[], Box::new(move || {
+            let Some(r) = ui.list.selected().into_iter().next() else { return };
+            let d = adw::AlertDialog::new(Some(&format!("Note on “{}”", r.name)),
+                                          Some("Shown in the Note column and found by the search. Leave it blank to remove it."));
+            let field = gtk::Entry::builder().text(&r.note).placeholder_text("What it's for, where it came from…").activates_default(true).build();
+            crate::explain(&field, "Note", "Your note on this download");
+            d.set_extra_child(Some(&field));
+            d.add_response("cancel", "Cancel");
+            d.add_response("save", "Save");
+            d.set_response_appearance("save", adw::ResponseAppearance::Suggested);
+            d.set_default_response(Some("save"));
+            let (ui2, refresh2) = (ui.clone(), refresh.clone());
+            d.connect_response(Some("save"), move |_, _| {
+                ui2.manager.set_note(r.id, &field.text());
+                refresh2();
+            });
+            d.present(Some(&window2));
         }));
     }
     // Rename… and Move To… a finished download's file (enhancements.md).

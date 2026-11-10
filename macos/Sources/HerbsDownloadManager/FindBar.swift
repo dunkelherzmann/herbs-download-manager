@@ -1,7 +1,7 @@
 import AppKit
 
 /// The find bar (§2, T10), as in Herb's Terminal: the toolbar's 🔍 or ⌘F shows it at the top right of the list,
-/// it filters the list as you type (name or link), and Done or Esc hides it and shows every download again.
+/// it filters the list as you type (name, link or note), and Done or Esc hides it and shows every download again.
 @MainActor
 final class FindBar: NSVisualEffectView, NSSearchFieldDelegate {
     let field = NSSearchField()
@@ -24,7 +24,7 @@ final class FindBar: NSVisualEffectView, NSSearchFieldDelegate {
         field.sendsSearchStringImmediately = true
         field.setAccessibilityIdentifier("search")
         field.setAccessibilityLabel("Search downloads")
-        field.toolTip = "Show only downloads whose name or link contains this text"
+        field.toolTip = "Show only downloads whose name, link or note contains this text"
         field.widthAnchor.constraint(equalToConstant: 240).isActive = true
         let done = NSButton(title: "Done", target: self, action: #selector(close))
         done.bezelStyle = .rounded

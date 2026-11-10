@@ -105,10 +105,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A note of your own on each download,** shown in a column and found by the search. *Requested 2026-11-09, from studying Mister Download Manager.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **A note of your own on each download,** shown in a column and found by the search. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #55: Note… (right-click, or Tasks in the Main Menu) asks for a line of text; the Note column shows it after Name and the search finds it (SPECIFICATION.md §2.2, §4.1).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **All menus in one Main Menu (☰) button, as in Herb's Terminal,** instead of a menu bar beside the window controls, which looked odd. *Requested 2026-11-09.* On the Mac it sits at the right end of the toolbar, after Search; on Linux and Windows in the left corner, as Herb's Terminal does. Also, a finished download's name sits level with the other columns instead of high in its row. Done for the Mac in #26.
   - [x] Mac
   - [ ] Linux

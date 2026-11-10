@@ -41,6 +41,7 @@ enum MainMenu {
         tasks.addItem(.separator())
         tasks.addItem(withTitle: "Rename…", action: #selector(MainWindowController.renameFile(_:)), keyEquivalent: "")
         tasks.addItem(withTitle: "Move To…", action: #selector(MainWindowController.moveFile(_:)), keyEquivalent: "")
+        tasks.addItem(withTitle: "Note…", action: #selector(MainWindowController.editNote(_:)), keyEquivalent: "")
         tasks.addItem(.separator())
         let deleteItem = tasks.addItem(withTitle: "Delete", action: nil, keyEquivalent: "")
         let delete = NSMenu(title: "Delete")
