@@ -1,5 +1,5 @@
-//! Joins a stream's pieces into one MP4: MPEG-TS pieces or MP4 fragments, from one playlist or two (a separate
-//! sound track), in order. Nothing is re-encoded.
+//! Joins a stream's pieces into one MP4: MPEG-TS pieces, MP4 fragments or packed audio (bare AAC or MP3 frames
+//! after an ID3 tag, HLS §3.4), from one playlist or two (a separate sound track), in order. Nothing is re-encoded.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -13,6 +13,8 @@ enum Source {
     /// Not known until the first piece.
     Unknown,
     Ts { demuxer: Demuxer, streams: BTreeMap<u16, Stream> },
+    /// Packed audio: each piece one run of sound frames, its time in the ID3 tag in front.
+    Packed { streams: BTreeMap<u16, Stream> },
     Fragments { tracks: Vec<FragmentedTrack> },
 }
 
@@ -84,10 +86,13 @@ impl Joiner {
     /// The next piece of `source`, in playlist order.
     pub fn piece(&mut self, source: usize, data: &[u8], discontinuity: bool) -> Result<(), JoinError> {
         if matches!(self.sources[source], Source::Unknown) {
-            if data.first() != Some(&0x47) {
-                return Err(JoinError::Damaged("A piece is neither MPEG-TS nor MP4 with an init section".into()));
-            }
-            self.sources[source] = Source::Ts { demuxer: Demuxer::default(), streams: BTreeMap::new() };
+            self.sources[source] = if data.first() == Some(&0x47) {
+                Source::Ts { demuxer: Demuxer::default(), streams: BTreeMap::new() }
+            } else if packed(data).is_some() {
+                Source::Packed { streams: BTreeMap::new() }
+            } else {
+                return Err(JoinError::Damaged("A piece is neither MPEG-TS, MP4 with an init section, nor AAC or MP3 sound".into()));
+            };
         }
         let spool = &mut self.spool;
         match &mut self.sources[source] {
@@ -100,6 +105,19 @@ impl Joiner {
                     place_after(&mut views, &before);
                 }
             }
+            Source::Packed { streams } => {
+                let Some((stream_type, pts, body)) = packed(data) else {
+                    return Err(JoinError::Damaged("A piece of the sound is neither AAC nor MP3".into()));
+                };
+                if discontinuity {
+                    streams.values_mut().for_each(Stream::restart_clock);
+                }
+                let before: BTreeMap<u16, usize> = streams.iter().map(|(&pid, s)| (pid, s.samples.len())).collect();
+                let types = std::collections::HashMap::from([(PACKED, stream_type)]);
+                let pes = Pes { pid: PACKED, stream_type, pts, dts: None, data: body.to_vec(), random_access: true };
+                push(streams, &types, pes, spool)?;
+                follow_on(streams, &before);
+            }
             Source::Ts { demuxer, streams } => {
                 let mut packets = Vec::new();
                 demuxer.feed(data, &mut packets)?;
@@ -111,31 +129,7 @@ impl Joiner {
                 for pes in packets {
                     push(streams, &demuxer.streams, pes, spool)?;
                 }
-                // Timestamps that went back or jumped ahead: the piece follows the previous one.
-                let mut shift: Option<f64> = None;
-                let (mut prev_end, mut new_start) = (f64::NEG_INFINITY, f64::INFINITY);
-                for (pid, s) in streams.iter() {
-                    let from = before.get(pid).copied().unwrap_or(0);
-                    let ts = s.timescale() as f64;
-                    if let Some(last) = from.checked_sub(1).map(|i| s.samples[i]) {
-                        prev_end = prev_end.max((last.dts + last.duration.max(1) as i64) as f64 / ts);
-                    }
-                    if let Some(first) = s.samples.get(from) {
-                        new_start = new_start.min(first.dts as f64 / ts);
-                    }
-                }
-                if prev_end.is_finite() && new_start.is_finite() && (new_start < prev_end - 0.5 || new_start > prev_end + JUMP_SECONDS) {
-                    shift = Some(prev_end - new_start);
-                }
-                if let Some(shift) = shift {
-                    for (pid, s) in streams.iter_mut() {
-                        let from = before.get(pid).copied().unwrap_or(0);
-                        let by = (shift * s.timescale() as f64).round() as i64;
-                        for sample in &mut s.samples[from..] {
-                            sample.dts += by;
-                        }
-                    }
-                }
+                follow_on(streams, &before);
             }
         }
         Ok(())
@@ -153,7 +147,7 @@ impl Joiner {
                 Source::Fragments { tracks: t } => {
                     tracks.extend(t.into_iter().map(|t| (t.track, false)).filter(|(t, _)| !t.samples.is_empty() && wanted(t.kind)))
                 }
-                Source::Ts { streams, .. } => {
+                Source::Ts { streams, .. } | Source::Packed { streams } => {
                     for s in streams.into_values().filter(|s| wanted(s.kind())) {
                         let mp3 = s.codec == Codec::Mpeg;
                         tracks.push((s.track()?, mp3));
@@ -215,6 +209,65 @@ impl Joiner {
         mp4::write(path, &tracks, &mut self.spool)?;
         Ok(Written::Mp4)
     }
+}
+
+/// Timestamps that went back or jumped ahead: the piece just read (each stream's samples from `before` on) follows
+/// the previous one.
+fn follow_on(streams: &mut BTreeMap<u16, Stream>, before: &BTreeMap<u16, usize>) {
+    let mut shift: Option<f64> = None;
+    let (mut prev_end, mut new_start) = (f64::NEG_INFINITY, f64::INFINITY);
+    for (pid, s) in streams.iter() {
+        let from = before.get(pid).copied().unwrap_or(0);
+        let ts = s.timescale() as f64;
+        if let Some(last) = from.checked_sub(1).map(|i| s.samples[i]) {
+            prev_end = prev_end.max((last.dts + last.duration.max(1) as i64) as f64 / ts);
+        }
+        if let Some(first) = s.samples.get(from) {
+            new_start = new_start.min(first.dts as f64 / ts);
+        }
+    }
+    if prev_end.is_finite() && new_start.is_finite() && (new_start < prev_end - 0.5 || new_start > prev_end + JUMP_SECONDS) {
+        shift = Some(prev_end - new_start);
+    }
+    if let Some(shift) = shift {
+        for (pid, s) in streams.iter_mut() {
+            let from = before.get(pid).copied().unwrap_or(0);
+            let by = (shift * s.timescale() as f64).round() as i64;
+            for sample in &mut s.samples[from..] {
+                sample.dts += by;
+            }
+        }
+    }
+}
+
+/// The stream number packed audio is kept under (it has no MPEG-TS PID of its own).
+const PACKED: u16 = 0x1fff;
+
+/// A packed-audio piece: its stream type (0x0F AAC, 0x03 MPEG audio), the time of its first frame from its ID3 tag
+/// (Apple's `com.apple.streaming.transportStreamTimestamp`, 90 kHz), and its frames.
+fn packed(data: &[u8]) -> Option<(u8, Option<u64>, &[u8])> {
+    const OWNER: &[u8] = b"com.apple.streaming.transportStreamTimestamp\0";
+    let (mut rest, mut pts) = (data, None);
+    // One ID3 tag or more in front: a header of 10 bytes, its size in 7-bit bytes, and a footer when flagged.
+    while rest.len() >= 10 && &rest[..3] == b"ID3" {
+        let size = rest[6..10].iter().fold(0usize, |n, &b| n << 7 | (b & 0x7f) as usize);
+        let end = (10 + size + if rest[5] & 0x10 != 0 { 10 } else { 0 }).min(rest.len());
+        let tag = &rest[10..end];
+        if let Some(at) = tag.windows(OWNER.len()).position(|w| w == OWNER)
+            && let Some(t) = tag.get(at + OWNER.len()..at + OWNER.len() + 8)
+        {
+            pts = Some(u64::from_be_bytes(t.try_into().ok()?) & ((1 << 33) - 1));
+        }
+        rest = &rest[end..];
+    }
+    let stream_type = match rest {
+        [0xff, b, ..] if b & 0xf6 == 0xf0 => 0x0f,
+        [0xff, b, ..] if b & 0xe0 == 0xe0 => 0x03,
+        // Dolby sound: refused as in MPEG-TS pieces.
+        [0x0b, 0x77, ..] => 0x81,
+        _ => return None,
+    };
+    Some((stream_type, pts, rest))
 }
 
 fn push(streams: &mut BTreeMap<u16, Stream>, types: &std::collections::HashMap<u16, u8>, pes: Pes, spool: &mut Spool) -> Result<(), JoinError> {

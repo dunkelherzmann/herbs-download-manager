@@ -194,6 +194,16 @@ fn read_traf(traf: &[u8], moof_start: usize, data: &[u8], tracks: &mut [Fragment
         Some(tfdt) => be32(tfdt, 4).ok_or_else(bad)? as i64,
         None => t.track.samples.last().map(|s| s.dts + s.duration as i64).unwrap_or(0),
     };
+    // The file's times come from the samples' durations, so the sample before this fragment lasts until the
+    // fragment's own start: a stream that rounds its durations (33 ms for 33.37) and sets each fragment's start
+    // exactly would otherwise drift a little with every fragment (a YouTube video was 45 ms off after ten minutes).
+    // A far bigger gap (a discontinuity) is left to `place_after`.
+    if let Some(prev) = t.track.samples.last_mut() {
+        let gap = dts - prev.dts;
+        if gap > 0 && gap <= 2 * prev.duration.max(1) as i64 {
+            prev.duration = gap as u32;
+        }
+    }
     for (k, trun) in boxes(traf) {
         if &k != b"trun" {
             continue;
@@ -435,4 +445,57 @@ fn trak(b: &mut Boxes, t: &Track, id: u32, offsets: &[u64], origin: f64, duratio
     }
     b.end();
     b.end().end().end().end();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A box: its size, its type and its contents.
+    fn mp4_box(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut b = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+        b.extend_from_slice(kind);
+        b.extend_from_slice(body);
+        b
+    }
+
+    /// A fragment of `count` samples of 10 bytes, each said to last `duration`, starting at `start` (tfdt).
+    fn fragment(id: u32, start: u64, count: u32, duration: u32) -> Vec<u8> {
+        // tfhd: default-base-is-moof, a default duration and size.
+        let tfhd = [&0x0002_0018u32.to_be_bytes()[..], &id.to_be_bytes(), &duration.to_be_bytes(), &10u32.to_be_bytes()].concat();
+        let tfdt = [&[1, 0, 0, 0][..], &start.to_be_bytes()].concat();
+        let trun_len = 8 + 12;
+        let traf_len = 8 + (8 + tfhd.len()) + (8 + tfdt.len()) + trun_len;
+        let moof_len = 8 + 16 + traf_len;
+        // trun: a data offset, from the moof's start to the mdat's contents.
+        let trun = [&0x0000_0001u32.to_be_bytes()[..], &count.to_be_bytes(), &((moof_len + 8) as u32).to_be_bytes()].concat();
+        let traf = [mp4_box(b"tfhd", &tfhd), mp4_box(b"tfdt", &tfdt), mp4_box(b"trun", &trun)].concat();
+        let moof = mp4_box(b"moof", &[mp4_box(b"mfhd", &[0; 8]), mp4_box(b"traf", &traf)].concat());
+        assert_eq!(moof.len(), moof_len);
+        [moof, mp4_box(b"mdat", &vec![0; 10 * count as usize])].concat()
+    }
+
+    #[test]
+    fn each_fragment_starts_where_it_says() {
+        let init = include_bytes!("../../tests/media/h264-fmp4/init.mp4");
+        let mut tracks = read_init(init).unwrap();
+        let id = tracks[0].id;
+        let dir = std::env::temp_dir().join(format!("hd-mp4-fragments-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut spool = Spool::create(&dir.join("spool")).unwrap();
+        // Three samples said to last 33 each, but the next fragment starts at 100 (33.33 rounded down, as YouTube's).
+        read_fragments(&fragment(id, 0, 3, 33), &mut tracks, &mut spool).unwrap();
+        read_fragments(&fragment(id, 100, 3, 33), &mut tracks, &mut spool).unwrap();
+        // A discontinuity far ahead is left alone (placed later, by the joiner).
+        read_fragments(&fragment(id, 10_000, 1, 33), &mut tracks, &mut spool).unwrap();
+        let samples = &tracks[0].track.samples;
+        let durations: Vec<u32> = samples.iter().map(|s| s.duration).collect();
+        assert_eq!(durations, [33, 33, 34, 33, 33, 33, 33], "the last before a fragment lasts until it starts");
+        let mut at = 0;
+        for s in samples.iter().take(6) {
+            assert_eq!(s.dts, at, "the durations add up to the fragments' own starts");
+            at += s.duration as i64;
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

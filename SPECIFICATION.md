@@ -637,13 +637,15 @@ pieces and joins them into one `.mp4` file with its own code in the shared core,
 picture and sound sample keeps the bytes the site sent, so the file has the site's quality.
 
 - **HLS:** a master playlist's quality is chosen by S13, or for that stream in the extension's list or `hdm add
-  --quality`: the best one (the most pixels, then the most bits a second) whose picture is at most that many lines
+  --quality`: the best one (the most pixels, then H.264 or H.265 over VP9 or AV1, then the most bits a second; every
+  player opens H.264 and H.265, while QuickTime doesn't play VP9 in an MP4) whose picture is at most that many lines
   (its shorter side, so a tall phone video's 720p is 720 wide), or the smallest when every one is bigger; Highest
   takes the best. HDR versions (`VIDEO-RANGE` PQ or HLG) are left out when a standard version exists, since most
   screens show them washed out; a stream that gives no picture sizes takes its best. Its separate sound track, when
   it has one, is the first language of S14 (or the one chosen for it) that its group has, `en` matching `en-US`;
-  else the group's default, the stream's own sound. Pieces may be MPEG-TS (`.ts`) or MP4 fragments
-  with an init section; byte ranges, AES-128 encryption and discontinuities are handled. Protected streams
+  else the group's default, the stream's own sound. Pieces may be MPEG-TS (`.ts`), MP4 fragments
+  with an init section, or packed audio (bare AAC or MP3 frames behind an ID3 tag giving their time, as YouTube's
+  sound comes); byte ranges, AES-128 encryption and discontinuities are handled. Protected streams
   (SAMPLE-AES, FairPlay, Widevine and other DRM) are refused with "This stream is protected (DRM): it can't be
   saved", never broken.
 - **Subtitles (S15):** a stream keeps the subtitles S15 asks for (or `hdm add --subtitles`, MCP `subtitles`) as
@@ -674,8 +676,12 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   recording and saves what was recorded.
 - **Joining:** MPEG-TS pieces with H.264 or H.265 video and AAC or MP3 sound become an MP4 with the same samples;
   MP4 fragments are copied sample by sample, keeping their init section's edit lists (the sound's start against the
-  picture). The index (`moov`) goes first, so the file plays before it's read to the end. A piece whose
-  timestamps start again is placed right after the previous one. A codec MP4 isn't given here (AC-3 sound) leaves
+  picture), and each fragment starts at its own stated time (a sample before it lasts until then, so durations
+  rounded by the stream don't add up to a drift). Packed audio is placed by its ID3 time, on the same clock as the
+  picture. The index (`moov`) goes first, so the file plays before it's read to the end. A piece whose
+  timestamps start again is placed right after the previous one. Kept pieces are noted with the version of each
+  track they belong to (its quality's codecs, size and rate; its sound's name), and a track's pieces are set aside
+  when a resumed stream's chosen version differs, never joined with another's. A codec MP4 isn't given here (AC-3 sound) leaves
   the pieces joined as one `.ts` file instead.
 - **Held to ffmpeg's standard:** the core's tests join streams of each kind and compare the result with ffmpeg's own
   join (`-c copy`): every decoded picture and sound block the same, at the same times (within a millisecond), sound

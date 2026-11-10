@@ -250,6 +250,18 @@ fn sound_only_takes_the_separate_sound_track() {
     sound_only_same_as_ffmpeg("split", "master.m3u8", Written::Mp4);
 }
 
+/// Packed audio (bare AAC frames behind an ID3 timestamp, as YouTube's sound came) joins the picture where it
+/// belongs: "A piece is neither MPEG-TS nor MP4 with an init section" before (bugs.md, 2026-11-10).
+#[test]
+fn packed_audio_joins_the_video() {
+    same_as_ffmpeg("packed", "master.m3u8");
+}
+
+#[test]
+fn sound_only_takes_packed_audio() {
+    sound_only_same_as_ffmpeg("packed", "master.m3u8", Written::Mp4);
+}
+
 #[test]
 fn sound_only_of_a_stream_with_no_sound_says_so() {
     let dir = scratch("no-sound");

@@ -19,6 +19,22 @@ ffmpeg $Q $SRC $V264 -c:a libmp3lame -b:a 32k $HLS -hls_segment_filename mp3-ts/
 ffmpeg $Q $SRC -map 0:v -map 1:a $V264 $AAC $HLS -master_pl_name master.m3u8 \
     -var_stream_map "v:0,agroup:aud a:0,agroup:aud,default:yes,language:en" \
     -hls_segment_filename "split/%v_s%d.ts" "split/%v.m3u8"
+# Packed audio (HLS §3.4, as YouTube sends its sound): split's sound pieces as bare AAC (ADTS) frames, each behind an
+# ID3 tag whose PRIV frame com.apple.streaming.transportStreamTimestamp holds its first frame's 90 kHz time; the
+# picture is split's own.
+rm -rf packed && mkdir packed
+cp split/0.m3u8 split/0_s*.ts packed/
+sed 's/1\.m3u8/a.m3u8/' split/master.m3u8 > packed/master.m3u8
+sed 's/1_s\([0-9]\)\.ts/a\1.aac/' split/1.m3u8 > packed/a.m3u8
+for ts in split/1_s*.ts; do
+    n="${ts##*_s}"; n="${n%.ts}"
+    pts="$(ffprobe -v error -select_streams a -show_entries packet=pts -of csv=p=0 "$ts" | head -1 | cut -d, -f1)"
+    python3 -c 'import struct,sys
+o=b"com.apple.streaming.transportStreamTimestamp\0"+struct.pack(">Q",int(sys.argv[1]))
+f=b"PRIV"+bytes([0,0,0,len(o)])+b"\0\0"+o
+sys.stdout.buffer.write(b"ID3\4\0\0"+bytes([0,0,0,len(f)])+f)' "$pts" > "packed/a$n.aac"
+    ffmpeg $Q -i "$ts" -c:a copy -f adts - >> "packed/a$n.aac"
+done
 printf '0123456789abcdef' > aes/key.bin
 printf 'key.bin\n%s/aes/key.bin\n00000000000000000000000000000001\n' "$PWD" > aes.keyinfo
 ffmpeg $Q $SRC $V264 $AAC $HLS -hls_key_info_file aes.keyinfo -hls_segment_filename aes/s%d.ts aes/index.m3u8

@@ -126,6 +126,28 @@ fn refusal_hint(reason: &str, urls: &[Url]) -> String {
 }
 
 /// Where a stream's pieces wait while it downloads.
+/// Pieces kept from another version of a track (a quality chosen differently since the stream was paused) are
+/// removed, so they're never joined with this one's; `versions` (one line a track) is noted in `tracks` for next time.
+fn set_aside_other_versions(parts: &Path, versions: &[String]) {
+    let note = parts.join("tracks");
+    let before = std::fs::read_to_string(&note).unwrap_or_default();
+    let before: Vec<&str> = before.lines().collect();
+    let changed: Vec<usize> = (0..versions.len()).filter(|&i| before.get(i).is_some_and(|b| *b != versions[i])).collect();
+    // Kept pieces with no note (from before notes were kept) are trusted as they are.
+    if !changed.is_empty()
+        && let Ok(entries) = std::fs::read_dir(parts)
+    {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let track = name.split('-').next().and_then(|t| t.parse::<usize>().ok());
+            if track.is_some_and(|t| changed.contains(&t)) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let _ = std::fs::write(&note, versions.join("\n"));
+}
+
 pub fn parts_folder(dest: &Path) -> PathBuf {
     let mut name = dest.file_name().unwrap_or_default().to_os_string();
     name.push(".hdparts");
@@ -361,6 +383,9 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     // sound, whose pieces are known at once.
     let first = text(client, &url, &req.vault, req.dress.as_ref()).await?;
     let mut playlists = Vec::new();
+    // What each track is (its quality's codecs, size and rate; its sound's group and name), to tell kept pieces of
+    // another version from this one's.
+    let mut versions: Vec<String> = Vec::new();
     let sound_only = req.choice.sound_only;
     // S15's subtitles: (language, where they are).
     let mut subtitle_sources: Vec<(String, SubtitleSource)> = Vec::new();
@@ -381,16 +406,30 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
                         subtitle_sources.push((r.language.clone().unwrap_or_default(), SubtitleSource::Hls(list.clone())));
                     }
                 }
-                let sound = p.audio_in(&video, &req.choice.sound).and_then(|r| r.url.clone());
+                let rendition = p.audio_in(&video, &req.choice.sound).filter(|r| r.url.is_some());
+                let sound = rendition.and_then(|r| r.url.clone());
+                let of_variant = |v: &hls::Variant| format!("variant {:?} {:?} {}", v.codecs, v.resolution, v.bandwidth);
+                let of_sound = rendition.map(|r| format!("sound {} {} {:?}", r.group, r.name, r.language)).unwrap_or_default();
                 match (sound_only, sound) {
                     // Sound only, as its own playlist: the picture's isn't fetched at all.
-                    (true, Some(sound)) => playlists.push(Track::Hls(sound)),
+                    (true, Some(sound)) => {
+                        playlists.push(Track::Hls(sound));
+                        versions.push(of_sound);
+                    }
                     // Sound only, inside the variants' pieces: a sound-only variant when the stream lists one,
                     // else the chosen quality's pieces, whose picture is left out when they're joined.
-                    (true, None) => playlists.push(Track::Hls(p.sound_variant().unwrap_or(&video).url.clone())),
+                    (true, None) => {
+                        let v = p.sound_variant().unwrap_or(&video);
+                        playlists.push(Track::Hls(v.url.clone()));
+                        versions.push(of_variant(v));
+                    }
                     (false, sound) => {
                         playlists.push(Track::Hls(video.url.clone()));
-                        playlists.extend(sound.map(Track::Hls));
+                        versions.push(of_variant(&video));
+                        if let Some(sound) = sound {
+                            playlists.push(Track::Hls(sound));
+                            versions.push(of_sound);
+                        }
                     }
                 }
             }
@@ -400,6 +439,15 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
     let dest = req.folder.join(&req.name);
     let parts = parts_folder(&dest);
     std::fs::create_dir_all(&parts).map_err(|e| format!("Can't make {}: {e}", parts.display()))?;
+    // A DASH track, or a lone playlist, is known by where its pieces come from (without the query, which changes).
+    for track in &playlists[versions.len()..] {
+        let url = match track {
+            Track::Hls(u) => Some(u),
+            Track::Listed(segments) => segments.first().map(|s| &s.url),
+        };
+        versions.push(url.map(|u| format!("from {}{}", u.host_str().unwrap_or(""), u.path())).unwrap_or_default());
+    }
+    set_aside_other_versions(&parts, &versions);
 
     // Every piece seen, per source, in order; a live playlist's window moves on, so new ones are added each round.
     let mut sources: Vec<Vec<Segment>> = vec![Vec::new(); playlists.len()];
@@ -492,7 +540,7 @@ fn count_parts(parts: &Path) -> (usize, u64) {
     std::fs::read_dir(parts)
         .map(|d| {
             d.flatten()
-                .filter(|e| !e.file_name().to_string_lossy().ends_with(".tmp") && e.file_name() != "spool")
+                .filter(|e| !e.file_name().to_string_lossy().ends_with(".tmp") && e.file_name() != "spool" && e.file_name() != "tracks")
                 .filter_map(|e| e.metadata().ok())
                 .fold((0, 0), |(n, b), m| (n + 1, b + m.len()))
         })
@@ -742,5 +790,30 @@ mod tests {
         assert_eq!(stream_name("https://www.example.com/hls/720p/index.m3u8"), "hls.mp4");
         assert_eq!(stream_name("https://www.example.com/index.m3u8"), "example.com.mp4");
         assert_eq!(parts_folder(Path::new("/d/Trip.mp4")), Path::new("/d/Trip.mp4.hdparts"));
+    }
+
+    #[test]
+    fn pieces_of_another_quality_are_set_aside() {
+        let parts = std::env::temp_dir().join(format!("hd-versions-{}.hdparts", std::process::id()));
+        std::fs::create_dir_all(&parts).unwrap();
+        for f in ["0-init-0", "0-000000000000", "1-000000000000", "spool"] {
+            std::fs::write(parts.join(f), b"x").unwrap();
+        }
+        let left = || {
+            let mut v: Vec<String> = std::fs::read_dir(&parts).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+            v.sort();
+            v
+        };
+        // Pieces kept before notes were: trusted.
+        set_aside_other_versions(&parts, &["variant vp9".into(), "sound en".into()]);
+        assert_eq!(left(), ["0-000000000000", "0-init-0", "1-000000000000", "spool", "tracks"]);
+        // The same versions: kept.
+        set_aside_other_versions(&parts, &["variant vp9".into(), "sound en".into()]);
+        assert_eq!(left().len(), 5);
+        // Another quality: its track's pieces go, the sound's stay.
+        set_aside_other_versions(&parts, &["variant h264".into(), "sound en".into()]);
+        assert_eq!(left(), ["1-000000000000", "spool", "tracks"]);
+        assert_eq!(std::fs::read_to_string(parts.join("tracks")).unwrap(), "variant h264\nsound en");
+        std::fs::remove_dir_all(&parts).ok();
     }
 }

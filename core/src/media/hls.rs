@@ -225,8 +225,16 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
     Ok(Playlist::Media { segments, ended })
 }
 
+impl Variant {
+    /// Its picture is H.264 or H.265 (or not said): not VP8, VP9 or AV1, which some players can't open in an MP4.
+    pub fn plays_everywhere(&self) -> bool {
+        let codecs = self.codecs.as_deref().unwrap_or("").to_ascii_lowercase();
+        !["vp08", "vp09", "vp8", "vp9", "av01"].iter().any(|c| codecs.contains(c))
+    }
+}
+
 impl Playlist {
-    /// The best quality: the most pixels, then the most bits a second.
+    /// The best quality: the most pixels, then H.264 or H.265 over VP9 or AV1, then the most bits a second.
     pub fn best_variant(&self) -> Option<&Variant> {
         self.pick_variant(None)
     }
@@ -234,11 +242,13 @@ impl Playlist {
     /// The quality to download (S13): the best one whose picture is at most `max` lines (its shorter side, so
     /// "1080p" means the same for a tall phone video), or the smallest when every one is bigger; the best with no
     /// `max`. HDR versions are left out when a standard one exists, and a stream that gives no sizes takes its best.
+    /// Of two versions the same size, the one in H.264 or H.265 wins over VP9 or AV1 whatever their bit rates: every
+    /// player opens it (QuickTime doesn't play VP9 in MP4, and YouTube's 1080p came as VP9 for its higher rate).
     pub fn pick_variant(&self, max: Option<u32>) -> Option<&Variant> {
         let Playlist::Master { variants, .. } = self else { return None };
         let standard: Vec<&Variant> = variants.iter().filter(|v| !v.hdr).collect();
         let pool = if standard.is_empty() { variants.iter().collect() } else { standard };
-        let rank = |v: &&Variant| (v.resolution.map(|(w, h)| w as u64 * h as u64).unwrap_or(0), v.bandwidth);
+        let rank = |v: &&Variant| (v.resolution.map(|(w, h)| w as u64 * h as u64).unwrap_or(0), v.plays_everywhere(), v.bandwidth);
         let lines = |v: &Variant| v.resolution.map(|(w, h)| w.min(h));
         match max {
             Some(max) if pool.iter().any(|v| lines(v).is_some()) => pool
@@ -396,6 +406,17 @@ mod tests {
         assert_eq!(size(Some(720)), Some((720, 3_000_000)), "of two 720p versions, the one with more bits a second");
         assert_eq!(size(Some(1000)), Some((720, 3_000_000)), "at most the lines asked for");
         assert_eq!(size(Some(240)), Some((360, 800_000)), "nothing that small: the smallest");
+
+        // The same size in VP9 at a higher rate and in H.264: H.264, which every player opens (YouTube's 1080p).
+        let youtube = format!(
+            "#EXTM3U\n{}{}{}",
+            variant("BANDWIDTH=5710503,RESOLUTION=1920x1080,CODECS=\"vp09.00.40.08,mp4a.40.2\""),
+            variant("BANDWIDTH=4342644,RESOLUTION=1920x1080,CODECS=\"avc1.640028,mp4a.40.2\""),
+            variant("BANDWIDTH=1494335,RESOLUTION=1280x720,CODECS=\"vp09.00.31.08,mp4a.40.2\""),
+        );
+        let y = parse(&youtube, &base()).unwrap();
+        assert_eq!(y.pick_variant(None).unwrap().bandwidth, 4_342_644, "H.264 over VP9 at the same size");
+        assert_eq!(y.pick_variant(Some(720)).unwrap().bandwidth, 1_494_335, "VP9 when it's the only one that size");
 
         let hdr_only = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ\nuhd.m3u8\n";
         assert!(parse(hdr_only, &base()).unwrap().pick_variant(Some(1080)).is_some(), "only HDR: it is taken");

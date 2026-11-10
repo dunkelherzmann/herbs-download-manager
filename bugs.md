@@ -40,4 +40,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-
+- [x] **A YouTube video failed with "The pieces couldn't be joined: A piece is neither MPEG-TS nor MP4 with an init section".** *Reported 2026-11-10* (all 267 MB were downloaded). Its sound came as packed audio: bare AAC frames behind an ID3 tag carrying their time (HLS §3.4), which the joiner didn't read. Fixed: packed AAC and MP3 are read and placed by that time. Joining Herbert's own pieces also showed two more problems, both fixed: the picture drifted from the sound (45 ms by the end), because fragments' stated starts were ignored when their samples' rounded durations (33 ms for 33.37) didn't add up to them; and "Highest" took 1080p in VP9, which QuickTime can't play in an MP4, over the same size in H.264 (now preferred at equal size, in the app and in the extension's list, 1.13). Kept pieces now note which version each track is, so a quality chosen differently on resume never mixes with old pieces. Tests: packed audio against ffmpeg's join, fragment starts, H.264 over VP9, the version note.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

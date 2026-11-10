@@ -220,6 +220,8 @@ async function variantsOf(url) {
           lines: size ? Math.min(Number(size[1]), Number(size[2])) : 0,
           bandwidth: Number(attrOf(l, "BANDWIDTH")) || 0,
           hdr: /^(PQ|HLG)$/.test(attrOf(l, "VIDEO-RANGE") || ""),
+          // H.264 or H.265 (every player opens them) is preferred to VP9 or AV1 at the same size, as the app does.
+          plays: !/vp0?[89]|av01/i.test(attrOf(l, "CODECS") || ""),
         });
       }
       const uri = /^#EXT-X-MEDIA:.*URI="([^"]+)"/.exec(l);
@@ -229,7 +231,7 @@ async function variantsOf(url) {
     });
     const standard = variants.filter((v) => !v.hdr);
     const qualities = [];
-    for (const v of (standard.length ? standard : variants).filter((v) => v.lines).sort((a, b) => b.lines - a.lines || b.bandwidth - a.bandwidth)) {
+    for (const v of (standard.length ? standard : variants).filter((v) => v.lines).sort((a, b) => b.lines - a.lines || b.plays - a.plays || b.bandwidth - a.bandwidth)) {
       if (!qualities.some((q) => q.lines === v.lines)) qualities.push({ lines: v.lines, bandwidth: v.bandwidth });
     }
     // Live: a media playlist with no end (a master's is its first quality's), read with a 5-second limit.
