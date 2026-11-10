@@ -72,5 +72,8 @@ still thought was running).
 - Don't bound the bytes a server sent tightly when checking that nothing is fetched twice: data already in flight to
   a connection that was cut short counts as sent. Compare against a full refetch instead.
 - Anything measured per tick (speeds, slow connections) must count bytes received, not written (#25).
+- A test that moves the scheduler's clock (`advance_clock`) must move it to exact times worked out from
+  `scheduler_now()`, never by fixed amounts: real time keeps running under the offset, so a test that starts late in a
+  minute overshoots the next event (the scheduler test failed on Linux, #59).
 - A test that fails now and then: run it 30–60 times on the machine where it fails to get the real error first
   (Windows "access denied" on a name being deleted, #30).
