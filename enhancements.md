@@ -224,3 +224,24 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Study JDownloader 2 with Craft Anything and REA,** and compare it with Herb's Download Manager: where it does worse, the same and better, and what to adopt. *Requested 2026-11-10.* The jar is only JDownloader's launcher and updater, so the app itself was read in its public source. Recorded in `SPECIFICATION.md` §14; the items below are the ones picked.
+- [ ] **Check each link in Add Links, and read web pages for files:** every row shows whether its link works (Online, Offline, Needs a sign-in) with its real name and size before anything is added, offline links come unchecked, and a web page's address is replaced by the files it links to. *Requested 2026-11-10, from studying JDownloader 2's Link Grabber.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Keep the computer awake while downloading:** the computer doesn't go to sleep while a download runs, and sleeps as usual once nothing is downloading (the display may still turn off). *Requested 2026-11-10, from studying JDownloader 2.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Handle long and invalid file names, and keep some disk space free:** characters a file system refuses are replaced, a name or path too long for it is shortened (the extension kept), and a download pauses with a clear message before it would leave the disk nearly full. *Requested 2026-11-10, from studying JDownloader 2.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

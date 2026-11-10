@@ -550,7 +550,7 @@ downloads to the app. The browser keeps a download the app doesn't take.
 
 ## 14. Reference apps
 
-The design above comes from studying five download managers on 2026-11-08. Facts are labelled by their source:
+The design above comes from studying five download managers on 2026-11-08, and JDownloader 2 on 2026-11-10. Facts are labelled by their source:
 **official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (the
 installed app's resources, read without running it unless the section says it was run).
 
@@ -654,6 +654,27 @@ internetdownloadmanager.com (Features).
 - Resume after dropped connections, shutdowns or power loss; scheduler and several queues with shutdown when done;
   categories; download quotas; customizable toolbar and columns; drag and drop; Basic, Negotiate, NTLM and Kerberos
   authentication; antivirus scan on completion.
+
+### JDownloader 2 (Windows, macOS, Linux)
+
+Studied 2026-11-10. Sources: shipped app (`JDownloader.jar`, read without running it); source code
+(svn.jdownloader.org, GPL-3.0; behaviour studied, nothing copied).
+
+- The jar is only the launcher and updater: it fetches the engine, site plugins and main window on the first run,
+  checks for updates on a timer (asking before downloading and installing, or installing on quit), reads the
+  system's proxy settings, and hands a second launch's links to the running copy.
+- Mirrors are fallbacks only: of links with the same name and size, one downloads and the others wait, then end as
+  "Finished mirror". One connection per file by default, at most 20; 3 downloads at once.
+- Link Grabber: every link is checked online or offline before it's added, with its real name and size; a web
+  page's address is read for the files it links to (up to 10 MB a page); quick filters by site and file type.
+- Clipboard watching (on by default, skipping what was copied before launch); system and manual proxies; an
+  Anti-Standby extension that keeps the computer awake while downloading.
+- File names: characters the file system refuses are replaced by a rule list; a name too long is shortened,
+  skipped or asked about; 128 MB is kept free on the disk.
+- Also: packages, priorities with Force Download and a stop mark, a per-site limit, rules for folders and names
+  (Packagizer), link filters, archive extraction with passwords, folder watch, event scripts, a scheduler, quit or
+  shut down when done, backups, site plugins with premium accounts and captcha solving, router reconnects and
+  remote control through its own cloud.
 
 ## 15. Streamed video and sound
 
