@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" type="static" mediaPresentationDuration="PT6S" minBufferTime="PT2S">
+<Period id="0" duration="PT6S">
+<AdaptationSet id="0" contentType="video" subsegmentAlignment="true">
+<Representation id="low" bandwidth="40000" codecs="avc1.64000b" mimeType="video/mp4" width="80" height="45"><BaseURL>missing-low.mp4</BaseURL><SegmentBase indexRange="0-1"><Initialization range="0-1"/></SegmentBase></Representation>
+<Representation id="v" bandwidth="60000" codecs="avc1.64000b" mimeType="video/mp4" width="160" height="90"><BaseURL>video.mp4?_nc_cat=1&amp;oh=x</BaseURL><SegmentBase indexRange="797-908" timescale="12800"><Initialization range="0-796"/></SegmentBase></Representation>
+</AdaptationSet>
+<AdaptationSet id="1" contentType="audio">
+<Representation id="a" bandwidth="32000" codecs="mp4a.40.2" mimeType="audio/mp4" audioSamplingRate="44100"><BaseURL>audio.mp4?_nc_cat=2&amp;oh=y</BaseURL><SegmentBase indexRange="728-803" timescale="44100"><Initialization range="0-727"/></SegmentBase></Representation>
+</AdaptationSet>
+</Period>
+</MPD>

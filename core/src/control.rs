@@ -59,6 +59,9 @@ pub struct Request {
     pub stream: bool,
     /// add, one link: the file's name (the extension names a stream after its page).
     pub name: Option<String>,
+    /// add, from the browser extension: a DASH manifest a page carries in its data (Facebook's reels) instead of a
+    /// link. Saved in the app's data folder and downloaded from there; `urls` may then be empty.
+    pub manifest: Option<String>,
 }
 
 /// One download as `list` reports it.
@@ -202,6 +205,20 @@ pub fn serve(manager: &Manager, downloads: PathBuf) -> std::io::Result<()> {
 }
 
 /// Written so only the user can read it (the token lets anyone who has it control the app).
+/// Keeps a DASH manifest from a page as `manifests/<sha256>.mpd` in the data folder; returns its `file:` link.
+fn save_manifest(manager: &Manager, text: &str) -> Result<String, String> {
+    if !text.contains("<MPD") || text.len() > 4 * 1024 * 1024 {
+        return Err("That isn't a DASH manifest".into());
+    }
+    let digest = ring::digest::digest(&ring::digest::SHA256, text.as_bytes());
+    let name: String = digest.as_ref()[..12].iter().map(|b| format!("{b:02x}")).collect();
+    let dir = manager.data_dir().join("manifests");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{name}.mpd"));
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    reqwest::Url::from_file_path(&path).map(|u| u.to_string()).map_err(|_| "The manifest couldn't be kept".into())
+}
+
 /// A name from a page's title made fit for a file: no folder separators or characters Windows refuses, at most 120
 /// characters.
 fn safe_name(name: &str) -> String {
@@ -325,10 +342,23 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
             Answer { ok: true, downloads: Some(list), ..Default::default() }
         }
         "add" => {
+            // A manifest from a page: kept in the data folder, and its file is the download's link.
+            let mut r = r.clone();
+            if let Some(text) = r.manifest.take() {
+                match save_manifest(manager, &text) {
+                    Ok(link) => {
+                        r.urls = vec![link];
+                        r.stream = true;
+                        r.check = false;
+                    }
+                    Err(e) => return Answer::error(e),
+                }
+            }
             if r.urls.is_empty() {
                 return Answer::error("Give at least one link to download.");
             }
-            if let Some(bad) = r.urls.iter().find(|u| !reqwest::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))) {
+            let saved = |u: &reqwest::Url| u.scheme() == "file" && u.path().contains("/manifests/");
+            if let Some(bad) = r.urls.iter().find(|u| !reqwest::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https") || saved(&u))) {
                 return Answer::error(format!("“{bad}” isn't an http or https link."));
             }
             let folder = match &r.folder {

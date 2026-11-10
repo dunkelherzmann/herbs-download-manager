@@ -629,7 +629,11 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   the page's title), its kind ("Video stream", "Video", "Sound"), size and site; a click adds it to the app's
   queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
-  media extension. DASH streams are listed but not added yet ("not supported yet").
+  media extension. A file a player fetches in pieces by byte range in its address (`bytestart`, `byteend`,
+  `range`) is never listed (one such piece was a reel's fragments without its beginning or sound). When the list
+  opens, the extension also reads the page's scripts for DASH manifests in its data (JSON strings holding `<MPD`,
+  as Facebook's reels) and lists each once, first, as "Video with sound · 720p · 2:07" under the page's title; a
+  click hands the manifest to the app.
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
@@ -647,5 +651,14 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
     least 50 KB for pictures (smaller are icons and thumbnails) and 10 KB for others. Broken links and protected
     streams aren't listed. A master playlist hides its quality playlists; the page's one stream is named after the
     page ("<title>.mp4"), several after their playlists. The same name and size under two addresses is listed once.
-- Not yet: DASH, and choosing a quality or a sound track (the best is taken) (enhancements.md).
+- **DASH:** a link ending in `.mpd`, or a manifest the browser extension finds in a page's data (Facebook carries
+  its reels' manifests in the page instead of loading them), is a stream download: the best video (the most
+  pixels, then the most bits a second) and the best sound, joined into one MP4 like HLS. Pieces are found three
+  ways: one file per quality with its init section and index (`SegmentBase`, Facebook's reels: the index's
+  subsegments are the pieces, fetched by byte range), listed (`SegmentList`), or from a pattern (`SegmentTemplate`
+  with `$Number$` or `$Time$`, by piece length or a `SegmentTimeline`). Sound keeps its place against the picture as
+  the source has it (ffmpeg's join of two separate files starts each at zero instead). Protected tracks
+  (`ContentProtection`) are refused; live DASH (`type="dynamic"`) isn't recorded yet. A manifest from a page is
+  kept as `manifests/<sha256>.mpd` in the data folder and downloaded from there.
+- Not yet: choosing a quality or a sound track (the best is taken) (enhancements.md).
 

@@ -140,3 +140,9 @@ add f16 start $L/clip/index.m3u8
 wait f16/clip.mp4 finished 30
 expect f16/clip.mp4 file-size 78728
 expect-file f16/clip.mp4.hdparts absent
+
+feature A DASH video and its sound become one MP4
+add f17 start $L/reel/manifest.mpd
+wait f17/reel.mp4 finished 30
+expect f17/reel.mp4 file-size 78583
+expect-file f17/reel.mp4.hdparts absent

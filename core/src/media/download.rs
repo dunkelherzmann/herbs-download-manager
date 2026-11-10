@@ -33,9 +33,12 @@ pub struct StreamRequest {
 /// The most pieces fetched at once: servers that stream rarely like more from one viewer.
 const MAX_AT_ONCE: u32 = 6;
 
-/// Whether a link is an HLS playlist, by its address (`.m3u8`).
+/// Whether a link is a stream's playlist or manifest, by its address (`.m3u8`, `.mpd`).
 pub fn is_stream_link(url: &str) -> bool {
-    Url::parse(url).is_ok_and(|u| u.path().to_ascii_lowercase().ends_with(".m3u8"))
+    Url::parse(url).is_ok_and(|u| {
+        let path = u.path().to_ascii_lowercase();
+        path.ends_with(".m3u8") || path.ends_with(".mpd")
+    })
 }
 
 /// A stream's file name from its link: the playlist's name as `.mp4`, or the folder it's in when the playlist has a
@@ -118,6 +121,11 @@ pub async fn download(client: &reqwest::Client, req: StreamRequest, progress: Ar
 }
 
 async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault) -> Result<String, String> {
+    // A manifest the browser extension found in a page, saved by the app (§15).
+    if url.scheme() == "file" {
+        let path = url.to_file_path().map_err(|_| "Not a valid link".to_string())?;
+        return std::fs::read_to_string(&path).map_err(|e| format!("Can't read {}: {e}", path.display()));
+    }
     let response = transfer::signed(client.get(url.clone()), url, vault)
         .send()
         .await
@@ -130,6 +138,63 @@ async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault) 
         return Err(format!("{} {}", status.as_u16(), status.canonical_reason().unwrap_or("")).trim().to_string());
     }
     response.text().await.map_err(|e| transfer::error_text(&e))
+}
+
+/// One track of a stream: an HLS playlist, or pieces listed by a DASH manifest.
+enum Track {
+    Hls(Url),
+    Listed(Vec<Segment>),
+}
+
+/// A DASH manifest's best video and its best sound, as pieces like HLS's (an init section, then MP4 fragments).
+async fn dash_tracks(client: &reqwest::Client, url: &Url, text: &str, vault: &crate::vault::Vault) -> Result<Vec<Track>, String> {
+    let m = super::dash::parse(text, url)?;
+    if m.live {
+        return Err("This is a live DASH stream: recording those isn't supported yet".into());
+    }
+    let mut tracks = Vec::new();
+    for rep in [m.best_video(), m.best_audio()].into_iter().flatten() {
+        tracks.push(Track::Listed(dash_pieces(client, rep, vault).await?));
+    }
+    if tracks.is_empty() {
+        return Err("This stream is protected (DRM): it can't be saved".into());
+    }
+    Ok(tracks)
+}
+
+/// A DASH quality's pieces. One file per quality (`SegmentBase`) is read through its index (`sidx`): each
+/// subsegment is a piece, after the init section.
+async fn dash_pieces(client: &reqwest::Client, rep: &super::dash::Representation, vault: &crate::vault::Vault) -> Result<Vec<Segment>, String> {
+    use super::dash::Addressing;
+    // DASH ranges are inclusive (first-last); HLS's are (length, offset).
+    let hls_range = |r: (u64, u64)| (r.1 - r.0 + 1, r.0);
+    let piece = |url: Url, range: Option<(u64, u64)>, map: Option<(Url, Option<(u64, u64)>)>, n: usize| Segment {
+        url,
+        duration: 0.0,
+        range: range.map(hls_range),
+        sequence: n as u64,
+        key: Key::None,
+        map,
+        discontinuity: false,
+    };
+    match &rep.addressing {
+        Addressing::Pieces { init, media } => {
+            let map = init.clone().map(|(u, r)| (u, r.map(hls_range)));
+            Ok(media.iter().enumerate().map(|(n, (u, r))| piece(u.clone(), *r, map.clone(), n)).collect())
+        }
+        Addressing::Base { url, init, index: Some((first, last)) } => {
+            let bytes = fetch_bytes(client, url, Some((last - first + 1, *first)), vault).await?;
+            let subsegments = super::dash::sidx_ranges(&bytes, *first).ok_or("The video's index can't be read")?;
+            let init = init.unwrap_or((0, first.saturating_sub(1)));
+            let map = Some((url.clone(), Some(hls_range(init))));
+            Ok(subsegments.into_iter().enumerate().map(|(n, r)| piece(url.clone(), Some(r), map.clone(), n)).collect())
+        }
+        // No index: the whole file is one piece after its init section (the file itself when none is given).
+        Addressing::Base { url, init, index: None } => {
+            let map = Some((url.clone(), init.map(hls_range)));
+            Ok(vec![piece(url.clone(), None, map, 0)])
+        }
+    }
 }
 
 /// A media playlist's pieces and whether it has ended (a live stream hasn't), after checking it can be downloaded.
@@ -158,17 +223,23 @@ async fn wait(seconds: f64, stop: &tokio::sync::watch::Receiver<u8>) {
 
 async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progress>, stop: &tokio::sync::watch::Receiver<u8>) -> Result<Outcome, String> {
     let url = Url::parse(&req.url).map_err(|_| "Not a valid link".to_string())?;
-    // The playlists: the best quality and its sound, or the one playlist the link is.
+    // The tracks: HLS playlists (read again each round, for live streams), or a DASH manifest's best video and its
+    // sound, whose pieces are known at once.
+    let first = text(client, &url, &req.vault).await?;
     let mut playlists = Vec::new();
-    match hls::parse(&text(client, &url, &req.vault).await?, &url)? {
-        p @ Playlist::Master { .. } => {
-            let video = p.best_variant().ok_or("The stream lists no quality to download")?.clone();
-            playlists.push(video.url.clone());
-            if let Some(sound) = p.audio_for(&video).and_then(|r| r.url.clone()) {
-                playlists.push(sound);
+    if first.contains("<MPD") {
+        playlists = dash_tracks(client, &url, &first, &req.vault).await?;
+    } else {
+        match hls::parse(&first, &url)? {
+            p @ Playlist::Master { .. } => {
+                let video = p.best_variant().ok_or("The stream lists no quality to download")?.clone();
+                playlists.push(Track::Hls(video.url.clone()));
+                if let Some(sound) = p.audio_for(&video).and_then(|r| r.url.clone()) {
+                    playlists.push(Track::Hls(sound));
+                }
             }
+            Playlist::Media { .. } => playlists.push(Track::Hls(url.clone())),
         }
-        Playlist::Media { .. } => playlists.push(url.clone()),
     }
     let dest = req.folder.join(&req.name);
     let parts = parts_folder(&dest);
@@ -183,8 +254,11 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
         let mut ended = true;
         let mut wanted = Vec::new();
         let mut round_seconds: f64 = 6.0;
-        for (si, playlist) in playlists.iter().enumerate() {
-            let (segments, done) = media_playlist(client, playlist, &req.vault).await?;
+        for (si, track) in playlists.iter().enumerate() {
+            let (segments, done) = match track {
+                Track::Hls(playlist) => media_playlist(client, playlist, &req.vault).await?,
+                Track::Listed(segments) => (segments.clone(), true),
+            };
             ended &= done;
             if let Some(last) = segments.last() {
                 round_seconds = round_seconds.min(last.duration.max(1.0));

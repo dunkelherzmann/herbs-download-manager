@@ -254,7 +254,11 @@ fn parse_range(value: &str, len: u64) -> Option<Result<(u64, u64), ()>> {
 
 async fn serve(mut stream: TcpStream, state: Arc<State>, mut stop: watch::Receiver<bool>) -> std::io::Result<()> {
     let Some(req) = read_request(&mut stream).await? else { return Ok(()) };
-    let file = state.files.lock().unwrap().get(&req.path).cloned();
+    // An exact address first, else the path without its query (signed links: "video.mp4?oh=…&oe=…").
+    let file = {
+        let files = state.files.lock().unwrap();
+        files.get(&req.path).or_else(|| files.get(req.path.split('?').next().unwrap_or(""))).cloned()
+    };
     let stats = state.stats(&req.path);
     let number = stats.requests.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -343,7 +347,10 @@ async fn send_file(
     let mut sent: u64 = 0;
     for piece in body.chunks(chunk) {
         // A file removed or replaced while it is being sent cuts the responses already under way.
-        let same = state.files.lock().unwrap().get(&req.path).is_some_and(|f| f.etag == file.etag);
+        let same = {
+            let files = state.files.lock().unwrap();
+            files.get(&req.path).or_else(|| files.get(req.path.split('?').next().unwrap_or(""))).is_some_and(|f| f.etag == file.etag)
+        };
         if !same {
             return Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "the file went away"));
         }
@@ -412,6 +419,14 @@ pub async fn feature_servers(port: Option<u16>) -> std::io::Result<Vec<MockServe
             ("s2.ts", &include_bytes!("../../../core/tests/media/h264-ts/s2.ts")[..]),
         ] {
             server.put(&format!("/clip/{name}"), MockFile::new(bytes.to_vec()));
+        }
+        // A DASH video as Facebook serves reels (SPECIFICATION.md §15): core/tests/media/dash-ondemand, at /reel/.
+        for (name, bytes) in [
+            ("manifest.mpd", &include_bytes!("../../../core/tests/media/dash-ondemand/manifest.mpd")[..]),
+            ("video.mp4", &include_bytes!("../../../core/tests/media/dash-ondemand/video.mp4")[..]),
+            ("audio.mp4", &include_bytes!("../../../core/tests/media/dash-ondemand/audio.mp4")[..]),
+        ] {
+            server.put(&format!("/reel/{name}"), MockFile::new(bytes.to_vec()));
         }
         server.put("/bad.bin.sha256", MockFile::new(format!("{}  bad.bin\n", "0".repeat(64)).into_bytes()));
         servers.push(server);

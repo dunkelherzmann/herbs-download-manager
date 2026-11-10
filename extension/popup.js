@@ -5,7 +5,15 @@ const api = globalThis.browser ?? chrome;
 const $ = (id) => document.getElementById(id);
 const ask = (message) => api.runtime.sendMessage(message);
 
-const KIND = { stream: "Video stream", dash: "Video stream (DASH)", video: "Video", audio: "Sound" };
+const KIND = { stream: "Video stream", dash: "Video stream", "page-dash": "Video", video: "Video", audio: "Sound" };
+
+// "2:07", "1:02:03".
+function length(seconds) {
+  if (!seconds) return "";
+  const s = Math.round(seconds);
+  const hms = [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60];
+  return hms[0] ? `${hms[0]}:${String(hms[1]).padStart(2, "0")}:${String(hms[2]).padStart(2, "0")}` : `${hms[1]}:${String(hms[2]).padStart(2, "0")}`;
+}
 
 function size(bytes) {
   if (!bytes) return "";
@@ -43,7 +51,13 @@ async function show() {
   const list = $("items");
   list.replaceChildren();
   $("empty").hidden = state.items.length > 0;
-  for (const item of state.items) list.append(row(tab, item, item.kind === "stream" ? tab.title || title(item) : title(item), [KIND[item.kind], size(item.size)]));
+  for (const item of state.items) {
+    const streamed = ["stream", "dash", "page-dash"].includes(item.kind);
+    const facts = item.kind === "page-dash"
+      ? [item.sound ? "Video with sound" : "Video", item.quality, length(item.seconds)]
+      : [KIND[item.kind], size(item.size)];
+    list.append(row(tab, item, streamed ? tab.title || title(item) : title(item), facts));
+  }
   $("scan").onclick = async () => {
     $("scan").disabled = true;
     $("scan").textContent = "Looking through the page…";
@@ -99,14 +113,11 @@ function row(tab, item, label, facts) {
   name.textContent = label;
   const detail = document.createElement("span");
   detail.className = "detail";
-  const host = (() => { try { return new URL(item.url).hostname; } catch { return ""; } })();
+  const host = (() => { try { return item.url ? new URL(item.url).hostname : ""; } catch { return ""; } })();
   detail.textContent = [...facts, host].filter(Boolean).join(" · ");
   button.append(name, detail);
-  button.title = item.url;
-  if (item.kind === "dash") {
-    button.disabled = true;
-    detail.textContent += " · not supported yet";
-  } else {
+  button.title = item.url || label;
+  {
     button.setAttribute("aria-label", `Add ${label} to the queue`);
     button.onclick = async () => {
       button.disabled = true;

@@ -123,6 +123,9 @@ async function countFor(tabId, items) {
 // What a response is: {kind: "stream" | "dash" | "video" | "audio", size}, or null.
 function kindOf(d) {
   if (d.tabId < 0 || !web(d.url) || d.url.length > 8192) return null;
+  // A piece of a file a player fetches by byte range in its address (Facebook's bytestart/byteend) is never a file
+  // of its own: listed, it saved fragments without the file's beginning or its sound (bugs.md).
+  if (/[?&](bytestart|byteend|range|byterange)=/i.test(d.url)) return null;
   if (d.statusCode && (d.statusCode < 200 || d.statusCode > 299)) return null;
   const mime = headerOf(d, "content-type").split(";")[0].trim().toLowerCase();
   const path = pathOf(d.url).toLowerCase();
@@ -198,11 +201,57 @@ api.tabs.onUpdated.addListener((id, change) => {
 });
 api.tabs.onActivated.addListener(({ tabId }) => countFor(tabId).catch(() => {}));
 
+// DASH manifests a page carries in its data instead of loading them (Facebook's reels: "dash_manifest" in the page's
+// JSON): read from the tab's scripts when the list opens, each listed once as a video with its sound.
+function manifestsInPage() {
+  const found = [];
+  const seen = new Set();
+  const keep = (xml) => {
+    const text = xml.trim();
+    if (!text.includes("<MPD") || text.length > 2 * 1024 * 1024) return;
+    const key = text.replace(/\s+/g, "").slice(0, 4000);
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(text);
+  };
+  for (const script of document.scripts) {
+    const t = script.textContent || "";
+    if (!t.includes("MPD")) continue;
+    // In JSON: a string holding the manifest, its < written as \u003C.
+    for (const m of t.matchAll(/"((?:[^"\\]|\\.)*?(?:\\u003C|<)MPD(?:[^"\\]|\\.)*?)"/g)) {
+      try { keep(JSON.parse(`"${m[1]}"`)); } catch {}
+    }
+    // As it is.
+    for (const m of t.matchAll(/<\?xml[^>]*>\s*<MPD[\s\S]*?<\/MPD>|<MPD[\s\S]*?<\/MPD>/g)) keep(m[0]);
+    if (found.length >= 20) break;
+  }
+  return found;
+}
+
+// What a manifest says about the video: its length and best picture.
+function describeManifest(xml) {
+  const duration = /mediaPresentationDuration="PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?"/.exec(xml);
+  const seconds = duration ? (Number(duration[1] || 0) * 3600 + Number(duration[2] || 0) * 60 + Number(duration[3] || 0)) : 0;
+  const heights = [...xml.matchAll(/<Representation[^>]*\sheight="(\d+)"/g)].map((m) => Number(m[1]));
+  const widths = [...xml.matchAll(/<Representation[^>]*\swidth="(\d+)"/g)].map((m) => Number(m[1]));
+  const best = heights.length ? Math.max(...heights.map((h, i) => Math.min(h, widths[i] || h))) : 0;
+  return { seconds, quality: best ? `${best}p` : "", sound: /contentType="audio"|mimeType="audio\//.test(xml), protected: /<ContentProtection/.test(xml) };
+}
+
+async function pageManifests(tabId) {
+  try {
+    const [result] = await api.scripting.executeScript({ target: { tabId }, func: manifestsInPage });
+    return (result && result.result) || [];
+  } catch {
+    return []; // a page the extension may not read (the browser's own pages)
+  }
+}
+
 // A file name for an item: a stream after its page, a file after its link (or its page, when the link's name says
 // nothing).
 function nameFor(item, title) {
   const page = (title || "").trim() || "Video";
-  if (item.kind === "stream") return `${page}.mp4`;
+  if (["stream", "dash", "page-dash"].includes(item.kind)) return `${page}.mp4`;
   const last = decodeURIComponent(pathOf(item.url).split("/").pop() || "");
   if (MEDIA_EXT.test(last)) return null; // the app names it from the link
   const ext = /webm/.test(item.mime) ? "webm" : item.kind === "audio" ? (/mpeg/.test(item.mime) ? "mp3" : "m4a") : "mp4";
@@ -214,6 +263,10 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     if (message.type === "state") {
       const items = (await itemsOf(message.tabId)).filter((i) => !i.hidden);
+      for (const manifest of await pageManifests(message.tabId)) {
+        const about = describeManifest(manifest);
+        if (!about.protected) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, ...about });
+      }
       reply({ on: await isOn(), items });
     } else if (message.type === "toggle") {
       await api.storage.local.set({ on: !(await isOn()) });
@@ -246,7 +299,18 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       // A file the app found on the page comes with its name; what the tab played is named here.
       const name = item.name || nameFor(item, tab && tab.title);
       // Added to the queue; right after opening the app ("Open and Download"), started at once.
-      const answer = await send(item.url, tab && tab.url, { queue: !message.start, stream: item.kind === "stream" || item.stream === true, name });
+      const options = { queue: !message.start, stream: ["stream", "dash", "page-dash"].includes(item.kind) || item.stream === true, name };
+      let answer;
+      if (item.kind === "page-dash") {
+        // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.
+        try {
+          answer = await api.runtime.sendNativeMessage(HOST, { command: "add", manifest: item.manifest, referer: tab && tab.url, ...options });
+        } catch {
+          answer = { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
+        }
+      } else {
+        answer = await send(item.url, tab && tab.url, options);
+      }
       reply(answer || { ok: false, error: `${NAME} didn't answer.` });
     }
   })();

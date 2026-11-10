@@ -4,6 +4,7 @@
 //! sample keeps its bytes, so the file has the quality the site sent.
 
 pub mod bits;
+pub mod dash;
 pub mod hls;
 pub mod download;
 pub mod join;
