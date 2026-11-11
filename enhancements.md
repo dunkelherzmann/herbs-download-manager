@@ -262,6 +262,15 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 - [ ] **Download a section of a long video:** **Download Section…** in the ▾ menu beside Download asks From and To (hours, minutes and seconds) and downloads only that part. *Requested 2026-11-11.* HLS streams, cut on the stream's piece boundaries (never re-encoded), named after the part; also `hdm add --from --to` and the MCP tool. Not yet: DASH, live streams, whole video files. Extension 1.19.
+- [ ] **Choose a button in an alert with the keyboard:** Tab and the arrow keys move the highlight, Return or Enter presses it, Esc cancels, in the Mac app's alerts (as Linux's and Windows' dialogs already do) and the browser extension's ▾ menu (↑ ↓, Tab, Home, End, Return, Esc; extension 1.20). *Requested 2026-11-11, with a picture of the Delete alert.* The Mac's keys couldn't be pressed in a test here; they wait for Herbert's try.
+  - [ ] Mac
+  - [x] Linux
+  - [x] Windows
+- [ ] **The GitHub link in About, as in PTZ Control,** instead of its own Help item. *Requested 2026-11-11.* About shows the name, version, what it is, "By dunkelherzmann" and the link (clickable on every platform).
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **A Help guide:** `HELP.md`, drafted from the spec (download managers such as IDM, AB Download Manager and JDownloader have Help menus), opened by Help ▸ Herb's Download Manager Help (⌘?, F1). *Requested 2026-11-11.*
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows

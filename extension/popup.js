@@ -529,7 +529,28 @@ function row(tab, item, label, facts) {
     document.addEventListener("click", outside, true);
     menu.firstChild.focus();
   };
-  menu.onkeydown = (e) => { if (e.key === "Escape") { close(); more.focus(); } };
+  // The keyboard: ↑ ↓ (and Tab, ⇧Tab) move through the items, wrapping round, Home and End go to the ends, Return
+  // runs the item, Esc closes the menu.
+  menu.onkeydown = (e) => {
+    const items = [...menu.querySelectorAll("button")];
+    const at = items.indexOf(document.activeElement);
+    const go = (i) => { e.preventDefault(); items[(i + items.length) % items.length].focus(); };
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+      more.focus();
+    } else if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) go(at + 1);
+    else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) go(at - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(items.length - 1);
+  };
+  // ↓ on ▾ opens the menu, as on a menu button.
+  more.onkeydown = (e) => {
+    if (e.key === "ArrowDown" && menu.hidden) {
+      e.preventDefault();
+      more.click();
+    }
+  };
   split.append(main, more, menu);
   controls.push(main, more);
   tools.append(split);

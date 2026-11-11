@@ -19,6 +19,9 @@ This is a testing app in early development (0.x), shared as is: no support is pr
   only the part between two times of an HLS stream.
 - **Streams played by embedded players:** the extension hands the app the player's own Referer, so their servers
   no longer refuse the pieces.
+- **The keyboard in alerts and menus:** on the Mac, the arrow keys and Tab move between an alert's buttons, Return
+  presses the highlighted one and Esc cancels; the extension's ▾ menu answers the arrow keys, Tab, Return and Esc.
+- **Help** opens a guide to the app (⌘?, F1), and **About** shows a link to the project.
 - **Export Links** writes downloads and their mirrors to a file.
 
 ## Install

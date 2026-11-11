@@ -52,7 +52,7 @@ const C_SIDEBAR: u16 = 132;
 const C_DOWNLOAD_WINDOW: u16 = 133;
 const C_MINIMIZE: u16 = 134;
 const C_ZOOM: u16 = 135;
-const C_GITHUB: u16 = 136;
+const C_HELP: u16 = 136;
 const C_ABOUT: u16 = 137;
 const C_OPEN: u16 = 138;
 const C_SHOW_IN_FOLDER: u16 = 139;
@@ -583,7 +583,7 @@ unsafe fn insert_tree(tree: HWND, parent: HTREEITEM, text: &str, data: isize) ->
 /// The Mac's shortcuts with Ctrl (§3, §4).
 unsafe fn accelerator_table() -> HACCEL {
     let ctrl = FCONTROL | FVIRTKEY;
-    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 22] = [
+    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 23] = [
         (ctrl, b'O' as u16, C_DOWNLOAD_WINDOW),
         (ctrl | FALT, b'M' as u16, C_ADD_MIRROR),
         (ctrl, b'N' as u16, C_NEW),
@@ -606,6 +606,7 @@ unsafe fn accelerator_table() -> HACCEL {
         (ctrl, b'A' as u16, C_SELECT_ALL),
         (ctrl, b'C' as u16, C_COPY_LINK),
         (FVIRTKEY, VK_F2.0, C_RENAME),
+        (FVIRTKEY, VK_F1.0, C_HELP),
         (ctrl, b'I' as u16, C_PROPERTIES),
     ];
     let table: Vec<ACCEL> = keys.iter().map(|&(f, key, cmd)| ACCEL { fVirt: f, key, cmd }).collect();
@@ -917,7 +918,7 @@ unsafe fn show_main_menu(hwnd: HWND, button: HWND) {
     items.extend_from_slice(&[
         (")", 0), ("Show Download Window\tCtrl+O", C_DOWNLOAD_WINDOW), (")", 0),
         ("Window", 0), ("Minimize", C_MINIMIZE), ("Zoom", C_ZOOM), (")", 0),
-        ("Help", 0), ("Herb's Download Manager on GitHub", C_GITHUB), (")", 0),
+        ("Help", 0), ("Herb's Download Manager Help\tF1", C_HELP), (")", 0),
         ("-", 0), ("Settings…\tCtrl+,", C_SETTINGS), ("About Herb's Download Manager", C_ABOUT), ("-", 0), ("Quit Herb's DM\tCtrl+Q", C_QUIT),
     ]);
     unsafe {
@@ -1325,14 +1326,12 @@ fn command(hwnd: HWND, id: u16) {
             }
             C_MINIMIZE => drop(ShowWindow(hwnd, SW_MINIMIZE)),
             C_ZOOM => drop(ShowWindow(hwnd, if IsZoomed(hwnd).as_bool() { SW_RESTORE } else { SW_MAXIMIZE })),
-            C_GITHUB => {
-                let url = wide(GITHUB);
+            // Help (F1): the guide, HELP.md, on the project's page.
+            C_HELP => {
+                let url = wide(&format!("{GITHUB}/blob/main/HELP.md"));
                 ShellExecuteW(None, w!("open"), PCWSTR(url.as_ptr()), None, None, SW_SHOWNORMAL);
             }
-            C_ABOUT => {
-                let text = wide(&format!("Herb's Download Manager {}\n\nby dunkelherzmann\n{GITHUB}", hd_core::version()));
-                MessageBoxW(Some(hwnd), PCWSTR(text.as_ptr()), w!("About Herb's Download Manager"), MB_OK | MB_ICONINFORMATION);
-            }
+            C_ABOUT => about(hwnd),
             C_QUIT => {
                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
             }
@@ -1594,5 +1593,33 @@ fn message(hwnd: HWND, text: &str) {
     let text = wide(text);
     unsafe {
         MessageBoxW(Some(hwnd), PCWSTR(text.as_ptr()), w!("Herb's Download Manager"), MB_OK | MB_ICONINFORMATION);
+    }
+}
+
+/// About: the name, version, what it is, the author and a link to the project, which opens in the browser.
+fn about(hwnd: HWND) {
+    unsafe extern "system" fn opened(_: HWND, msg: TASKDIALOG_NOTIFICATIONS, _: WPARAM, lparam: LPARAM, _: isize) -> windows::core::HRESULT {
+        if msg == TDN_HYPERLINK_CLICKED {
+            unsafe {
+                ShellExecuteW(None, w!("open"), PCWSTR(lparam.0 as *const u16), None, None, SW_SHOWNORMAL);
+            }
+        }
+        windows::core::HRESULT(0)
+    }
+    let heading = wide(&format!("Herb's Download Manager {}", hd_core::version()));
+    let body = wide(&format!("A download manager\nMany connections · Mirrors · Streams\n\nBy dunkelherzmann\n<a href=\"{GITHUB}\">{GITHUB}</a>"));
+    let config = TASKDIALOGCONFIG {
+        cbSize: std::mem::size_of::<TASKDIALOGCONFIG>() as u32,
+        hwndParent: hwnd,
+        dwFlags: TDF_ENABLE_HYPERLINKS,
+        dwCommonButtons: TDCBF_OK_BUTTON,
+        pszWindowTitle: w!("About Herb's Download Manager"),
+        pszMainInstruction: PCWSTR(heading.as_ptr()),
+        pszContent: PCWSTR(body.as_ptr()),
+        pfCallback: Some(opened),
+        ..Default::default()
+    };
+    unsafe {
+        let _ = TaskDialogIndirect(&config, None, None, None);
     }
 }

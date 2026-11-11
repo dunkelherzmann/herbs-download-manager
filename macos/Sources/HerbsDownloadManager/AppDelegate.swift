@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FinishedNotifications.shared.register()
         }
         InWindowMenu.install(full: MainMenu.build(), appMenu: MainMenu.appMenu(), appName: "Herb's DM")
+        AlertKeys.install()
         let window = MainWindowController()
         mainWindow = window
         // Test hook: --keep-on-top on|off sets Keep on Top at launch (only with $HD_DATA_DIR, so never Herbert's).
@@ -169,16 +170,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func openGitHub(_ sender: Any?) {
-        NSWorkspace.shared.open(URL(string: "https://github.com/dunkelherzmann/herbs-download-manager")!)
+    static let projectURL = URL(string: "https://github.com/dunkelherzmann/herbs-download-manager")!
+
+    /// Help ▸ Herb's Download Manager Help (⌘?): the guide, HELP.md, on the project's page.
+    @objc func openHelp(_ sender: Any?) {
+        NSWorkspace.shared.open(Self.projectURL.appendingPathComponent("blob/main/HELP.md"))
     }
 
+    /// About: the name, version, what it is, the author and a link to the project.
     @objc func showAbout(_ sender: Any?) {
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        let base: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor,
+                                                   .paragraphStyle: centered]
+        let credits = NSMutableAttributedString(string: "A download manager\nMany connections · Mirrors · Streams\n\nBy dunkelherzmann\n",
+                                                attributes: base)
+        var link = base
+        link[.link] = Self.projectURL
+        credits.append(NSAttributedString(string: Self.projectURL.absoluteString, attributes: link))
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "Herb's Download Manager",
             .applicationVersion: appVersion,
             .version: "core \(coreVersion())",
+            .credits: credits,
         ])
     }
 }

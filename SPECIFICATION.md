@@ -140,8 +140,17 @@ and Paste in text fields included.
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Rename… · Move To… · Note… · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
 | Window | standard (macOS) |
-| Help | Herb's Download Manager on GitHub |
+| Help | Herb's Download Manager Help ⌘? (F1 on Linux and Windows): opens the guide, `HELP.md`, on the project's page |
 | (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS) · Quit Herb's DM ⌘Q |
+
+**About Herb's Download Manager** shows the app's icon, name and version, "A download manager · Many connections ·
+Mirrors · Streams", "By dunkelherzmann" and the project's address as a link that opens it in the browser (on Windows,
+a task dialog with the link).
+
+**Alerts and sheets** (Delete, a name in use, sign-ins, the scheduler's countdown…) answer the keyboard on the Mac as
+on Linux and Windows: the arrow keys and Tab move the highlight (the blue button) between their buttons, Return or
+Enter presses the highlighted one, and Esc cancels, whether or not Keyboard navigation is on in System Settings. A
+text field in an alert keeps Tab and the arrows for itself. Linux's and Windows' dialogs do this on their own.
 
 ### 4.1 Download context menu
 

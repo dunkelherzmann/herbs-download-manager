@@ -70,7 +70,8 @@ enum MainMenu {
         NSApp.windowsMenu = window
 
         let help = submenu(bar, "Help")
-        help.addItem(withTitle: "Herb's Download Manager on GitHub", action: #selector(AppDelegate.openGitHub(_:)), keyEquivalent: "")
+        let guide = help.addItem(withTitle: "Herb's Download Manager Help", action: #selector(AppDelegate.openHelp(_:)), keyEquivalent: "?")
+        guide.toolTip = "Herb's Download Manager Help: how to use the app (⌘?)"
 
         // The app menu's commands close the Main Menu, as in Herb's Terminal.
         bar.addItem(.separator())

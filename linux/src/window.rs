@@ -94,7 +94,7 @@ fn main_menu() -> gio::Menu {
     menu.append_submenu(Some("Window"), &window);
 
     let help = gio::Menu::new();
-    item(&help, "Herb's Download Manager on GitHub", "github");
+    item(&help, "Herb's Download Manager Help", "help");
     menu.append_submenu(Some("Help"), &help);
 
     let end = gio::Menu::new();
@@ -720,8 +720,9 @@ fn add_actions(
         // Quitting goes through the window's close, which asks first while downloads run.
         let w = window.clone();
         add("quit", &["<Control>q"], Box::new(move || w.close()));
-        add("github", &[], Box::new(|| {
-            let _ = gio::AppInfo::launch_default_for_uri(GITHUB, None::<&gio::AppLaunchContext>);
+        // Help (F1): the guide, HELP.md, on the project's page.
+        add("help", &["F1"], Box::new(|| {
+            let _ = gio::AppInfo::launch_default_for_uri(&format!("{GITHUB}/blob/main/HELP.md"), None::<&gio::AppLaunchContext>);
         }));
         let w = window.clone();
         add("about", &[], Box::new(move || {
@@ -729,6 +730,7 @@ fn add_actions(
                 .application_name("Herb's Download Manager")
                 .application_icon(crate::APP_ID)
                 .developer_name("dunkelherzmann")
+                .comments("A download manager\nMany connections · Mirrors · Streams")
                 .version(hd_core::version())
                 .website(GITHUB)
                 .license_type(gtk::License::MitX11)
