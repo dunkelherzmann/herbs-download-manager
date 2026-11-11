@@ -30,15 +30,19 @@ COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
 # shared folder under another's tests failed them (2026-11-10).
 DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"
 
-# The worktree stays until the next run removes it, so cargo's exit code is the command's.
-(ssh linux "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH && rm -rf /tmp/$DIR \
+# The worktree stays after the run, so cargo's exit code is the command's. Branches are checked once or twice and
+# then merged, so each run first removes check folders over a day old (any branch's): they were piling up, one a
+# branch (2026-11-11). A day leaves alone the checks other sessions are running now.
+(ssh linux "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH \
+    && (find /tmp -maxdepth 1 -name 'hdm-check-*' -mmin +1440 -exec rm -rf {} + || true) && rm -rf /tmp/$DIR \
     && git worktree prune && git worktree add -q --detach /tmp/$DIR FETCH_HEAD && cd /tmp/$DIR \
     && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo test --workspace 2>&1" \
     >"$LOGS/linux.log" 2>&1; echo $? >"$LOGS/linux.status") &
 
 # Windows' ssh shell is cmd. Rust goes in with rustup, into %USERPROFILE%\.cargo\bin.
 (ssh windows "cd /d %USERPROFILE%\\Projects\\herbs-download-manager && git fetch -q origin $BRANCH \
-    && (if exist %TEMP%\\$DIR rmdir /s /q %TEMP%\\$DIR) & git worktree prune \
+    && (forfiles /p %TEMP% /m hdm-check-* /d -1 /c \"cmd /c if @isdir==TRUE rmdir /s /q @path\" >nul 2>&1) \
+    & (if exist %TEMP%\\$DIR rmdir /s /q %TEMP%\\$DIR) & git worktree prune \
     && git worktree add -q --detach %TEMP%\\$DIR FETCH_HEAD && cd /d %TEMP%\\$DIR \
     && set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& set CARGO_TARGET_DIR=%USERPROFILE%\\.cache\\hdm-check-target&& cargo test --workspace 2>&1" \
     >"$LOGS/windows.log" 2>&1; echo $? >"$LOGS/windows.status") &
