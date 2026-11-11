@@ -156,6 +156,21 @@ test("a playlist is read again with the headers its page sent", async () => {
   assert.ok(b.rules.removed.includes(rule.id), "the rule goes again");
 });
 
+test("a stream a player in an embedded frame fetched is handed over with the player's own Referer", async () => {
+  const b = load({ tabs: [PAGE], fetch: () => ({ body: VOD }) });
+  const url = "https://cdn.example.net/hls/abc/index.m3u8";
+  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url, type: "xmlhttprequest", requestHeaders: headers({
+    Referer: "https://player.example.org/e/42", Origin: "https://player.example.org", "User-Agent": "Player UA" }) });
+  await b.ask({ type: "add", tabId: 1, item: { url, kind: "stream" } });
+  const sent = plain(b.sent.find((m) => m.command === "add" && m.urls[0] === url));
+  assert.equal(sent.referer, "https://player.example.org/e/42", "the player's frame, not the tab's page");
+  assert.equal(sent.user_agent, "Player UA");
+  // A stream the browser never saw fetched goes with the tab's page, as before.
+  const other = "https://cdn.example.net/hls/other/index.m3u8";
+  await b.ask({ type: "add", tabId: 1, item: { url: other, kind: "stream" } });
+  assert.equal(plain(b.sent.find((m) => m.urls && m.urls[0] === other)).referer, PAGE.url);
+});
+
 test("another page in the tab forgets what the last one played", async () => {
   const b = load({ tabs: [PAGE] });
   await b.respond({ url: "https://cdn.example.com/m.mpd" });

@@ -11,12 +11,14 @@ request each, and tick an item with its PR number once it is built and its test 
 
 ## Bugs to fix
 
-No open bugs in `bugs.md`.
+- [ ] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; waiting for Herbert's try.
+- [ ] **Feature tests failed once under load** (bugs.md, found in testing 2026-11-10): 4 of 17 failed while the machine was busy; probably a timing assumption in the scenario.
 
 ## To build
 
 The Linux version is ported once the Mac version has each feature, item by item in the Mac's build order
-([`macos/pending.md`](../macos/pending.md)). Everything is still to build.
+([`macos/pending.md`](../macos/pending.md)). Next: the five features from JDownloader 2 once the Mac has them (see its
+`pending.md`), then what each item below still lists as to do.
 
 - [x] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloadmanager.app`, `linux/scripts/build.sh --install`. (§1) #35
 - [x] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Linux: `scripts/check.sh` runs every core test there on each pull request, #27). (§7, §8, §10)

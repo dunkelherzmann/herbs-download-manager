@@ -78,8 +78,15 @@ async function pagesForScan(tabId) {
 const previews = new Map();
 
 async function send(url, referer, extra = {}) {
-  // As the browser asks: its User-Agent and the page, which guarded streams want with every piece.
-  const message = { command: "add", urls: [url], referer: referer || "", cookies: await cookiesFor(url), check: true, user_agent: navigator.userAgent, ...extra };
+  // As the browser asks: its User-Agent and the page, which guarded streams want with every piece. When the browser
+  // saw the player fetch this address, the player's own Referer and User-Agent go instead of the tab's: a player in
+  // an embedded frame sends its frame's address, and the stream's server refuses any other (403).
+  const seen = pageHeaders.get(url);
+  const header = (name) => seen && (seen.headers.find((h) => h.name.toLowerCase() === name) || {}).value;
+  const message = {
+    command: "add", urls: [url], referer: header("referer") || referer || "", cookies: await cookiesFor(url), check: true,
+    user_agent: header("user-agent") || navigator.userAgent, ...extra,
+  };
   try {
     return await api.runtime.sendNativeMessage(HOST, message);
   } catch {
@@ -280,8 +287,9 @@ async function variantsOf(url) {
   }
 }
 
-// The headers the page sent for a stream's playlist, kept 10 minutes: a playlist fetched again is asked for as the
-// page asked (its tokens, its Referer and Origin), or a site that checks them answers with an error.
+// The headers the page sent for a stream's playlist or a media file, kept an hour: it is fetched again as the page
+// asked for it (its tokens, its Referer and Origin), and the app downloads it so too, or a site that checks them
+// answers with an error.
 const pageHeaders = new Map();
 const SKIP_HEADERS = /^(cookie|host|content-length|connection|accept-encoding|sec-|priority|upgrade-insecure-requests|range)/i;
 const FORBIDDEN = /^(referer|origin|user-agent)$/i;
@@ -293,9 +301,10 @@ if (api.webRequest && api.webRequest.onSendHeaders) {
     (d) => {
       if (d.tabId < 0 || !web(d.url)) return;
       const path = pathOf(d.url).toLowerCase();
-      if (!/\.(m3u8|mpd)$/.test(path) && !MAYBE_STREAM(d.url)) return;
+      if (!/\.(m3u8|mpd)$/.test(path) && !MAYBE_STREAM(d.url) && d.type !== "media") return;
       const now = Date.now();
-      for (const [k, v] of pageHeaders) if (now - v.at > 10 * 60 * 1000) pageHeaders.delete(k);
+      for (const [k, v] of pageHeaders) if (now - v.at > 60 * 60 * 1000) pageHeaders.delete(k);
+      if (pageHeaders.size > 500) pageHeaders.delete(pageHeaders.keys().next().value);
       pageHeaders.set(d.url, { at: now, headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)) });
     },
     { urls: ["<all_urls>"], types: ["xmlhttprequest", "media", "other"] },

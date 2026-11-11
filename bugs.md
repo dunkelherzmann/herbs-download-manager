@@ -60,11 +60,11 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A download with a bad main link stayed failed although it had a good mirror,** and couldn't be started, restarted or resumed. *Reported 2026-11-11.* Mac, Linux, Windows. Found: a link that accepts the connection and never answers held the start (and each later connection) forever, since the sources were asked one after another with no time limit; and a link sending a web page (an expired link's sign-in page) could be taken for the file. Now every source is asked at once with a 30 s limit, a web page loses to a file, and a mirror that served the file becomes the main link.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **A stream from a page failed with "403 Forbidden … ties the stream's link to the browser's network address"** although it was added from the browser extension on the same computer, while JDownloader and Video DownloadHelper downloaded it. *Reported 2026-11-11.* Mac, Linux, Windows. Found: the master playlist's token was tied to the computer's IPv6 network and its quality playlist to its IPv4 address, and the app connected over whichever family the system tried first. Now a link that names an address family is fetched over it, and a 403 over one family is asked again over the other (remembered per host).
+- [x] **A download with a bad main link stayed failed although it had a good mirror,** and couldn't be started, restarted or resumed. *Reported 2026-11-11.* Mac, Linux, Windows. Found: a link that accepts the connection and never answers held the start (and each later connection) forever, since the sources were asked one after another with no time limit; and a link sending a web page (an expired link's sign-in page) could be taken for the file. Now every source is asked at once with a 30 s limit, a web page loses to a file, and a mirror that served the file becomes the main link. Fixed in #108, proven by the core tests on all three machines.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [ ] **A stream from a page failed with "403 Forbidden … ties the stream's link to the browser's network address"** although it was added from the browser extension on the same computer, while JDownloader and Video DownloadHelper downloaded it. *Reported 2026-11-11.* Mac, Linux, Windows. Found: the master playlist's token was tied to the computer's IPv6 network and its quality playlist to its IPv4 address, and the app connected over whichever family the system tried first. Now a link that names an address family is fetched over it, and a 403 over one family is asked again over the other (remembered per host). The address family is fixed in #110; the stream still failed (2026-11-11): the extension handed over the tab's page as Referer, while the video plays in a player embedded from another site, whose server refuses any other. Extension 1.18 hands over the player's own Referer and User-Agent; a download added before then has to be added again from the extension.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
