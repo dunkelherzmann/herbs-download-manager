@@ -54,6 +54,8 @@ final class AppModel {
 
     private init() {
         do {
+            // §9.2: the system's automatic proxy setup, set before the manager makes its client.
+            SystemProxy.install()
             manager = try DownloadManager.open(dataDir: Self.dataFolder.path)
             // A test copy never fills the user's Trash.
             if ProcessInfo.processInfo.environment["HD_DATA_DIR"] != nil {

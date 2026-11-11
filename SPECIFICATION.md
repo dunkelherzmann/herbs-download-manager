@@ -452,8 +452,12 @@ hand-written list alone until it's changed there.
 Every request goes through the proxy the system is set to use, and directly when there is none; this computer's own
 servers are always reached directly. On Linux the app asks the desktop for each address (GIO, through the desktop's
 portal in the Flatpak), so GNOME's settings, automatic setup scripts and the usual environment variables all count.
-On the Mac and Windows the system's fixed proxy settings (and the environment variables) are followed; their
-automatic setup scripts (PAC) aren't read yet. HTTP and SOCKS proxies are both used.
+On the Mac and Windows the system's fixed proxy settings (and the environment variables) are followed, and when the
+system uses automatic setup (an automatic setup script, PAC, or automatic discovery) the app asks the system for each
+address: the Mac through CFNetwork, which runs the script as the system does (read again after five minutes),
+Windows through WinHTTP (the script, or "Automatically detect settings"; when it can't be read or run, the fixed
+proxy). A test copy can name its own script (`--pac URL`, only with `$HD_DATA_DIR`), so the computer's settings never
+change for a test. HTTP and SOCKS proxies are both used.
 
 ## 10. Stop and resume
 

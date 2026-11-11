@@ -233,10 +233,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.* Built in #119: Linux asks the desktop for each address (GNOME's settings and automatic setup scripts, through the portal); the Mac and Windows follow their fixed proxy settings. Not yet: automatic setup scripts (PAC) on the Mac and Windows. A core test proves requests go through the proxy named; no machine's real proxy settings were changed to try it. Shipped in #119; the Mac and Windows stay open for automatic setup scripts (PAC).
-  - [ ] Mac
+- [x] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.* Built in #119: Linux asks the desktop for each address (GNOME's settings and automatic setup scripts, through the portal); the Mac and Windows follow their fixed proxy settings. Not yet: automatic setup scripts (PAC) on the Mac and Windows. A core test proves requests go through the proxy named; no machine's real proxy settings were changed to try it. Shipped in #119; the Mac and Windows stay open for automatic setup scripts (PAC). Automatic setup scripts on the Mac and Windows done 2026-11-11 (Mac through CFNetwork, Windows through WinHTTP); checked on both with a test copy given its own script (`--pac`): a made-up address went through the proxy the script named and downloaded, and didn't without the script.
+  - [x] Mac
   - [x] Linux
-  - [ ] Windows
+  - [x] Windows
 - [x] **Handle long and invalid file names, and keep some disk space free:** characters a file system refuses are replaced, a name or path too long for it is shortened (the extension kept), and a download pauses with a clear message before it would leave the disk nearly full. *Requested 2026-11-10, from studying JDownloader 2.* Done in #120: every name is fitted in the core (all three platforms), and downloads and streams stop with 128 MB left, keeping what they have. Checked by a test that fills a pretended disk mid-download and resumes, and by name tests.
   - [x] Mac
   - [x] Linux

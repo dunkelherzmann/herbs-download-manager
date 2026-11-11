@@ -874,6 +874,21 @@ pub fn checksum_algorithm_of(value: String) -> Option<ChecksumAlgorithm> {
     hd_core::checksum::Algorithm::of_value(&value).map(Into::into)
 }
 
+// --- The system's proxy (§9.2) ----------------------------------------------------------------------------------
+
+/// The app's way to find the system's proxy for an address (the Mac asks CFNetwork, which runs automatic setup
+/// scripts): its URL ("http://proxy:8080", "socks5://…"), or `None` / "direct://" to connect directly.
+#[uniffi::export(with_foreign)]
+pub trait ProxyFinder: Send + Sync {
+    fn proxy_for(&self, url: String) -> Option<String>;
+}
+
+/// Sets how each address's proxy is found. Call before `DownloadManager.open`, whose client is made once.
+#[uniffi::export]
+pub fn set_proxy_finder(finder: std::sync::Arc<dyn ProxyFinder>) {
+    hd_core::http::set_proxy_resolver(std::sync::Arc::new(move |url| finder.proxy_for(url.to_string())));
+}
+
 // --- Feature tests -----------------------------------------------------------------------------------------------
 
 /// The app side of a feature test (core/src/scenario.rs): runs a command through the app's own code on its main thread,

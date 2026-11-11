@@ -275,6 +275,12 @@ pub fn run() {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
             dwICC: ICC_LISTVIEW_CLASSES | ICC_TREEVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_BAR_CLASSES,
         });
+        // §9.2: the system's automatic proxy setup (PAC, auto-detect), set before the Manager makes its client. A test
+        // copy can name its own script (`--pac URL`), so the computer's real settings never change for a test.
+        let args: Vec<String> = std::env::args().collect();
+        let test_pac = std::env::var_os("HD_DATA_DIR")
+            .and(args.iter().position(|a| a == "--pac").and_then(|i| args.get(i + 1)).cloned());
+        crate::proxy::install(test_pac);
         let manager = match Manager::open(&crate::data_folder()) {
             // A test copy never fills the Recycle Bin.
             Ok(m) if std::env::var_os("HD_DATA_DIR").is_some() => {

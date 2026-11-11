@@ -6,6 +6,7 @@
 mod a11y;
 #[cfg(windows)]
 mod dragdrop;
+mod proxy;
 mod add;
 #[cfg(windows)]
 mod app;
