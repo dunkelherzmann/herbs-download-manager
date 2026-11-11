@@ -8,6 +8,8 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VERSION="$(sh "$ROOT/scripts/version.sh")"
+# The same version for the core (About's "core" line), read by core/build.rs.
+printf '%s\n' "$VERSION" > "$ROOT/version.txt"
 NAME="Herb's Download Manager"
 SHORT="Herb's DM"   # the menu bar and anywhere macOS needs a short name
 APP="$ROOT/dist/$NAME.app"

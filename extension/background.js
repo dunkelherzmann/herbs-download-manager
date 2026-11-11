@@ -77,11 +77,12 @@ async function pagesForScan(tabId) {
 // Previews already made, by link (or manifest): the newest 60.
 const previews = new Map();
 
-async function send(url, referer, extra = {}) {
+async function send(url, referer, extra = {}, tabId = -1) {
   // As the browser asks: its User-Agent and the page, which guarded streams want with every piece. When the browser
   // saw the player fetch this address, the player's own Referer and User-Agent go instead of the tab's: a player in
   // an embedded frame sends its frame's address, and the stream's server refuses any other (403).
-  const seen = pageHeaders.get(url);
+  let seen = pageHeaders.get(url);
+  if (!seen) try { seen = hostHeaders.get(`${tabId} ${new URL(url).host}`); } catch {}
   const header = (name) => seen && (seen.headers.find((h) => h.name.toLowerCase() === name) || {}).value;
   const message = {
     command: "add", urls: [url], referer: header("referer") || referer || "", cookies: await cookiesFor(url), check: true,
@@ -203,7 +204,9 @@ function dispositionName(header) {
 // its path, or `m3u8` in its query. Read once to see whether it is one (at most 20 a page).
 const MAYBE_STREAM = (url) => {
   const [path, query = ""] = url.split(/[?#]/);
-  return /\/api\/playlist\/master\//i.test(path) || /(^|[/_.-])hls([/_.-]|$)/i.test(new URL(path).pathname) || /m3u8/i.test(query);
+  const pathname = new URL(path).pathname;
+  // "/m3u8/<id>", "/hls/…", "…_mpd/…": a playlist named by a path part instead of an extension.
+  return /\/api\/playlist\/master\//i.test(path) || /(^|[/_.-])(hls|m3u8|mpd)([/_.-]|$)/i.test(pathname) || /m3u8/i.test(query);
 };
 
 function kindOf(d) {
@@ -291,6 +294,7 @@ async function variantsOf(url) {
 // asked for it (its tokens, its Referer and Origin), and the app downloads it so too, or a site that checks them
 // answers with an error.
 const pageHeaders = new Map();
+const hostHeaders = new Map();
 const SKIP_HEADERS = /^(cookie|host|content-length|connection|accept-encoding|sec-|priority|upgrade-insecure-requests|range)/i;
 const FORBIDDEN = /^(referer|origin|user-agent)$/i;
 if (api.webRequest && api.webRequest.onSendHeaders) {
@@ -301,6 +305,13 @@ if (api.webRequest && api.webRequest.onSendHeaders) {
     (d) => {
       if (d.tabId < 0 || !web(d.url)) return;
       const path = pathOf(d.url).toLowerCase();
+      // The last headers each host was asked with in this tab: a stream whose own address the browser didn't see
+      // asked (found by a scan, or by its type only) goes with its player's headers all the same.
+      try {
+        hostHeaders.delete(`${d.tabId} ${new URL(d.url).host}`);
+        hostHeaders.set(`${d.tabId} ${new URL(d.url).host}`, { headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)) });
+      } catch {}
+      if (hostHeaders.size > 300) hostHeaders.delete(hostHeaders.keys().next().value);
       if (!/\.(m3u8|mpd)$/.test(path) && !MAYBE_STREAM(d.url) && d.type !== "media") return;
       const now = Date.now();
       for (const [k, v] of pageHeaders) if (now - v.at > 60 * 60 * 1000) pageHeaders.delete(k);
@@ -783,7 +794,7 @@ async function addItem(tab, item, message) {
       answer = { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
     }
   } else {
-    answer = await send(item.url, tab && tab.url, options);
+    answer = await send(item.url, tab && tab.url, options, tab ? tab.id : -1);
   }
   return answer || { ok: false, error: `${NAME} didn't answer.` };
 }

@@ -6,6 +6,12 @@ param([switch]$NoDesktop)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+# The app's version for About, as scripts/version.sh counts it: VERSION, then the commits since VERSION last changed
+# (core/build.rs reads version.txt).
+$base = (Get-Content (Join-Path $root 'VERSION') -Raw).Trim()
+$since = git -C $root log -1 --format=%H -- VERSION 2>$null
+$patch = if ($since) { (git -C $root rev-list --count "$since..HEAD").Trim() } else { '0' }
+Set-Content -Path (Join-Path $root 'version.txt') -Value "$base.$patch" -NoNewline
 Push-Location (Join-Path $root 'windows')
 try {
     cargo build --release

@@ -553,7 +553,8 @@ downloads to the app. The browser keeps a download the app doesn't take.
   DownloadHelper's.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
   the browser saw a player fetch it, that request's own Referer and User-Agent: a player embedded from another site
-  sends its frame's address, and its server refuses any other; kept an hour), and
+  sends its frame's address, and its server refuses any other; kept an hour; for a stream whose own address the
+  browser didn't see asked, the last headers the tab sent to its host), and
   the page's Origin when the request goes to another site (as a web player's fetches do), with every request of
   that download (a stream's playlists, keys and pieces too). Guarded streams refuse pieces to a downloader that
   introduces itself otherwise (403). When a stream is still refused, its failure says why if its links tell: a

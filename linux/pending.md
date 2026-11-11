@@ -11,7 +11,7 @@ request each, and tick an item with its PR number once it is built and its test 
 
 ## Bugs to fix
 
-- [ ] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; waiting for Herbert's try.
+- [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.
 - [ ] **Feature tests failed once under load** (bugs.md, found in testing 2026-11-10): 4 of 17 failed while the machine was busy; probably a timing assumption in the scenario.
 
 ## To build

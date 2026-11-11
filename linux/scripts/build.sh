@@ -12,6 +12,8 @@ case "${1:-}" in
     --install) INSTALL=1 ;;
     --bundle) BUNDLE="${2:?--bundle needs a file to write}" ;;
 esac
+# The app's version, for About (core/build.rs reads it; the Flatpak build has no git history).
+sh "$ROOT/scripts/version.sh" > "$ROOT/version.txt"
 cd "$ROOT/linux"
 # flatpak-builder runs as the Flathub app org.flatpak.Builder (installed for this user on first use).
 flatpak info --user org.flatpak.Builder >/dev/null 2>&1 || flatpak install --user -y --noninteractive flathub org.flatpak.Builder

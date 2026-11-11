@@ -13,7 +13,7 @@ releases.
 
 ## Bugs to fix
 
-- [ ] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; waiting for Herbert's try.
+- [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.
 
 ## To build
 

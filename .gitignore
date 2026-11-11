@@ -9,3 +9,5 @@ linux/build/
 linux/.flatpak-builder/
 linux/target/
 windows/target/
+# The app version the build scripts write for the core (core/build.rs).
+/version.txt

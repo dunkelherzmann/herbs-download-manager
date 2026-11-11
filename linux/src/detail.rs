@@ -51,7 +51,10 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     let mut info = HashMap::new();
     for (i, key) in ["Link", "Folder", "Size", "Resumable", "Date Added", "Date Finished", "Checksum"].iter().enumerate() {
         info_grid.attach(&gtk::Label::builder().label(format!("{key}:")).xalign(1.0).build(), 0, i as i32, 1, 1);
-        let value = gtk::Label::builder().xalign(0.0).selectable(true).wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar).hexpand(true).build();
+        // One line, shortened in the middle as on the Mac, the whole value on hover: a long link that wrapped at
+        // any character made the window taller than the screen and pushed the tabs' buttons out of sight.
+        let value = gtk::Label::builder().xalign(0.0).selectable(true).ellipsize(gtk::pango::EllipsizeMode::Middle).hexpand(true).build();
+        value.connect_label_notify(|l| l.set_tooltip_text(Some(&l.label())));
         info_grid.attach(&value, 1, i as i32, 1, 1);
         info.insert(*key, value);
     }
@@ -156,6 +159,8 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     algorithms.connect_selected_notify(move |_| apply_checksum(false));
 
     let stack = adw::ViewStack::new();
+    // Each tab as tall as its own page, so the lists' buttons (Add Mirror, Make Main Link, +, −) stay in sight.
+    stack.set_vhomogeneous(false);
     stack.add_titled_with_icon(&info_grid, Some("info"), "Info", "dialog-information-symbolic");
     stack.add_titled_with_icon(&conn_page, Some("connections"), "Connections", "network-transmit-receive-symbolic");
     stack.add_titled_with_icon(&src_page, Some("mirrors"), "Mirrors", "folder-remote-symbolic");

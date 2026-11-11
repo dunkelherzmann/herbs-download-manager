@@ -64,7 +64,17 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A stream from a page failed with "403 Forbidden … ties the stream's link to the browser's network address"** although it was added from the browser extension on the same computer, while JDownloader and Video DownloadHelper downloaded it. *Reported 2026-11-11.* Mac, Linux, Windows. Found: the master playlist's token was tied to the computer's IPv6 network and its quality playlist to its IPv4 address, and the app connected over whichever family the system tried first. Now a link that names an address family is fetched over it, and a 403 over one family is asked again over the other (remembered per host). The address family is fixed in #110; the stream still failed (2026-11-11): the extension handed over the tab's page as Referer, while the video plays in a player embedded from another site, whose server refuses any other. Extension 1.18 hands over the player's own Referer and User-Agent; a download added before then has to be added again from the extension.
+- [x] **A stream from a page failed with "403 Forbidden … ties the stream's link to the browser's network address"** although it was added from the browser extension on the same computer, while JDownloader and Video DownloadHelper downloaded it. *Reported 2026-11-11.* Mac, Linux, Windows. Found: the master playlist's token was tied to the computer's IPv6 network and its quality playlist to its IPv4 address, and the app connected over whichever family the system tried first. Now a link that names an address family is fetched over it, and a 403 over one family is asked again over the other (remembered per host). The address family is fixed in #110; the stream still failed (2026-11-11): the extension handed over the tab's page as Referer, while the video plays in a player embedded from another site, whose server refuses any other. Extension 1.18 hands over the player's own Referer and User-Agent; a download added before then has to be added again from the extension. Herbert's test passed (2026-11-11).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **About showed version 0.1.0 on Linux and Windows** (*found in testing*, 2026-11-11): the core reported its crate's version, not the app's. Each platform's build now writes the app version (`scripts/version.sh`) for the core, so About shows "0.1.114" as the Mac does. Linux's About also shows its project link on its first page (a description had moved it under Details).
+  - [x] Linux
+  - [x] Windows
+- [x] **Linux: the download window's Connections and Mirrors tabs showed no buttons** (*found in testing*, 2026-11-11, X11 desktop): the Info tab's values wrapped at any character, so a long link made the window's content taller than the window, and the tabs, all as tall as the tallest, pushed their buttons (+, −, Add Mirror…, Make Main Link, Remove) out of sight. Info's values are now one line, shortened in the middle as on the Mac with the whole value on hover, and each tab is as tall as its own page.
+  - [x] Linux
+- [ ] **A stream from an embedded player (JW Player, `/m3u8/<id>` address) failed with 403** although added from the extension. *Reported 2026-11-11.* Mac, Linux, Windows. Found: its playlist's address names no `.m3u8` file, so the extension didn't keep the player's headers for it and handed the app the tab's page as Referer, which the stream's server refuses. Extension 1.21 treats `m3u8`/`mpd` as a path part as a playlist too, and otherwise uses the last headers the tab sent to that host. A download added before then has to be added again.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+

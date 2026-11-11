@@ -730,7 +730,6 @@ fn add_actions(
                 .application_name("Herb's Download Manager")
                 .application_icon(crate::APP_ID)
                 .developer_name("dunkelherzmann")
-                .comments("A download manager\nMany connections · Mirrors · Streams")
                 .version(hd_core::version())
                 .website(GITHUB)
                 .license_type(gtk::License::MitX11)

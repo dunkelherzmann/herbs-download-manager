@@ -165,8 +165,8 @@ test("a stream a player in an embedded frame fetched is handed over with the pla
   const sent = plain(b.sent.find((m) => m.command === "add" && m.urls[0] === url));
   assert.equal(sent.referer, "https://player.example.org/e/42", "the player's frame, not the tab's page");
   assert.equal(sent.user_agent, "Player UA");
-  // A stream the browser never saw fetched goes with the tab's page, as before.
-  const other = "https://cdn.example.net/hls/other/index.m3u8";
+  // A stream from a host the tab never asked anything of goes with the tab's page, as before.
+  const other = "https://elsewhere.example.com/hls/other/index.m3u8";
   await b.ask({ type: "add", tabId: 1, item: { url: other, kind: "stream" } });
   assert.equal(plain(b.sent.find((m) => m.urls && m.urls[0] === other)).referer, PAGE.url);
 });
@@ -315,3 +315,16 @@ test("Download Section hands the app the stream's from and to", async () => {
   await b.ask({ type: "add", tabId: 1, item: { url: "https://cdn.example.net/v.mp4", kind: "video" }, from: "0:10" });
   assert.equal(plain(b.sent.at(-1)).from, undefined);
 });
+
+test("a player's playlist named by a path part (/m3u8/<id>) goes with the player's own Referer", async () => {
+  const b = load({ tabs: [PAGE] });
+  const url = "https://player.example.org/m3u8/7075342";
+  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url, type: "xmlhttprequest", requestHeaders: headers({ Referer: "https://player.example.org/e/7" }) });
+  await b.ask({ type: "add", tabId: 1, item: { url, kind: "stream" } });
+  assert.equal(plain(b.sent.at(-1)).referer, "https://player.example.org/e/7");
+  // One whose own address wasn't seen asked: the last headers its host was asked with in the tab.
+  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url: "https://cdn.example.org/seg/1.ts", type: "xmlhttprequest", requestHeaders: headers({ Referer: "https://player.example.org/e/8" }) });
+  await b.ask({ type: "add", tabId: 1, item: { url: "https://cdn.example.org/play/abc", kind: "stream" } });
+  assert.equal(plain(b.sent.at(-1)).referer, "https://player.example.org/e/8");
+});
+

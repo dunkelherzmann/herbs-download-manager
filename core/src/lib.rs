@@ -22,5 +22,6 @@ pub mod vault;
 
 /// The core's version, shown in the app's About window.
 pub fn version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+    // The app's version ("0.1.113"), as each platform's build writes it (core/build.rs).
+    env!("HDM_APP_VERSION")
 }
