@@ -274,4 +274,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-
+- [x] **Copy a mirror's link from the Mirrors tab:** a way to copy a source's address (the link or a mirror) from the download window's Mirrors tab. *Requested 2026-11-11.* Built in the copy-link PR: a Copy Link button, Copy Link on right-clicking a source (Mac), and ⌘C / Ctrl+C in the list, on all three. Checked on Linux (button and Ctrl+C, the link and a mirror); Windows compiles; the Mac builds and waits for your try.

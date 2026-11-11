@@ -81,8 +81,11 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
         "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept",
     ));
     make_main.update_property(&[gtk::accessible::Property::Label("Make the selected mirror the main link")]);
+    let copy_link = gtk::Button::with_label("Copy Link");
+    copy_link.set_tooltip_text(Some("Copy the selected source's address (Ctrl+C)"));
     let src_buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     src_buttons.append(&add_mirror);
+    src_buttons.append(&copy_link);
     src_buttons.append(&make_main);
     src_buttons.append(&remove_mirror);
     let src_page = page(&src_list, &src_buttons);
@@ -240,6 +243,28 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
                 manager.make_main(id_, &s.url);
             }
         });
+    }
+    // Copy Link: the selected source's address, the main link's too (Ctrl+C on the list does the same).
+    {
+        let (src_list2, detail) = (src_list.clone(), detail.clone());
+        let copy = move || {
+            if let Some(row) = src_list2.selected_row()
+                && let Some(s) = detail.borrow().sources.get(row.index() as usize)
+            {
+                src_list2.clipboard().set_text(&s.url);
+            }
+        };
+        let copy2 = copy.clone();
+        copy_link.connect_clicked(move |_| copy2());
+        let keys = gtk::ShortcutController::new();
+        keys.add_shortcut(gtk::Shortcut::new(
+            gtk::ShortcutTrigger::parse_string("<Control>c"),
+            Some(gtk::CallbackAction::new(move |_, _| {
+                copy();
+                gtk::glib::Propagation::Stop
+            })),
+        ));
+        src_list.add_controller(keys);
     }
     {
         let (manager, src_list, detail) = (manager.clone(), src_list.clone(), detail.clone());

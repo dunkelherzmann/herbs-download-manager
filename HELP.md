@@ -45,7 +45,8 @@ over the sources that work, so one file comes from several servers at once.
   links onto a download in the list.
 - A mirror that serves another file, has no resume support or keeps failing is set aside on its own, and its share
   goes to the others. One good mirror is enough: a link that's gone, wants a sign-in or never answers gives way to it,
-  and that mirror becomes the main link. **Make Main Link** in the download window's Mirrors tab does it by hand.
+  and that mirror becomes the main link. **Make Main Link** in the download window's Mirrors tab does it by hand. **Copy Link** there (or ⌘C / Ctrl+C)
+  copies a source's address.
 - Each download uses up to 32 connections (Settings ▸ Connections per download). A connection that is much slower than
   the others hands its part to a faster source.
 

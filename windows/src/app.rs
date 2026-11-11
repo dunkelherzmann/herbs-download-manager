@@ -1053,7 +1053,7 @@ pub(crate) fn open_path(path: &std::path::Path, select: bool) {
     }
 }
 
-fn copy_text(hwnd: HWND, text: &str) {
+pub(crate) fn copy_text(hwnd: HWND, text: &str) {
     unsafe {
         let data = wide(text);
         if OpenClipboard(Some(hwnd)).is_err() {

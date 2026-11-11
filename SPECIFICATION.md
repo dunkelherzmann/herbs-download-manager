@@ -338,6 +338,9 @@ Different file, File changed, No resume support), active connections, speed and 
 moves its connections to the others; checking it again makes it available. The original link can be unchecked too,
 as long as one source stays on.
 
+**Copy Link** (a button beside Add Mirror…, on right-clicking a source, and ⌘C / Ctrl+C in the list) puts the selected
+source's address, the main link's or a mirror's, on the clipboard.
+
 **Make Main Link** (a button beside Add Mirror… and Remove, and on right-clicking a mirror; hover text "Make Main Link:
 the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept") makes
 the selected mirror the download's link; the old link goes first among its mirrors. A running download goes on
