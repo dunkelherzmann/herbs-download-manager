@@ -553,7 +553,9 @@ downloads to the app. The browser keeps a download the app doesn't take.
 - Right-clicking a link, picture, video or sound offers **Download Now with Herb's Download Manager** (started at
   once) and **Add to Queue in Herb's Download Manager**. Right-clicking a page whose tab played media also offers
   **Herb's Download Manager: media on this page**, listing them (up to 20, in the list's order, as "name · kind ·
-  quality"), each with **Download Now** and **Add to Queue**, as the list's buttons.
+  quality"), each with **Download Now** and **Add to Queue**, as the list's buttons. Choosing one of these is a
+  request for the app: when it isn't open, `hdm` opens it in the background, minimized and without taking the focus
+  (`--background`), then hands it the link, started or queued as chosen.
 - **Naming Rules** (the list's **Naming Rules…** button, or the extension's options page) sets, per site, how its
   videos and sounds are named and saved and what a click in the list does. A rule's site covers its subdomains, and
   the most particular rule wins (video.example.com over example.com). Each rule has: **Name**, a pattern with

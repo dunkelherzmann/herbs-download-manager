@@ -26,7 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             writeMenuReport(window, to: CommandLine.arguments[index + 1])
             return
         }
-        window.showWindow(nil)
+        if CommandLine.arguments.contains("--background") {
+            // Opened by the browser extension's right-click menu (§13): in the Dock, minimized, out of the way.
+            window.window?.orderBack(nil)
+            window.window?.miniaturize(nil)
+        } else {
+            window.showWindow(nil)
+        }
         window.startWatchingClipboard()
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
@@ -92,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } }
             RunLoop.main.add(timer, forMode: .common)
         }
-        NSApp.activate()
+        if !CommandLine.arguments.contains("--background") { NSApp.activate() }
     }
 
     /// Settings… (⌘,) from the app menu, also when no window is open.

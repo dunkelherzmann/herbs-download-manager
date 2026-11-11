@@ -205,6 +205,14 @@ fn the_browser_extension_hands_over_a_download_with_its_cookies() {
 
     let closed = talk(&[json!({"command": "ping"})]);
     assert_eq!(closed[0]["error"], control::NOT_RUNNING, "the extension lets the browser keep it");
+    // The right-click menu's add asks for the app (§13): hdm tries to open it in the background instead of saying it
+    // isn't running (here there's no app beside the test, so opening it fails, saying so).
+    let menu = talk(&[
+        json!({"command": "add", "urls": [s.url("/file.bin")]}),
+        json!({"command": "add", "urls": [s.url("/file.bin")], "open": true}),
+    ]);
+    assert_eq!(menu[0]["error"], control::NOT_RUNNING, "a plain add leaves a closed app alone");
+    assert!(menu[1]["error"].as_str().unwrap().contains("isn't next to hdm"), "{}", menu[1]);
 
     control::serve(&m, dir.join("files")).unwrap();
     let answers = talk(&[

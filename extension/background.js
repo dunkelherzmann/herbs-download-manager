@@ -138,14 +138,16 @@ api.contextMenus.onClicked.addListener(async (info) => {
       await api.scripting.executeScript({ target: { tabId: chosen.tab.id }, func: (t) => navigator.clipboard.writeText(t), args: [chosen.item.url] }).catch(() => {});
       return;
     }
-    const answer = await addItem(chosen.tab, chosen.item, { soundOnly: action === "sound", start: pick[2] === "now" });
+    // The right-click menu is a request for the app: it's opened in the background when it isn't running (§13).
+    const answer = await addItem(chosen.tab, chosen.item, { soundOnly: action === "sound", start: pick[2] === "now", open: true });
     if (!(answer && answer.ok)) await tell((answer && answer.error) || `${NAME} didn't answer.`);
     return;
   }
   if (info.menuItemId !== "hdm-link" && info.menuItemId !== "hdm-link-queue") return;
   const url = info.linkUrl || info.srcUrl;
   if (!web(url)) return;
-  const answer = await send(url, info.pageUrl, info.menuItemId === "hdm-link-queue" ? { queue: true } : {});
+  // The right-click menu is a request for the app: it's opened in the background when it isn't running (§13).
+  const answer = await send(url, info.pageUrl, info.menuItemId === "hdm-link-queue" ? { queue: true, open: true } : { open: true });
   if (!(answer && answer.ok)) await tell((answer && answer.error) || `${NAME} didn't answer.`);
 });
 
@@ -785,6 +787,8 @@ async function addItem(tab, item, message) {
   if (options.stream && message.to) options.to = message.to;
   // The rule's sub-folder, inside the folder Settings saves to.
   if (rule && rule.folder) options.subfolder = rule.folder;
+  // From the right-click menu: open the app first when it isn't running.
+  if (message.open) options.open = true;
   let answer;
   if (item.kind === "page-dash") {
     // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.

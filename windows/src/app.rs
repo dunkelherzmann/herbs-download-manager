@@ -495,7 +495,9 @@ pub fn run() {
         if capture.is_some() {
             SetTimer(Some(hwnd), TIMER_CAPTURE, 2000, None);
         }
-        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        // Opened by the browser extension's right-click menu (§13): minimized, out of the way.
+        let background = std::env::args().any(|a| a == "--background");
+        let _ = ShowWindow(hwnd, if background { SW_SHOWMINNOACTIVE } else { SW_SHOWNOACTIVATE });
 
         // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
         if let Some(i) = args.iter().position(|a| a == "--show")

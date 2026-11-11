@@ -166,6 +166,15 @@ fn main() -> gtk::glib::ExitCode {
                 }
                 let window = window::build(app, manager.clone());
                 features::run_if_asked(app, &manager);
+                // Opened by the browser extension's right-click menu (§13): minimized, out of the way.
+                // GNOME ignores a minimize asked before the window is on screen, so it's asked once it's mapped.
+                if std::env::args().any(|a| a == "--background") {
+                    window.minimize();
+                    window.connect_map(|w| {
+                        let w = w.clone();
+                        gtk::glib::idle_add_local_once(move || w.minimize());
+                    });
+                }
                 window.present();
                 if let Some(path) = capture_path() {
                     window::capture_then_quit(app, &window, path);

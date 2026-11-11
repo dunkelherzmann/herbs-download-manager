@@ -104,6 +104,7 @@ Open the app once before using it, so it can register itself with your browsers.
   page again so its player fetches the video again), **Refresh** (the video playing now), **Find Files on This Page**,
   the list's order and the side panel.
 - Right-click a link, picture, video or page for **Download Now with Herb's Download Manager** and **Add to Queue**.
+  When the app isn't open, it opens minimized in the background and takes the link.
 
 ## Sign-ins
 

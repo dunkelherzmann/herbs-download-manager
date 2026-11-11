@@ -54,6 +54,9 @@ pub struct Request {
     /// add, from the browser extension: the browser's cookies for the link (a Cookie header). Kept for this session
     /// only, as an unremembered sign-in for the link's site (§9.1); never written to disk.
     pub cookies: Option<String>,
+    /// add, from the browser extension's right-click menu (§13): open the app, in the background and minimized, when
+    /// it isn't running, then add.
+    pub open: bool,
     /// add: check each link first, and add nothing if one doesn't work, so the browser can keep the download.
     pub check: bool,
     /// add, from the browser extension: the link is a streamed video's playlist (§15), whatever its address says.
@@ -582,12 +585,16 @@ fn app_program() -> Result<PathBuf, String> {
 
 /// Opens the app (the browser extension's "Open and Download"), apart from `hdm` so it keeps running when the browser
 /// closes `hdm`, and waits up to `wait` for it to answer. The app gets hdm's environment (a test copy's data folder).
-pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
+/// `background`: it starts minimized, without taking the focus (`--background`; the extension's right-click menu).
+pub fn open_app(dir: &Path, wait: Duration, background: bool) -> Result<(), String> {
     if send(dir, &Request { command: "list".into(), filter: Some("downloading".into()), ..Default::default() }).is_ok() {
         return Ok(());
     }
     let program = app_program()?;
     let mut command = std::process::Command::new(&program);
+    if background {
+        command.arg("--background");
+    }
     command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     #[cfg(unix)]
     {
@@ -603,6 +610,15 @@ pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
     #[cfg(windows)]
     let started = {
         use std::os::windows::process::CommandExt;
+        // hdm's own input and output (the browser's pipe) stop being inheritable first: Windows hands every
+        // inheritable handle to the app, which would then hold the browser's pipe open for as long as it runs.
+        unsafe {
+            use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+            use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+            for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+                SetHandleInformation(GetStdHandle(which), HANDLE_FLAG_INHERIT, 0);
+            }
+        }
         const DETACHED_PROCESS: u32 = 0x8;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x200;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;

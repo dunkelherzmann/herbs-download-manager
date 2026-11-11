@@ -115,7 +115,8 @@ test("the right-click menu lists the active tab's media, each to add to the queu
   b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-link-queue", linkUrl: "https://www.example.com/a.zip", pageUrl: PAGE.url }, PAGE);
   b.chrome.contextMenus.onClicked.fire({ menuItemId: "hdm-link", linkUrl: "https://www.example.com/b.zip", pageUrl: PAGE.url }, PAGE);
   await new Promise((r) => setTimeout(r, 20));
-  assert.deepEqual(b.sent.slice(2).map((m) => [m.urls[0], m.queue === true]), [["https://www.example.com/a.zip", true], ["https://www.example.com/b.zip", false]]);
+  assert.deepEqual(b.sent.slice(2).map((m) => [m.urls[0], m.queue === true]), [["https://www.example.com/a.zip", true], ["https://www.example.com/b.zip", false]]);  // The menu asks for the app: hdm opens it in the background when it isn't running.
+  assert.deepEqual(b.sent.map((m) => m.open), [true, true, true, true]);
 });
 
 test("a site's naming rule names what's added, gives its sub-folder, and says what a click does", async () => {

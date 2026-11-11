@@ -317,13 +317,22 @@ pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32
                 Err(e) => Answer::failed(e),
             },
             // The extension's "Open and Download": the app, opened and answering.
-            Ok(r) if r.command == "open" => match control::open_app(dir, std::time::Duration::from_secs(30)) {
+            Ok(r) if r.command == "open" => match control::open_app(dir, std::time::Duration::from_secs(30), false) {
                 Ok(()) => Answer { ok: true, message: Some("Herb's Download Manager is open.".into()), ..Default::default() },
                 Err(e) => Answer { error: Some(e), ..Default::default() },
             },
             Ok(r) if r.command == "add" => {
-                let request = Request { command: "add".into(), ids: vec![], text: String::new(), delete_files: false, ..r };
-                control::send(dir, &request).unwrap_or_else(Answer::failed)
+                let open = r.open;
+                let request = Request { command: "add".into(), ids: vec![], text: String::new(), delete_files: false, open: false, ..r };
+                match control::send(dir, &request) {
+                    // The right-click menu asks for the app (§13): opened in the background and minimized, then
+                    // given the links, to start or to queue as asked.
+                    Err(e) if open && e == control::NOT_RUNNING => match control::open_app(dir, std::time::Duration::from_secs(30), true) {
+                        Ok(()) => control::send(dir, &request).unwrap_or_else(Answer::failed),
+                        Err(e) => Answer { error: Some(e), ..Default::default() },
+                    },
+                    answer => answer.unwrap_or_else(Answer::failed),
+                }
             }
             // The extension's "Find Files on This Page": the app reads the page with the browser's cookies.
             Ok(r) if r.command == "scan" => {

@@ -275,3 +275,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 - [x] **Copy a mirror's link from the Mirrors tab:** a way to copy a source's address (the link or a mirror) from the download window's Mirrors tab. *Requested 2026-11-11.* Built in the copy-link PR: a Copy Link button, Copy Link on right-clicking a source (Mac), and ⌘C / Ctrl+C in the list, on all three. Checked on Linux (button and Ctrl+C, the link and a mirror); Windows compiles; the Mac builds and waits for your try.
+- [x] **The browser's right-click menu opens the app when it's closed:** Download Now and Add to Queue from the extension's right-click menu (links, pictures, videos, and the page's media) open Herb's Download Manager in the background and minimized when it isn't running, then start or queue the link as chosen; using the menu is a request for the app. *Requested 2026-11-11, with a picture of the menu in Edge.* Built in the open-from-menu PR (extension 1.22): the menu's adds carry `open`, and `hdm` starts the app with `--background` (minimized without taking the focus on all three), then hands it the link. A download the browser starts on its own still stays in the browser when the app is closed. Checked on all three with a test copy: the add came back, the app opened minimized with the focus left where it was, and the file downloaded. Found on Windows: the app inherited hdm's pipe to the browser, holding it open; hdm now keeps its own handles to itself.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
