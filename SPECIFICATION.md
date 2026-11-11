@@ -543,6 +543,12 @@ downloads to the app. The browser keeps a download the app doesn't take.
   introduces itself otherwise (403). When a stream is still refused, its failure says why if its links tell: a
   token that expired ("The stream's link expired at 15:26: open its page again and add it anew") or one tied to the
   browser's network address.
+- **Links tied to an address family.** Sites tie a stream's links to the address of the browser that asked for them,
+  sometimes its IPv6 network for one link and its IPv4 address for the next. A link that names the viewer's address
+  (a token's `ip` or `ip_cidr`, or a public address written in its path or query) is fetched over that family. A
+  request refused (403) over one family, from a host that has the other, is asked once more over the other, and the
+  family that works is remembered for that host. This holds for a stream's playlists and pieces, and for every
+  request of a file download.
 - The cookies and page arrive as a sign-in for the link's site for this session only (§9.1): they're never written
   to disk, and they keep a saved sign-in's user name and password.
 - The extension talks to `hdm` (§12) by native messaging, which passes on only `add` and `ping`. At each launch the

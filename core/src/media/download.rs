@@ -119,7 +119,7 @@ fn refusal_hint(reason: &str, urls: &[Url]) -> String {
             return format!(". The stream's link expired at {at}: open its page again and add it anew");
         }
         if tied {
-            return ". The site ties the stream's link to the browser's network address: add it from the browser extension, on the same network".into();
+            return ". The site ties the stream's link to the network address of the browser that found it (both IPv4 and IPv6 were tried): add it again from the browser extension on this computer".into();
         }
     }
     String::new()
@@ -187,8 +187,7 @@ async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, 
         let path = url.to_file_path().map_err(|_| "Not a valid link".to_string())?;
         return std::fs::read_to_string(&path).map_err(|e| format!("Can't read {}: {e}", path.display()));
     }
-    let response = transfer::signed_as(client.get(url.clone()), url, vault, dress)
-        .send()
+    let response = crate::http::send_matching(client, url, |c| transfer::signed_as(c.get(url.clone()), url, vault, dress))
         .await
         .map_err(|e| transfer::error_text(&e))?;
     let status = response.status();
@@ -610,11 +609,15 @@ async fn fetch_all(
 }
 
 async fn fetch_bytes(client: &reqwest::Client, url: &Url, range: Option<(u64, u64)>, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<Vec<u8>, String> {
-    let mut rb = transfer::signed_as(client.get(url.clone()), url, vault, dress);
-    if let Some((len, off)) = range {
-        rb = rb.header(reqwest::header::RANGE, format!("bytes={off}-{}", off + len.max(1) - 1));
-    }
-    let response = rb.send().await.map_err(|e| transfer::error_text(&e))?;
+    let response = crate::http::send_matching(client, url, |c| {
+        let rb = transfer::signed_as(c.get(url.clone()), url, vault, dress);
+        match range {
+            Some((len, off)) => rb.header(reqwest::header::RANGE, format!("bytes={off}-{}", off + len.max(1) - 1)),
+            None => rb,
+        }
+    })
+    .await
+    .map_err(|e| transfer::error_text(&e))?;
     if !response.status().is_success() {
         return Err(format!("{} {}", response.status().as_u16(), response.status().canonical_reason().unwrap_or("")).trim().to_string());
     }
@@ -630,11 +633,14 @@ async fn fetch_piece(client: &reqwest::Client, piece: &Piece, req: &StreamReques
         }
         let mut got = 0u64;
         let attempt: Result<Vec<u8>, (bool, String)> = async {
-            let mut rb = transfer::signed_as(client.get(piece.url.clone()), &piece.url, &req.vault, req.dress.as_ref());
-            if let Some((len, off)) = piece.range {
-                rb = rb.header(reqwest::header::RANGE, format!("bytes={off}-{}", off + len.max(1) - 1));
-            }
-            let mut response = tokio::time::timeout(Duration::from_secs(30), rb.send())
+            let build = |c: &reqwest::Client| {
+                let rb = transfer::signed_as(c.get(piece.url.clone()), &piece.url, &req.vault, req.dress.as_ref());
+                match piece.range {
+                    Some((len, off)) => rb.header(reqwest::header::RANGE, format!("bytes={off}-{}", off + len.max(1) - 1)),
+                    None => rb,
+                }
+            };
+            let mut response = tokio::time::timeout(Duration::from_secs(30), crate::http::send_matching(client, &piece.url, build))
                 .await
                 .map_err(|_| (true, "The server didn't answer".to_string()))?
                 .map_err(|e| (true, transfer::error_text(&e)))?;

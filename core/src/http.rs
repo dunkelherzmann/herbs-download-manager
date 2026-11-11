@@ -7,13 +7,148 @@ use reqwest::header::{CONTENT_DISPOSITION, CONTENT_RANGE, ETAG, HeaderMap, LAST_
 /// One client for every download: HTTP/1.1 only, so each connection is its own TCP connection (HTTP/2 would fold
 /// them into one), TLS with the system's certificates, and proxies from the system settings.
 pub fn client() -> reqwest::Client {
+    builder().build().expect("the HTTP client's settings are fixed and valid")
+}
+
+fn builder() -> reqwest::ClientBuilder {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .http1_only()
         .user_agent(concat!("HerbsDownloadManager/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(30))
-        .build()
-        .expect("the HTTP client's settings are fixed and valid")
+}
+
+/// An internet address family: IPv4 or IPv6.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Family {
+    V4,
+    V6,
+}
+
+impl Family {
+    fn of(ip: &std::net::IpAddr) -> Family {
+        if ip.is_ipv4() || matches!(ip, std::net::IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some()) { Family::V4 } else { Family::V6 }
+    }
+
+    fn other(self) -> Family {
+        if self == Family::V4 { Family::V6 } else { Family::V4 }
+    }
+}
+
+/// Resolves names to one family's addresses only, so every connection goes over that family.
+struct OneFamily(Family);
+
+impl reqwest::dns::Resolve for OneFamily {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let (family, host) = (self.0, name.as_str().to_string());
+        Box::pin(async move {
+            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), 0)).await?.filter(|a| Family::of(&a.ip()) == family).collect();
+            if addrs.is_empty() {
+                return Err(format!("{host} has no {} address", if family == Family::V4 { "IPv4" } else { "IPv6" }).into());
+            }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// The client that connects over `family` only.
+fn family_client(family: Family) -> reqwest::Client {
+    static V4: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    static V6: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let cell = if family == Family::V4 { &V4 } else { &V6 };
+    cell.get_or_init(|| builder().dns_resolver(std::sync::Arc::new(OneFamily(family))).build().expect("the HTTP client's settings are fixed and valid"))
+        .clone()
+}
+
+/// Hosts whose links work over one family only, learned from a refusal over the other.
+fn learned() -> &'static std::sync::Mutex<std::collections::HashMap<String, Family>> {
+    static LEARNED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Family>>> = std::sync::OnceLock::new();
+    LEARNED.get_or_init(Default::default)
+}
+
+/// Forgets the families learned for hosts (for tests).
+#[doc(hidden)]
+pub fn forget_families() {
+    learned().lock().unwrap().clear();
+}
+
+/// The family a link is tied to, when it names the viewer's address: a token in its query (a JSON Web Token's `ip`
+/// or `ip_cidr`), or an address written in its path or query (`…:185.134.89.245:…`). Sites tie a stream's links to
+/// the address of the browser that asked for them; the app must then connect over the same family.
+pub fn named_family(url: &reqwest::Url) -> Option<Family> {
+    use base64::Engine;
+    // A token's claims.
+    for (_, value) in url.query_pairs() {
+        let mut parts = value.split('.');
+        if let (Some(_), Some(payload), Some(_)) = (parts.next(), parts.next(), parts.next())
+            && let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('='))
+            && let Ok(claims) = serde_json::from_slice::<serde_json::Value>(&bytes)
+            && let Some(ip) = claims.get("ip_cidr").or(claims.get("ip")).and_then(|v| v.as_str())
+            && let Ok(ip) = ip.split('/').next().unwrap_or("").parse::<std::net::IpAddr>()
+        {
+            return Some(Family::of(&ip));
+        }
+    }
+    // An address written out: public ones only (a private or local one isn't the viewer's address on the internet).
+    let text = format!("{}?{}", url.path(), url.query().unwrap_or(""));
+    let mut found: Option<Family> = None;
+    for piece in text.split(|c: char| !(c.is_ascii_hexdigit() || c == '.' || c == ':')) {
+        for candidate in std::iter::once(piece).chain(piece.split(':')) {
+            let Ok(ip) = candidate.parse::<std::net::IpAddr>() else { continue };
+            let public = match ip {
+                std::net::IpAddr::V4(v4) => !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() || v4.octets()[0] == 0),
+                std::net::IpAddr::V6(v6) => !(v6.is_loopback() || v6.is_unspecified()) && (v6.segments()[0] & 0xe000) == 0x2000,
+            };
+            if !public {
+                continue;
+            }
+            let family = Family::of(&ip);
+            if found.is_some_and(|f| f != family) {
+                return None; // both families named: no telling
+            }
+            found = Some(family);
+        }
+    }
+    found
+}
+
+/// Whether `host` has an address of `family`.
+async fn has_family(host: &str, family: Family) -> bool {
+    tokio::net::lookup_host((host, 0)).await.is_ok_and(|mut a| a.any(|a| Family::of(&a.ip()) == family))
+}
+
+/// Sends the request `build` makes for `url`, over the address family the link is tied to when it names one (or the
+/// one that worked before for its host). A refusal (403) over one family, from a host that has the other, is asked
+/// once more over the other, and the family that works is remembered for the host: a site that ties its links to
+/// the browser's IPv6 network refuses the same computer over IPv4, and the other way round.
+pub async fn send_matching(client: &reqwest::Client, url: &reqwest::Url, build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+    let host = url.host_str().unwrap_or("").trim_matches(['[', ']']).to_string();
+    // A link to an address (not a name) connects there whatever is chosen.
+    if host.parse::<std::net::IpAddr>().is_ok() || host.is_empty() {
+        return build(client).send().await;
+    }
+    // What the link itself says wins over what its host taught before.
+    let want = named_family(url).or_else(|| learned().lock().unwrap().get(&host).copied());
+    let chosen = match want {
+        Some(f) if has_family(&host, f).await => Some(f),
+        _ => None,
+    };
+    let response = build(&chosen.map(family_client).unwrap_or_else(|| client.clone())).send().await?;
+    if response.status() != reqwest::StatusCode::FORBIDDEN {
+        return Ok(response);
+    }
+    let Some(used) = response.remote_addr().map(|a| Family::of(&a.ip())) else { return Ok(response) };
+    let other = used.other();
+    if !has_family(&host, other).await {
+        return Ok(response);
+    }
+    match build(&family_client(other)).send().await {
+        Ok(again) if again.status().is_success() => {
+            learned().lock().unwrap().insert(host, other);
+            Ok(again)
+        }
+        _ => Ok(response),
+    }
 }
 
 /// The total size in `Content-Range: bytes a-b/total`, when the server knows it.

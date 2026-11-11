@@ -64,3 +64,7 @@ No bugs reported yet.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **A stream from a page failed with "403 Forbidden … ties the stream's link to the browser's network address"** although it was added from the browser extension on the same computer, while JDownloader and Video DownloadHelper downloaded it. *Reported 2026-11-11.* Mac, Linux, Windows. Found: the master playlist's token was tied to the computer's IPv6 network and its quality playlist to its IPv4 address, and the app connected over whichever family the system tried first. Now a link that names an address family is fetched over it, and a 403 over one family is asked again over the other (remembered per host).
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

@@ -611,7 +611,10 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
             }
             let Ok(url) = reqwest::Url::parse(&s.url) else { continue };
             let host = url.host_str().unwrap_or("").to_string();
-            let sent = signed_as(client.get(url.clone()), &url, &req.vault, req.dress.as_ref()).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
+            let (client, vault, dress) = (client.clone(), req.vault.clone(), req.dress.clone());
+            let sent = async move {
+                http::send_matching(&client, &url, |c| signed_as(c.get(url.clone()), &url, &vault, dress.as_ref()).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity")).await
+            };
             let wait = tuning.first_answer_timeout;
             asks.spawn(async move { (i, host, tokio::time::timeout(wait, sent).await) });
         }
@@ -1290,7 +1293,6 @@ impl Job {
     /// Opens a request on `src` for the rest of the range this connection owns.
     async fn open(&self, id: usize, src: usize) -> Result<(reqwest::Response, Vec<u8>), Problem> {
         let source = self.source(src);
-        let mut req = signed_as(self.client.get(source.url.clone()), &source.url, &self.vault, self.dress.as_ref()).header(ACCEPT_ENCODING, "identity");
         let (start, end, written_from) = if self.sequential {
             // Without ranges a failed download starts over.
             let mut segs = self.segs.lock().unwrap();
@@ -1307,15 +1309,20 @@ impl Job {
         // before the bytes this connection's range already holds, and those are compared first.
         let overlap = if self.sequential || source.validator.lock().unwrap().is_some() { 0 } else { OVERLAP.min(start - written_from) };
         let from = start - overlap;
-        if !self.sequential {
-            req = req.header(RANGE, format!("bytes={from}-{}", end - 1));
-            if let Some(v) = source.validator.lock().unwrap().as_ref() {
-                req = req.header(IF_RANGE, v);
+        let validator = if self.sequential { None } else { source.validator.lock().unwrap().clone() };
+        let build = |c: &reqwest::Client| {
+            let mut req = signed_as(c.get(source.url.clone()), &source.url, &self.vault, self.dress.as_ref()).header(ACCEPT_ENCODING, "identity");
+            if !self.sequential {
+                req = req.header(RANGE, format!("bytes={from}-{}", end - 1));
+                if let Some(v) = &validator {
+                    req = req.header(IF_RANGE, v);
+                }
             }
-        }
+            req
+        };
         let mut stop = self.stop.clone();
         let response = tokio::select! {
-            r = tokio::time::timeout(self.tuning.first_answer_timeout, req.send()) => match r {
+            r = tokio::time::timeout(self.tuning.first_answer_timeout, http::send_matching(&self.client, &source.url, build)) => match r {
                 Ok(r) => r.map_err(|e| Problem::Transient(error_text(&e)))?,
                 Err(_) => return Err(Problem::Transient("The server didn't answer".into())),
             },
@@ -1481,12 +1488,12 @@ impl Job {
         let source = self.source(idx);
         let mut attempt = 0usize;
         loop {
-            let req = signed_as(self.client.get(source.url.clone()), &source.url, &self.vault, self.dress.as_ref())
-                .header(RANGE, "bytes=0-0")
-                .header(ACCEPT_ENCODING, "identity");
+            let build = |c: &reqwest::Client| {
+                signed_as(c.get(source.url.clone()), &source.url, &self.vault, self.dress.as_ref()).header(RANGE, "bytes=0-0").header(ACCEPT_ENCODING, "identity")
+            };
             let mut stop = self.stop.clone();
             let result = tokio::select! {
-                r = tokio::time::timeout(self.tuning.first_answer_timeout, req.send()) => {
+                r = tokio::time::timeout(self.tuning.first_answer_timeout, http::send_matching(&self.client, &source.url, build)) => {
                     r.map_err(|_| "The server didn't answer".to_string()).and_then(|r| r.map_err(|e| error_text(&e)))
                 }
                 _ = stopped_ref(&mut stop) => return,
