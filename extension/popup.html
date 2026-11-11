@@ -7,37 +7,49 @@
 </head>
 <body>
   <header>
-    <img src="icons/icon-32.png" alt="" width="20" height="20">
-    <h1>Herb's Download Manager</h1>
+    <img src="icons/icon-32.png" alt="" width="18" height="18">
+    <h1>Herb's DM</h1>
+    <label class="switch" title="Take the browser's downloads: files the browser would download go to Herb's Download Manager instead">
+      <span>Take downloads</span>
+      <input type="checkbox" id="on" role="switch">
+    </label>
   </header>
-  <label class="switch">
-    <input type="checkbox" id="on">
-    <span>Take the browser's downloads</span>
-  </label>
-  <label class="switch" id="panel-row" hidden>
-    <input type="checkbox" id="panel">
-    <span>Open in the side panel</span>
-  </label>
-  <div class="heading">
-    <h2>Played on this page</h2>
-    <button id="refresh" class="refresh" title="Refresh: find the video playing now (for sites that change videos as you scroll)">Refresh</button>
-    <select id="order" aria-label="Order of the list" title="Order of the list: Smart puts streams first, finished ones before live ones and the page's own site before others">
-      <option value="smart">Smart order</option>
-      <option value="oldest">Oldest first</option>
-      <option value="newest">Newest first</option>
-    </select>
-  </div>
-  <ul id="items"></ul>
-  <div id="empty" hidden>
-    <p>Nothing found yet. Start the video (and skip any ads), and it shows here.</p>
-    <button id="again" class="scan" title="Load the page again, so its player fetches its video again">Look Again</button>
-  </div>
-  <div class="actions">
-    <button id="scan" class="scan">Find Files on This Page</button>
-    <button id="rules" class="scan" title="How this site's videos are named and saved, and what a click in the list does">Naming Rules…</button>
-  </div>
-  <ul id="found"></ul>
-  <p id="scan-note" class="note" hidden></p>
+  <main>
+    <ul id="items" class="cards" aria-label="Videos and sounds played on this page"></ul>
+    <div id="empty" class="empty" hidden>
+      <p>Nothing played yet. Start the video (and skip any ads), and it shows here.</p>
+      <button id="again" class="text-button" title="Load the page again, so its player fetches its video again">Look Again</button>
+    </div>
+    <h2 id="found-heading" hidden>Files on this page</h2>
+    <ul id="found" class="cards" aria-label="Files and media found on this page"></ul>
+    <p id="scan-note" class="note" hidden></p>
+  </main>
+  <footer>
+    <button id="rules" class="icon" title="Naming Rules: how this site's videos are named and saved, and what Download does" aria-label="Naming Rules">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1"/><circle cx="8" cy="8" r="4.6"/></svg>
+    </button>
+    <span id="version" class="version" title="The extension's version"></span>
+    <span class="spacer"></span>
+    <button id="no-video" class="text-button" title="No video? Load the page again, so its player fetches its video again">No video?</button>
+    <button id="refresh" class="icon" title="Refresh: find the video playing now (for sites that change videos as you scroll)" aria-label="Refresh">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M11.8 1.8v2.8H9"/></svg>
+    </button>
+    <button id="scan" class="icon" title="Find Files on This Page: look through the page for files and media" aria-label="Find Files on This Page">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.8 3.8"/></svg>
+    </button>
+    <label class="icon order" title="Order of the list: Smart puts streams first, finished ones before live ones and the page's own site before others">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5v11M2.5 11l2.5 2.5L7.5 11M11 13.5v-11M8.5 5L11 2.5 13.5 5"/></svg>
+      <select id="order" aria-label="Order of the list">
+        <option value="smart">Smart order</option>
+        <option value="oldest">Oldest first</option>
+        <option value="newest">Newest first</option>
+      </select>
+    </label>
+    <label id="panel-row" class="icon toggle" title="Open in the side panel instead of this list" hidden>
+      <input type="checkbox" id="panel" aria-label="Open in the side panel">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M10 2.8v10.4"/></svg>
+    </label>
+  </footer>
   <script src="popup.js"></script>
 </body>
 </html>

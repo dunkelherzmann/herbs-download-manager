@@ -253,3 +253,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **The extension's list laid out like Video DownloadHelper's, themed like the app:** one card an item (picture with a play mark and its length, a kind badge before a two-line name, ×), ✏ to name it first, its format and quality as chips, a Download button with ▾ for Add to Queue, Sound Only and Copy Address, and a bar of tools at the bottom (Naming Rules, No video?, Refresh, Find Files, order, side panel); the app's colors, system blue and line icons, light and dark. *Requested 2026-11-11, with a picture of DownloadHelper's list.* Extension 1.17, with its version beside Naming Rules (asked 2026-11-11). Checked in a browser with a stand-in for the extension's API, light and dark; needs a try in the real extension.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **The extension's toolbar icon as big as the other extensions' icons:** it looked smaller. *Requested 2026-11-11.* The toolbar icons are drawn without the app icon's margin (`icon/make.sh`). Extension 1.17.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

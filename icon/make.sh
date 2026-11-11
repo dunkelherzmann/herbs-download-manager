@@ -32,4 +32,8 @@ mkdir -p "$ROOT/windows/icons"
 for s in 16 20 24 32 40 48 64 256; do render "$TMP/w$s.png" $s; done
 magick "$TMP"/w16.png "$TMP"/w20.png "$TMP"/w24.png "$TMP"/w32.png "$TMP"/w40.png "$TMP"/w48.png "$TMP"/w64.png \
   "$TMP"/w256.png "$ROOT/windows/icons/app.ico"
+# The browser extension's toolbar button: the square without the macOS margin around it, so it is as big as the
+# other extensions' buttons (Herbert, 2026-11-11: it looked smaller). The Extensions page keeps the full icon.
+sed 's/viewBox="0 0 1024 1024"/viewBox="96 96 832 832"/' icon.svg > "$TMP/toolbar.svg"
+for s in 16 24 32; do "$TMP/render" "$TMP/toolbar.svg" "$ROOT/extension/icons/toolbar-$s.png" $s > /dev/null; done
 echo "Icons written."

@@ -535,8 +535,13 @@ downloads to the app. The browser keeps a download the app doesn't take.
   **Open and Download** button: `hdm` opens the app (from beside itself, apart from the browser so it stays open
   when the browser closes), waits up to 30 seconds for it to answer, and the item is added and started at once
   ("Downloading"). Find Files on This Page offers **Open and Look Again** the same way.
-- The toolbar button opens the extension's list: **Take the browser's downloads** (a switch: when off, the browser
-  keeps its downloads and the button's badge says "off"), and **On this page**, the media the tab played (§15).
+- The toolbar button (its icon drawn without the app icon's margin, so it's as big as other extensions' buttons)
+  opens the extension's list: **Take downloads** at the top (a switch: when off, the browser keeps its downloads and
+  the button's badge says "off"), the media the tab played (§15) and the files found on the page, each as a card,
+  and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.17") on the left; **No video?** (Look Again), **Refresh**,
+  **Find Files on This Page** (🔍), the list's **order** and **Open in the side panel** on the right. The list
+  looks like the app (its colors, system blue, monochrome line icons, light and dark), laid out as Video
+  DownloadHelper's.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer, and
   the page's Origin when the request goes to another site (as a web player's fetches do), with every request of
   that download (a stream's playlists, keys and pieces too). Guarded streams refuse pieces to a downloader that
@@ -770,14 +775,20 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   for it: with the headers the page sent (kept 10 minutes), Referer, Origin and User-Agent set by a browser rule for
   that one address and removed after. A master
   playlist is read once and its quality and sound playlists are left out of the list. The button shows how many
-  items the tab has; the list is forgotten when the tab goes to another page. Each item shows its name (a stream:
-  the page's title), its kind ("Video stream", "Video", "Sound"), size and site; a click adds it to the app's
-  queue, with the page's cookies and address, and says "Added to the queue" or why not. A stream with more than one
-  quality or sound track shows two lists under it: **Quality as in Settings**, **Highest** and each picture size with
-  its bit rate ("720p · 2.8 Mb/s", one per size, HDR left out as above); and **Sound as in Settings**, **The stream's
-  own sound** and each sound track by name and language ("English (en)"). What they show is what the app downloads.
+  items the tab has; the list is forgotten when the tab goes to another page. Each item is a card: its preview on
+  the left, then a badge for its kind (HLS, DASH, MP4, MP3, PDF…) before its name (a stream: the page's title; two
+  lines at most), a line with what it is ("Video stream", "Video", "Sound"), its size and site, or how adding it
+  went ("Added to the queue", "Downloading", or why not), and at the bottom right its tools: **✏** (name it first:
+  a field with the name it would get, to change, then Download), what it is as a chip (format and quality or size),
+  and **Download** with **▾** beside it. Download starts it at once in the app, with the page's cookies and address,
+  or does what its site's rule says (§13: ask for a name first, sound only, or Copy Address); ▾ opens **Add to
+  Queue**, **Download Now** (when the rule does something else), **Sound Only** (streams) and **Copy Address**. A
+  stream with more than one quality or sound track shows them as chips instead: **Auto quality** (as in Settings),
+  **Highest** and each picture size with its bit rate ("720p · 2.8 Mb/s", one per size, HDR left out as above); and
+  **Auto sound**, **The stream's own sound** and each sound track by name and language ("English (en)"). What they
+  show is what the app downloads.
 Each video and stream shows a **preview** to its left, so several found on one page can be told apart: one picture
-with its length in the corner ("0:13"). A stream's is made by `hdm` itself (the app needn't run), with the page's
+with a play mark and its length over its corner ("0:13"); a sound or another file shows its kind's mark instead. A stream's is made by `hdm` itself (the app needn't run), with the page's
 cookies: the first whole picture of its smallest quality's first piece, as a tiny MP4 (a few KB), and its length from
 the playlist or manifest (none for a live stream). Three are made at a time and kept while the browser runs. A whole
 video file's picture and length are read by the browser, which asks for it as its page would (the site's cookies
@@ -787,7 +798,7 @@ file with no index, a protected or broken stream) keeps an empty box; sounds hav
 Each item has a **×** in its corner that removes it from the list. It stays out while the tab shows that page, even
 when the page fetches it again; a video read from the page's own data is noted by its manifest. Another page in the
 tab starts a fresh list.
-**Refresh** (beside the list's heading) finds what the page plays now, for sites that change videos as you scroll
+**Refresh** (in the bar at the bottom) finds what the page plays now, for sites that change videos as you scroll
 and fetch the next ones before they're shown (TikTok, reels): it asks the page's video and sound players what they
 play, and the one playing (the biggest on screen) goes first, marked "Playing now". A player playing a file's own
 address is matched by it (and added if the list didn't have it); one playing through a `blob:` address by its length
@@ -795,9 +806,8 @@ address is matched by it (and added if the list didn't have it); one playing thr
 first 512 KB with the page's cookies. Files no player on the page holds any more leave the list, but only when a
 player was matched: with no match nothing is lost. A file whose link has no file's name in it is listed under its
 page's title, as the app names it.
-Every item has **Add to Queue** and **Download Now** buttons under it (a click on the item itself adds it to the
-queue, or does what its site's rule says; Download Now starts it at once, says "Downloading", and with Ask for a name
-first its field's button says Download). Every stream also has a **Sound Only** button there, which adds just its sound (see Sound only above). A stream is named after
+**Download** starts an item at once and says "Downloading"; **Add to Queue** (under ▾) lets it wait its turn. **Sound
+Only** (under ▾, streams) adds just its sound (see Sound only above). A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
   media extension. A file a player fetches in pieces by byte range in its address (`bytestart`, `byteend`,
   `range`) is never listed (one such piece was a reel's fragments without its beginning or sound). When the list

@@ -49,6 +49,47 @@ async function currentTab() {
 const inPanel = new URLSearchParams(location.search).has("panel");
 if (inPanel) document.body.classList.add("panel");
 
+// An icon button at work: its icon turns, and it can't be pressed again meanwhile.
+function busy(button, on) {
+  button.disabled = on;
+  button.classList.toggle("busy", on);
+}
+
+// A short word in a button's hover text (and for screen readers), back to its own after 3 s.
+function flash(button, words) {
+  const own = button.title;
+  button.title = words;
+  button.setAttribute("aria-description", words);
+  setTimeout(() => {
+    button.title = own;
+    button.removeAttribute("aria-description");
+  }, 3000);
+}
+
+// Small monochrome icons, drawn for this list (16 × 16, a line in the text's color).
+const ICON = {
+  pencil: '<path d="M10.8 2.7l2.5 2.5-7.6 7.6-3.2.7.7-3.2z"/><path d="M9.4 4.1l2.5 2.5"/>',
+  down: '<circle cx="8" cy="8" r="6.2"/><path d="M8 4.6v6.2M5.4 8.4L8 11l2.6-2.6"/>',
+  chevron: '<path d="M4 6l4 4 4-4"/>',
+  close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  play: '<path d="M5 3.5v9l7.5-4.5z"/>',
+  sound: '<path d="M3 6.2h2.4L8.6 3.4v9.2L5.4 9.8H3z"/><path d="M11 5.6a3.4 3.4 0 0 1 0 4.8M12.8 4a5.6 5.6 0 0 1 0 8"/>',
+  file: '<path d="M4 1.8h5.2L12.4 5v9.2H4z"/><path d="M9 1.8V5h3.4"/>',
+};
+function icon(name) {
+  const box = document.createElement("span");
+  box.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${ICON[name]}</svg>`;
+  return box.firstChild;
+}
+
+// The kind's short badge before a name, as video players label their formats: HLS, DASH, MP4, MP3…
+function badge(item, label) {
+  if (item.kind === "stream") return "HLS";
+  if (item.kind === "dash" || item.kind === "page-dash") return "DASH";
+  const ext = (label.match(/\.([a-z0-9]{2,5})$/i) || [])[1];
+  return ext ? ext.toUpperCase() : item.kind === "audio" ? "SOUND" : item.kind === "video" ? "VIDEO" : "FILE";
+}
+
 // The items as last shown, so a refresh that changes nothing leaves the list (and its pickers) alone.
 let shownKey = "";
 // What a click on an item does on this site (its naming rule's action, §13).
@@ -77,24 +118,25 @@ async function show() {
   };
   // Refresh: what the page plays now goes first, marked "Playing now".
   $("refresh").onclick = async () => {
-    $("refresh").disabled = true;
-    $("refresh").textContent = "Looking…";
+    busy($("refresh"), true);
     const answer = await ask({ type: "refresh", tabId: tab.id }).catch(() => null);
-    $("refresh").disabled = false;
-    $("refresh").textContent = answer && answer.ok && !answer.playing ? "Nothing playing" : "Refresh";
-    if (answer && answer.ok && !answer.playing) setTimeout(() => { $("refresh").textContent = "Refresh"; }, 3000);
+    busy($("refresh"), false);
+    if (answer && answer.ok && !answer.playing) flash($("refresh"), "Nothing playing now");
     shownKey = "";
     show();
   };
-  $("again").onclick = async () => {
-    $("again").disabled = true;
-    $("again").textContent = "Loading the page again…";
+  // Look Again (and "No video?"): the page loads again, so its player fetches its video again.
+  const lookAgain = async (b, label) => {
+    b.disabled = true;
+    b.textContent = "Loading the page again…";
     await ask({ type: "look-again", tabId: tab.id });
     setTimeout(() => {
-      $("again").disabled = false;
-      $("again").textContent = "Look Again";
+      b.disabled = false;
+      b.textContent = label;
     }, 3000);
   };
+  $("again").onclick = () => lookAgain($("again"), "Look Again");
+  $("no-video").onclick = () => lookAgain($("no-video"), "No video?");
   const key = `${tab.id}|${state.order}|${siteAction}|${state.items.map((i) => `${i.playing ? "*" : ""}${i.url || i.manifest.length}`).join("|")}`;
   if (key === shownKey) return;
   shownKey = key;
@@ -110,16 +152,18 @@ async function show() {
     list.append(row(tab, item, streamed ? tab.title || title(item, tab) : title(item, tab), facts));
   }
   $("scan").onclick = async () => {
-    $("scan").disabled = true;
-    $("scan").textContent = "Looking through the page…";
+    busy($("scan"), true);
     const note = $("scan-note");
-    note.hidden = true;
+    note.className = "note";
+    note.textContent = "Looking through the page…";
+    note.hidden = false;
     note.parentElement.querySelectorAll(":scope > button.open").forEach((b) => b.remove());
     const answer = await ask({ type: "scan", tabId: tab.id });
-    $("scan").disabled = false;
-    $("scan").textContent = "Find Files on This Page";
+    busy($("scan"), false);
+    note.hidden = true;
     const found = $("found");
     found.replaceChildren();
+    $("found-heading").hidden = true;
     if (answer && answer.not_running) {
       // The app reads the page: offer to open it, then look again.
       note.className = "note";
@@ -147,8 +191,9 @@ async function show() {
       note.textContent = "No files or media found on this page.";
       note.hidden = false;
     }
+    $("found-heading").hidden = !files.length;
     for (const f of files) {
-      const item = { url: f.url, name: f.name, size: f.size || 0, kind: f.stream ? "stream" : "file", stream: f.stream };
+      const item = { url: f.url, name: f.name, size: f.size || 0, kind: f.stream ? "stream" : "file", stream: f.stream, found: f.kind };
       found.append(row(tab, item, f.name, [f.kind, size(f.size)]));
     }
   };
@@ -168,6 +213,7 @@ function pickers(item) {
   box.className = "pickers";
   const list = (label, options) => {
     const select = document.createElement("select");
+    select.className = "chip";
     select.setAttribute("aria-label", label);
     select.title = label;
     for (const [value, text] of options) select.append(new Option(text, value));
@@ -176,9 +222,9 @@ function pickers(item) {
   };
   const qualities = item.qualities || [];
   const sounds = item.sounds || [];
-  const quality = qualities.length > 1 && list("Quality to download", [["", "Quality as in Settings"], ["highest", "Highest"],
+  const quality = qualities.length > 1 && list("Quality to download (Auto: as in Settings)", [["", "Auto quality"], ["highest", "Highest"],
     ...qualities.map((q) => [String(q.lines), `${q.lines}p${q.bandwidth ? ` · ${(q.bandwidth / 1e6).toFixed(1)} Mb/s` : ""}`])]);
-  const sound = sounds.length > 1 && list("Sound to download", [["*", "Sound as in Settings"], ["", "The stream's own sound"],
+  const sound = sounds.length > 1 && list("Sound to download (Auto: as in Settings)", [["*", "Auto sound"], ["", "The stream's own sound"],
     ...sounds.map((s) => [s.language, s.name === s.language ? s.language : `${s.name} (${s.language})`])]);
   const chosen = () => {
     const c = {};
@@ -186,7 +232,7 @@ function pickers(item) {
     if (sound && sound.value !== "*") c.sound = sound.value;
     return c;
   };
-  return { box: quality || sound ? box : null, chosen };
+  return { box: quality || sound ? box : null, chosen, chips: [quality, sound].filter(Boolean) };
 }
 
 // A video's preview beside its name (§15), so several found on one page can be told apart: one picture and its
@@ -201,6 +247,13 @@ function thumbnail(tab, item, streamed) {
   box.setAttribute("aria-hidden", "true");
   const time = document.createElement("span");
   time.className = "time";
+  // Its length over the picture, after a play mark, as players show it.
+  const overlay = document.createElement("span");
+  overlay.className = "overlay";
+  const play = document.createElement("span");
+  play.className = "play";
+  play.append(icon("play"));
+  overlay.append(play, time);
   const show = (src, seconds) => {
     const video = document.createElement("video");
     video.muted = true;
@@ -214,7 +267,7 @@ function thumbnail(tab, item, streamed) {
     box.prepend(video);
     if (seconds) time.textContent = length(seconds);
   };
-  box.append(time);
+  box.append(overlay);
   if (!streamed) {
     // Asked for as its page would (cookies, Referer): TikTok's server refuses its files to anyone without its cookie.
     ask({ type: "media-access", url: item.url, page: tab.url }).catch(() => null).then(() => show(`${item.url}#t=1`));
@@ -235,32 +288,45 @@ function thumbnail(tab, item, streamed) {
   return box;
 }
 
-// One item: its name, what it is (kind, size, site), a click that adds it to the queue, and Add to Queue and
-// Download Now buttons under it.
+// One item as a card (§13): its picture with its length, a badge for its kind, its name, what it is (size, site) or
+// how adding it went; then ✏ (name it first), its quality and sound, and Download with ▾ for the other ways (Add to
+// Queue, Sound Only, Copy Address). × takes it off the list.
 function row(tab, item, label, facts) {
   const li = document.createElement("li");
-  const pick = item.kind === "stream" ? pickers(item) : { box: null, chosen: () => ({}) };
+  li.className = "card";
+  const pick = item.kind === "stream" ? pickers(item) : { chosen: () => ({}), chips: [] };
   const streamed = ["stream", "dash", "page-dash"].includes(item.kind);
-  const button = document.createElement("button");
-  button.className = "item";
+  // The picture: videos and streams get a preview; a sound or a file, its kind's mark.
+  let thumb;
+  if (streamed || item.kind === "video") {
+    thumb = thumbnail(tab, item, streamed);
+  } else {
+    thumb = document.createElement("span");
+    thumb.className = "thumb sound";
+    thumb.setAttribute("aria-hidden", "true");
+    thumb.append(icon(item.kind === "audio" ? "sound" : "file"));
+  }
+  const body = document.createElement("div");
+  body.className = "body";
   const name = document.createElement("span");
-  name.className = "name";
-  name.textContent = label;
+  name.className = "title";
+  const tag = document.createElement("span");
+  tag.className = "badge";
+  tag.textContent = badge(item, label);
+  name.append(tag, document.createTextNode(label));
+  name.title = item.url || label;
   const detail = document.createElement("span");
   detail.className = "detail";
   const host = (() => { try { return item.url ? new URL(item.url).hostname : ""; } catch { return ""; } })();
   detail.textContent = [...facts, host].filter(Boolean).join(" · ");
-  const words = document.createElement("span");
-  words.className = "words";
-  words.append(name, detail);
-  // Videos and streams get a preview; sounds don't.
-  if (streamed || item.kind === "video") button.append(thumbnail(tab, item, streamed));
-  button.append(words);
-  button.title = item.url || label;
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  body.append(name, detail, tools);
+  li.append(thumb, body);
   // Everything that adds it, disabled while it is being added.
-  const controls = [button];
+  const controls = [];
   const enable = (on) => controls.forEach((c) => { c.disabled = !on; });
-  // Adds it (`extra`: start at once, sound only, a name), and says how that went in the item's second line.
+  // Adds it (`extra`: start at once, sound only, a name), and says how that went in the card's second line.
   const add = async (extra) => {
     enable(false);
     detail.className = "detail";
@@ -273,7 +339,7 @@ function row(tab, item, label, facts) {
       // The app isn't open: offer to open it, then download this at once.
       detail.className = "detail";
       detail.textContent = "Herb's Download Manager isn't running.";
-      li.append(openButton("Open and Download", async () => {
+      body.append(openButton("Open and Download", async () => {
         detail.textContent = "Opening Herb's Download Manager…";
         const opened = await ask({ type: "open" });
         if (!(opened && opened.ok)) return opened;
@@ -291,28 +357,9 @@ function row(tab, item, label, facts) {
       enable(true);
     }
   };
-  // A click does what the site's rule says: add it, ask for a name first, take only the sound, or copy the address.
-  const streamedItem = ["stream", "dash", "page-dash"].includes(item.kind);
-  const action = siteAction === "sound" && !streamedItem ? "download" : siteAction === "copy" && !item.url ? "download" : siteAction;
-  button.setAttribute("aria-label", {
-    download: `Add ${label} to the queue`,
-    ask: `Name ${label}, then add it to the queue`,
-    sound: `Add only the sound of ${label} to the queue`,
-    copy: `Copy the address of ${label}`,
-  }[action] || `Add ${label} to the queue`);
-  // What a click does (`start`: Download Now rather than Add to Queue).
-  const choose = async (start) => {
-    const when = start ? { start: true } : {};
-    if (action === "sound") return add({ ...when, soundOnly: true });
-    if (action === "copy") {
-      await navigator.clipboard.writeText(item.url).catch(() => {});
-      detail.className = "detail ok";
-      detail.textContent = "Address copied";
-      return;
-    }
-    if (action !== "ask") return add(when);
-    // A name first: the one it would get, to change, then Add.
-    if (li.querySelector(".naming")) return;
+  // A name first: the one it would get, to change, then Download or Add.
+  const nameFirst = async (start) => {
+    if (body.querySelector(".naming")) return;
     const { name: proposed } = await ask({ type: "name", tabId: tab.id, item });
     const form = document.createElement("form");
     form.className = "naming";
@@ -320,6 +367,7 @@ function row(tab, item, label, facts) {
     field.value = proposed || "";
     field.setAttribute("aria-label", "Name to save it under");
     const ok = document.createElement("button");
+    ok.type = "submit";
     ok.textContent = start ? "Download" : "Add";
     const cancel = document.createElement("button");
     cancel.type = "button";
@@ -329,63 +377,124 @@ function row(tab, item, label, facts) {
     form.onsubmit = (e) => {
       e.preventDefault();
       form.remove();
-      add({ ...when, name: field.value.trim() || proposed });
+      add({ ...(start ? { start: true } : {}), name: field.value.trim() || proposed });
     };
-    button.after(form);
+    tools.before(form);
     field.focus();
     field.setSelectionRange(0, Math.max(0, field.value.lastIndexOf(".")));
   };
-  button.onclick = () => choose(false);
-  li.append(button);
-  // ×: out of the list (until the tab goes to another page).
-  const close = document.createElement("button");
-  close.className = "remove";
-  close.textContent = "×";
-  close.title = "Remove from this list";
-  close.setAttribute("aria-label", `Remove ${label} from this list`);
-  close.onclick = async () => {
+  // What Download does on this site (its naming rule's action, §13): download it, ask for a name first, take only
+  // the sound, or copy the address. `start`: Download now; otherwise it waits its turn in the queue.
+  const action = siteAction === "sound" && !streamed ? "download" : siteAction === "copy" && !item.url ? "download" : siteAction;
+  const choose = async (start) => {
+    const when = start ? { start: true } : {};
+    if (action === "sound") return add({ ...when, soundOnly: true });
+    if (action === "copy") return copy();
+    if (action === "ask") return nameFirst(start);
+    return add(when);
+  };
+  const copy = async () => {
+    await navigator.clipboard.writeText(item.url).catch(() => {});
+    detail.className = "detail ok";
+    detail.textContent = "Address copied";
+  };
+  // ✏ Name it first.
+  const pencil = document.createElement("button");
+  pencil.className = "tool";
+  pencil.append(icon("pencil"));
+  pencil.title = "Name it first: change the name it's saved under, then download it";
+  pencil.setAttribute("aria-label", `Name ${label} first, then download it`);
+  pencil.onclick = () => nameFirst(true);
+  controls.push(pencil);
+  tools.append(pencil);
+  // Its quality and sound (a stream that offers a choice), or what it is: format and quality or size.
+  if (pick.chips.length) {
+    for (const chip of pick.chips) {
+      controls.push(chip);
+      tools.append(chip);
+    }
+  } else {
+    const what = document.createElement("span");
+    what.className = "chip static";
+    const format = document.createElement("span");
+    format.className = "format";
+    format.textContent = streamed ? "MP4" : badge(item, label);
+    what.append(format, document.createTextNode(item.quality || size(item.size) || length(item.seconds) || ""));
+    tools.append(what);
+  }
+  // Download, with ▾ for the other ways.
+  const split = document.createElement("span");
+  split.className = "split";
+  const main = document.createElement("button");
+  main.className = "main";
+  main.append(icon("down"), document.createTextNode(action === "copy" ? "Copy Address" : "Download"));
+  main.title = {
+    download: "Download it now",
+    ask: "Name it, then download it now",
+    sound: "Download only its sound now (.m4a, or .mp3), as the site sends it",
+    copy: "Copy its address",
+  }[action] || "Download it now";
+  main.setAttribute("aria-label", `${main.title}: ${label}`);
+  main.onclick = () => choose(true);
+  const more = document.createElement("button");
+  more.className = "more";
+  more.append(icon("chevron"));
+  more.title = "More ways: Add to Queue, Sound Only, Copy Address";
+  more.setAttribute("aria-label", `More ways to add ${label}`);
+  more.setAttribute("aria-haspopup", "menu");
+  more.setAttribute("aria-expanded", "false");
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.setAttribute("role", "menu");
+  menu.hidden = true;
+  const entry = (text, help, run) => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.title = help;
+    b.setAttribute("role", "menuitem");
+    b.onclick = () => {
+      close();
+      run();
+    };
+    menu.append(b);
+  };
+  entry("Add to Queue", "Add it to the queue, to download in its turn", () => choose(false));
+  if (action !== "download") entry("Download Now", "Download it now, as it is", () => add({ start: true }));
+  // A streamed video's sound alone, as the site sends it (never re-encoded); a page's video with no sound gets none.
+  if (streamed && !(item.kind === "page-dash" && item.sound === false)) {
+    entry("Sound Only", "Download only its sound (.m4a, or .mp3), as the site sends it", () => add({ start: true, soundOnly: true }));
+  }
+  if (item.url && action !== "copy") entry("Copy Address", "Copy its address", copy);
+  const close = () => {
+    menu.hidden = true;
+    more.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outside, true);
+  };
+  const outside = (e) => { if (!split.contains(e.target)) close(); };
+  more.onclick = () => {
+    if (!menu.hidden) return close();
+    menu.hidden = false;
+    more.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", outside, true);
+    menu.firstChild.focus();
+  };
+  menu.onkeydown = (e) => { if (e.key === "Escape") { close(); more.focus(); } };
+  split.append(main, more, menu);
+  controls.push(main, more);
+  tools.append(split);
+  // ×: off the list (until the tab goes to another page).
+  const remove = document.createElement("button");
+  remove.className = "remove";
+  remove.append(icon("close"));
+  remove.title = "Remove from this list";
+  remove.setAttribute("aria-label", `Remove ${label} from this list`);
+  remove.onclick = async () => {
     li.remove();
+    if (item.found) return;
     await ask({ type: "remove", tabId: tab.id, item: { kind: item.kind, url: item.url, manifest: item.manifest } });
     if (!document.querySelector("#items li")) $("empty").hidden = false;
   };
-  li.append(close);
-  // Add to Queue waits its turn (or starts when the queue runs); Download Now starts it at once.
-  if (action !== "copy") {
-    const choices = document.createElement("div");
-    choices.className = "choices";
-    for (const [text, start, help] of [
-      ["Add to Queue", false, `Add ${label} to the queue`],
-      ["Download Now", true, `Download ${label} now`],
-    ]) {
-      const b = document.createElement("button");
-      b.textContent = text;
-      if (start) b.className = "now";
-      b.title = start ? "Start downloading it now" : "Add it to the queue, to download in its turn";
-      b.setAttribute("aria-label", help);
-      b.onclick = () => choose(start);
-      controls.push(b);
-      choices.append(b);
-    }
-    li.append(choices);
-  }
-  // A streamed video's sound alone, as the site sends it (never re-encoded).
-  let box = pick.box;
-  // (A page's video known to have no sound gets none.)
-  if (streamed && !(item.kind === "page-dash" && item.sound === false)) {
-    if (!box) {
-      box = document.createElement("div");
-      box.className = "pickers";
-    }
-    const soundOnly = document.createElement("button");
-    soundOnly.className = "sound-only";
-    soundOnly.textContent = "Sound Only";
-    soundOnly.title = "Add only its sound to the queue (.m4a, or .mp3), as the site sends it";
-    soundOnly.setAttribute("aria-label", `Add only the sound of ${label} to the queue`);
-    soundOnly.onclick = () => add({ soundOnly: true });
-    controls.push(soundOnly);
-    box.append(soundOnly);
-  }
-  if (box) li.append(box);
+  li.append(remove);
   return li;
 }
 
@@ -393,7 +502,7 @@ function row(tab, item, label, facts) {
 // written into `detail`.
 function openButton(label, then, detail) {
   const open = document.createElement("button");
-  open.className = "scan open";
+  open.className = "text-button open";
   open.textContent = label;
   open.onclick = async () => {
     open.disabled = true;
@@ -409,6 +518,9 @@ function openButton(label, then, detail) {
   return open;
 }
 
+// The extension's version beside Naming Rules ("Version 1.17").
+const version = api.runtime.getManifest && api.runtime.getManifest().version;
+$("version").textContent = version ? `Version ${version}` : "";
 show();
 // What the tab finds while the list is open (after Look Again, say) joins it; in the side panel, so does another tab.
 api.storage.session.onChanged.addListener(() => show());

@@ -11,7 +11,7 @@ pub const FIREFOX_ID: &str = "hdm@herbsdownloadmanager.org";
 /// The extension's id in Chrome and its kin, fixed by the public key in its manifest.
 pub const CHROME_ID: &str = "clhikpnhhffblbcgfcpebhiholmchidg";
 
-const FILES: [(&str, &[u8]); 13] = [
+const FILES: [(&str, &[u8]); 16] = [
     ("manifest.json", include_bytes!("../../extension/manifest.json")),
     ("background.js", include_bytes!("../../extension/background.js")),
     ("popup.html", include_bytes!("../../extension/popup.html")),
@@ -25,6 +25,9 @@ const FILES: [(&str, &[u8]); 13] = [
     ("icons/icon-32.png", include_bytes!("../../extension/icons/icon-32.png")),
     ("icons/icon-48.png", include_bytes!("../../extension/icons/icon-48.png")),
     ("icons/icon-128.png", include_bytes!("../../extension/icons/icon-128.png")),
+    ("icons/toolbar-16.png", include_bytes!("../../extension/icons/toolbar-16.png")),
+    ("icons/toolbar-24.png", include_bytes!("../../extension/icons/toolbar-24.png")),
+    ("icons/toolbar-32.png", include_bytes!("../../extension/icons/toolbar-32.png")),
 ];
 
 /// Writes `path` only when its content differs, so a launch doesn't touch files that are already right.
