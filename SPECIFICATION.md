@@ -205,7 +205,10 @@ A list of the links found, each with a checkbox, name, size and folder, and a fi
 header sorts the list by it, and clicking it again reverses the order, with the usual arrow in the header (hover text
 "Sort by name; click again for the reverse order" where the toolkit doesn't show one itself): names and addresses A to
 Z (case aside, numbers by value: "part 2" before "part 10"), sizes by bytes, smallest first (unknown sizes first).
-Checkboxes, the filter and Check All / Uncheck All work on the sorted rows as before. The Linux and Windows lists
+Checkboxes, the filter and Check All / Uncheck All work on the sorted rows as before. Each link is checked as it arrives, four at a time: its
+row gets the file's real name and size, a web page's row gives way to the files on it (§15), and a link that doesn't
+answer as a file is unchecked and says why: "Offline (404 Not Found)", "Offline (The server didn't answer)" or
+"Needs a sign-in". Ticking it again adds it all the same. The Linux and Windows lists
 show Name, Size and Link. **Treat as mirrors of
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
 **Only the sound of streamed videos** (offered when a checked link is a stream) saves just the sound of each checked

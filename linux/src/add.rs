@@ -359,6 +359,8 @@ impl AddLinks {
                         this.scan_page(&url).await;
                         continue;
                     }
+                    // Rows to untick, once the list is let go (a checkbox's handler reads the list).
+                    let mut untick = Vec::new();
                     for item in this.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
                         match &result {
                             Ok(Ok(p)) => {
@@ -366,11 +368,18 @@ impl AddLinks {
                                 item.size = p.size;
                                 item.size_text = p.size.map(format::bytes).unwrap_or_else(|| "Unknown".into());
                             }
-                            Ok(Err(e)) => item.size_text = e.clone(),
+                            // Offline, or behind a sign-in: said so, and left out unless ticked again.
+                            Ok(Err(e)) => {
+                                item.size_text = format::offline_text(e);
+                                untick.push(item.check.clone());
+                            }
                             Err(_) => item.size_text = String::new(),
                         }
                         item.name_label.set_label(&item.name);
                         item.size_label.set_label(&item.size_text);
+                    }
+                    for check in untick {
+                        check.set_active(false);
                     }
                     // A name or size found changes the order when the list is sorted.
                     this.resort();

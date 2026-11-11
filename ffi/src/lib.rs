@@ -131,6 +131,12 @@ impl From<Settings> for settings::Settings {
     }
 }
 
+/// What Add Links says of a link that didn't answer as a file: "Needs a sign-in", or "Offline (404 Not Found)".
+#[uniffi::export]
+pub fn offline_text(error: String) -> String {
+    hd_core::format::offline_text(&error)
+}
+
 #[uniffi::export]
 pub fn core_version() -> String {
     hd_core::version().to_string()

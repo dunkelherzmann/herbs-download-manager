@@ -195,7 +195,9 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                         item.size = info.size
                         item.sizeText = info.size.map { bytesText(bytes: $0) } ?? "Unknown"
                     case .failure(let error):
-                        item.sizeText = errorText(error)
+                        // Offline, or behind a sign-in: said so, and left out unless ticked again.
+                        item.sizeText = offlineText(error: errorText(error))
+                        item.checked = false
                     }
                     // A name or size found changes the order when the list is sorted.
                     if self.table.sortDescriptors.isEmpty { self.table.reloadData(); self.update() } else { self.applyFilter() }

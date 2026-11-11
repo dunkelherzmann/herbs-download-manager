@@ -51,6 +51,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). See the
   window with `--capture FILE` inside `kwin_wayland --virtual --socket <name> --exit-with-session "flatpak run
   --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (set `XDG_RUNTIME_DIR` over ssh), never the desktop.
+  Never change a widget inside a `borrow_mut()` of state its own signal handlers read (`set_active` on a checkbox
+  runs its `toggled` handler at once): the app aborts with "RefCell already mutably borrowed". Collect the widgets,
+  drop the borrow, then change them (#121, found in testing).
   App shortcuts (`set_accels_for_action`) fire before the focused text field sees the key: a plain Ctrl+A, Ctrl+C or
   Ctrl+V shortcut stole the find field's own until its actions were switched off while the field has the cursor
   (#80). Check such a key in a field with real input, not only in the list.

@@ -81,4 +81,6 @@ No bugs reported yet.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **Linux: Add Links crashed when a link failed** (*found in testing*, 2026-11-11, before it shipped): unticking the failed row ran its checkbox's handler while the list was still borrowed. The row is now unticked after the list is let go (#121).
+  - [x] Linux
 

@@ -114,6 +114,16 @@ pub fn status_text(status: &Status, fraction: Option<f64>) -> String {
 }
 
 /// "1.2 GB", "340 KB", "12 bytes" (decimal units, as Finder shows them).
+/// What Add Links says of a link that didn't answer as a file (§5.3): "Needs a sign-in", or "Offline (404 Not
+/// Found)". Such a row is unchecked.
+pub fn offline_text(error: &str) -> String {
+    if error.starts_with(crate::transfer::LOGIN_NEEDED) || error.starts_with("401") {
+        "Needs a sign-in".into()
+    } else {
+        format!("Offline ({error})")
+    }
+}
+
 pub fn bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["KB", "MB", "GB", "TB", "PB"];
     if n < 1000 {
@@ -195,6 +205,8 @@ mod tests {
     fn writes_status() {
         assert_eq!(status_text(&Status::Downloading, Some(0.479)), "Downloading 47%");
         assert_eq!(status_text(&Status::Finishing, Some(1.0)), "Finishing…");
+        assert_eq!(offline_text("404 Not Found"), "Offline (404 Not Found)");
+        assert_eq!(offline_text(crate::transfer::LOGIN_NEEDED), "Needs a sign-in");
         assert!(Filter::Downloading.matches(&Status::Finishing));
         assert_eq!(status_text(&Status::Paused, None), "Paused");
         assert_eq!(status_text(&Status::Failed("404 Not Found".into()), None), "Failed (404 Not Found)");

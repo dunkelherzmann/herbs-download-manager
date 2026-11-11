@@ -225,7 +225,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Study JDownloader 2 with Craft Anything and REA,** and compare it with Herb's Download Manager: where it does worse, the same and better, and what to adopt. *Requested 2026-11-10.* The jar is only JDownloader's launcher and updater, so the app itself was read in its public source. Recorded in `SPECIFICATION.md` §14; the items below are the ones picked.
-- [ ] **Check each link in Add Links, and read web pages for files:** every row shows whether its link works (Online, Offline, Needs a sign-in) with its real name and size before anything is added, offline links come unchecked, and a web page's address is replaced by the files it links to. *Requested 2026-11-10, from studying JDownloader 2's Link Grabber.*
+- [ ] **Check each link in Add Links, and read web pages for files:** every row shows whether its link works (Online, Offline, Needs a sign-in) with its real name and size before anything is added, offline links come unchecked, and a web page's address is replaced by the files it links to. *Requested 2026-11-10, from studying JDownloader 2's Link Grabber.* Done in #121: rows were already checked (name, size) and pages already read (#71); a link that fails now says "Offline (…)" or "Needs a sign-in" and comes unchecked.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows

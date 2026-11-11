@@ -904,7 +904,11 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                                     item.2 = p.size;
                                     item.3 = p.size.map(format::bytes).unwrap_or_else(|| "Unknown".into());
                                 }
-                                Err(e) => item.3 = e.clone(),
+                                // Offline, or behind a sign-in: said so, and left out unless ticked again.
+                                Err(e) => {
+                                    item.3 = format::offline_text(e);
+                                    item.4 = false;
+                                }
                             }
                         }
                     }
