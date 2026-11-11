@@ -5,6 +5,7 @@
 #[cfg(windows)]
 mod a11y;
 #[cfg(windows)]
+mod dragdrop;
 mod add;
 #[cfg(windows)]
 mod app;

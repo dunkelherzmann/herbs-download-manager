@@ -366,6 +366,20 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         refresh: refresh.clone(),
         open_links: Rc::default(),
     };
+    // Links dropped on a download become its mirrors (§7.1 M4), said in the footer.
+    {
+        let ctx2 = ctx.clone();
+        *ui.list.on_drop.borrow_mut() = Some(Rc::new(move |id: u64, links: Vec<String>| {
+            let added = ctx2.manager.add_mirrors(id, &links);
+            let name = ctx2.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_default();
+            (ctx2.tell)(match added {
+                0 => format!("{name} already has those links"),
+                1 => format!("Added 1 mirror to {name}"),
+                n => format!("Added {n} mirrors to {name}"),
+            });
+            (ctx2.refresh)();
+        }));
+    }
     add_actions(&window, app, &ui, &refresh, &find_bar, &search, &sidebar_scroll, &ctx);
     // Quit (or closing the window) while downloads run asks first, with Cancel the default (§10); they start again
     // at the next launch (the application's shutdown calls the manager's quit).

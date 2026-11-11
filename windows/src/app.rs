@@ -485,7 +485,8 @@ pub fn run() {
             })
         });
         set_keep_on_top(keep_on_top);
-        DragAcceptFiles(hwnd, true);
+        // Links and files dropped on the window, or on a download in it (§5.4, §7.1 M4).
+        crate::dragdrop::register(hwnd);
         // S16: told of every clipboard change (used only while Watch the clipboard is on).
         let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(hwnd);
         layout(hwnd);
@@ -1519,6 +1520,40 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             crate::features::WM_FEATURE => {
                 crate::features::on_main(hwnd, &mut *(lparam.0 as *mut crate::features::Request));
+                LRESULT(0)
+            }
+            crate::dragdrop::WM_DROPPED => {
+                let dropped = Box::from_raw(lparam.0 as *mut crate::dragdrop::Dropped);
+                let links = hd_core::links::find(&dropped.text);
+                if links.is_empty() {
+                    added(Some("No links found in what was dropped".into()));
+                    return LRESULT(0);
+                }
+                // On a download in the list: its mirrors (§7.1 M4); anywhere else: Add Links.
+                let list = with(|s| s.list).unwrap_or_default();
+                let mut hit = LVHITTESTINFO { pt: POINT { x: dropped.x, y: dropped.y }, ..Default::default() };
+                let _ = ScreenToClient(list, &mut hit.pt);
+                let i = SendMessageW(list, LVM_HITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
+                let id = (i >= 0).then(|| with(|s| s.shown.get(i as usize).copied()).flatten()).flatten();
+                match id {
+                    Some(id) => {
+                        let note = with(|s| {
+                            let n = s.manager.add_mirrors(id, &links);
+                            let name = s.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_default();
+                            match n {
+                                0 => format!("{name} already has those links"),
+                                1 => format!("Added 1 mirror to {name}"),
+                                n => format!("Added {n} mirrors to {name}"),
+                            }
+                        });
+                        added(note);
+                    }
+                    None => {
+                        if let Some(ctx) = add_ctx() {
+                            crate::add::add_links(&ctx, links);
+                        }
+                    }
+                }
                 LRESULT(0)
             }
             WM_CLIPBOARDUPDATE => {

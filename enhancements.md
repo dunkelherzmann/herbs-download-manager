@@ -48,7 +48,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21. Asked again 2026-11-10: dragging a link from a browser into the app. Windows only takes dropped files so far (a link from a browser needs an OLE drop target). Still to do: links dropped on a row becoming its mirrors (Linux and Windows), and links dragged from a browser on Windows.
+- [x] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21. Asked again 2026-11-10: dragging a link from a browser into the app. Windows only takes dropped files so far (a link from a browser needs an OLE drop target). Done for Linux and Windows in the row-drop PR: links dropped on a download become its mirrors, and Windows takes links dragged from a browser (an OLE drop target). Checked live on both: a link dragged from Edge onto Windows HDM opened Add Links with it, and onto a row added it as a mirror ("Added 1 mirror"); on Linux the drop reached the row ("already has those links").
   - [x] Mac
   - [ ] Linux
   - [ ] Windows

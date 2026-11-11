@@ -34,6 +34,8 @@ pub fn shown_at_first(key: &str) -> bool {
 }
 
 type Cells = Rc<RefCell<HashMap<(u64, &'static str), glib::WeakRef<gtk::Widget>>>>;
+/// What links dropped on a download do (they become its mirrors, §7.1 M4), set by the window.
+pub type RowDrop = Rc<RefCell<Option<Rc<dyn Fn(u64, Vec<String>)>>>>;
 
 #[derive(Clone)]
 pub struct DownloadList {
@@ -44,6 +46,7 @@ pub struct DownloadList {
     rows: Rc<RefCell<HashMap<u64, Row>>>,
     cells: Cells,
     order: Rc<RefCell<Vec<u64>>>,
+    pub on_drop: RowDrop,
 }
 
 /// "Today at 10:48", "Yesterday at 09:02", or "3 Nov 2026 at 17:20".
@@ -86,11 +89,43 @@ fn file_icon(name: &str) -> gio::Icon {
     gio::content_type_get_symbolic_icon(&content_type)
 }
 
+/// A cell's drop target: links (text, or files holding links) dropped on it go to its download's mirrors.
+fn row_drop_target(cell: &gtk::Widget, cells: Cells, on_drop: RowDrop) -> gtk::DropTarget {
+    let target = gtk::DropTarget::new(glib::Type::INVALID, gtk::gdk::DragAction::COPY);
+    target.set_types(&[gtk::gdk::FileList::static_type(), glib::GString::static_type()]);
+    let cell = cell.downgrade();
+    target.connect_drop(move |_, value, _, _| {
+        let Some(cell) = cell.upgrade() else { return false };
+        let id = cells.borrow().iter().find(|(_, w)| w.upgrade().as_ref() == Some(&cell)).map(|((id, _), _)| *id);
+        let (Some(id), Some(run)) = (id, on_drop.borrow().clone()) else { return false };
+        let mut text = String::new();
+        if let Ok(files) = value.get::<gtk::gdk::FileList>() {
+            for f in files.files() {
+                text.push('\n');
+                match f.path() {
+                    Some(p) => text.push_str(&hd_core::links::text_of_file(&p).unwrap_or_default()),
+                    None => text.push_str(&f.uri()),
+                }
+            }
+        } else if let Ok(s) = value.get::<String>() {
+            text = s;
+        }
+        let links = hd_core::links::find(&text);
+        if links.is_empty() {
+            return false;
+        }
+        run(id, links);
+        true
+    });
+    target
+}
+
 impl DownloadList {
     pub fn new() -> DownloadList {
         let store = gio::ListStore::new::<gtk::StringObject>();
         let rows: Rc<RefCell<HashMap<u64, Row>>> = Rc::default();
         let cells: Cells = Rc::default();
+        let on_drop: RowDrop = Rc::default();
         let view = gtk::ColumnView::builder().show_column_separators(true).reorderable(true).build();
         view.add_css_class("data-table");
         let id_of = |o: &glib::Object| o.downcast_ref::<gtk::StringObject>().and_then(|s| s.string().parse::<u64>().ok());
@@ -98,6 +133,7 @@ impl DownloadList {
 
         for (key, title, width) in COLUMNS {
             let factory = gtk::SignalListItemFactory::new();
+            let (cells_d, on_drop_d) = (cells.clone(), on_drop.clone());
             factory.connect_setup(move |_, item| {
                 let item = item.downcast_ref::<gtk::ListItem>().unwrap();
                 if key == "name" {
@@ -114,6 +150,10 @@ impl DownloadList {
                     item.set_child(Some(&line));
                 } else {
                     item.set_child(Some(&gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).build()));
+                }
+                // Links dropped on a download become its mirrors (§7.1 M4); elsewhere they open Add Links.
+                if let Some(child) = item.child() {
+                    child.add_controller(row_drop_target(&child, cells_d.clone(), on_drop_d.clone()));
                 }
             });
             let (rows_b, cells_b) = (rows.clone(), cells.clone());
@@ -164,7 +204,7 @@ impl DownloadList {
         if let Some(added) = view.columns().item(7).and_downcast::<gtk::ColumnViewColumn>() {
             view.sort_by_column(Some(&added), gtk::SortType::Descending);
         }
-        DownloadList { view, selection, store, sorter, rows, cells, order: Rc::default() }
+        DownloadList { view, selection, store, sorter, rows, cells, order: Rc::default(), on_drop }
     }
 
     /// Shows `rows` filtered by status, file type and search text, updating cells in place when the same downloads
