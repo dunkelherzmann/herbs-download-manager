@@ -73,14 +73,14 @@ No bugs reported yet.
   - [x] Windows
 - [x] **Linux: the download window's Connections and Mirrors tabs showed no buttons** (*found in testing*, 2026-11-11, X11 desktop): the Info tab's values wrapped at any character, so a long link made the window's content taller than the window, and the tabs, all as tall as the tallest, pushed their buttons (+, −, Add Mirror…, Make Main Link, Remove) out of sight. Info's values are now one line, shortened in the middle as on the Mac with the whole value on hover, and each tab is as tall as its own page.
   - [x] Linux
-- [ ] **A stream from an embedded player (JW Player, `/m3u8/<id>` address) failed with 403** although added from the extension. *Reported 2026-11-11.* Mac, Linux, Windows. Found: its playlist's address names no `.m3u8` file, so the extension didn't keep the player's headers for it and handed the app the tab's page as Referer, which the stream's server refuses. Extension 1.21 treats `m3u8`/`mpd` as a path part as a playlist too, and otherwise uses the last headers the tab sent to that host. A download added before then has to be added again.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **A stream kept failing although a working mirror was added, and Make Main Link did nothing for it.** *Reported 2026-11-11.* Mac, Linux, Windows. Found: a stream download read only its link; its mirrors were listed but never tried, and Make Main Link refused streams. Now a stream tries its link, then each mirror, until one gives the stream (its pieces come from that one source), the one that served it becomes the link, and Make Main Link works for streams.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **A stream from an embedded player (JW Player, `/m3u8/<id>` address) failed with 403** although added from the extension. *Reported 2026-11-11.* Mac, Linux, Windows. Found: its playlist's address names no `.m3u8` file, so the extension didn't keep the player's headers for it and handed the app the tab's page as Referer, which the stream's server refuses. Extension 1.21 treats `m3u8`/`mpd` as a path part as a playlist too, and otherwise uses the last headers the tab sent to that host. A download added before then has to be added again. Shipped in extension 1.21; needs the download added again from the extension.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **A stream kept failing although a working mirror was added, and Make Main Link did nothing for it.** *Reported 2026-11-11.* Mac, Linux, Windows. Found: a stream download read only its link; its mirrors were listed but never tried, and Make Main Link refused streams. Now a stream tries its link, then each mirror, until one gives the stream (its pieces come from that one source), the one that served it becomes the link, and Make Main Link works for streams. Shipped in #117.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Linux: Add Links crashed when a link failed** (*found in testing*, 2026-11-11, before it shipped): unticking the failed row ran its checkbox's handler while the list was still borrowed. The row is now unticked after the list is let go (#121).
   - [x] Linux
 

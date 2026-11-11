@@ -62,7 +62,7 @@ releases.
 - [x] **A note per download**, in a column and the search. (§2.2, §4.1, enhancements.md; #55)
 - [x] **Command line and MCP server.** (enhancements.md, SPECIFICATION.md §12; #57)
 - [x] **Scheduler** for the queue. (§11, enhancements.md)
-- [ ] **Five features from JDownloader 2** (enhancements.md, 2026-11-10), in this order: keep the computer awake while downloading; use the system's proxy; handle long and invalid file names and keep some disk space free; check each link in Add Links and read web pages for files; watch the clipboard (off by default).
+- [x] **Five features from JDownloader 2** (enhancements.md, 2026-11-10), in this order: keep the computer awake while downloading; use the system's proxy; handle long and invalid file names and keep some disk space free; check each link in Add Links and read web pages for files; watch the clipboard (off by default). Shipped in #118–#122.
 - [ ] **Browser extension** (Safari, Chrome, Firefox). (enhancements.md) Chrome, Edge, Brave, Vivaldi and Firefox done in #59; Safari on hold until there is an Apple Developer account (Herbert, 2026-11-10).
 
 ## Not checked automatically

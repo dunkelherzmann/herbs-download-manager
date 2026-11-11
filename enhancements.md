@@ -50,8 +50,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Windows
 - [x] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21. Asked again 2026-11-10: dragging a link from a browser into the app. Windows only takes dropped files so far (a link from a browser needs an OLE drop target). Done for Linux and Windows in the row-drop PR: links dropped on a download become its mirrors, and Windows takes links dragged from a browser (an OLE drop target). Checked live on both: a link dragged from Edge onto Windows HDM opened Add Links with it, and onto a row added it as a mirror ("Added 1 mirror"); on Linux the drop reached the row ("already has those links").
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
+  - [x] Linux
+  - [x] Windows
 - [x] **A link that matches a download already in the list is added as its mirror,** not as a separate download. *Requested 2026-11-09.* Done for the Mac in #21. Linux and Windows add through the core's `AddSession` (#41, #42), which does it.
   - [x] Mac
   - [x] Linux
@@ -225,55 +225,55 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Study JDownloader 2 with Craft Anything and REA,** and compare it with Herb's Download Manager: where it does worse, the same and better, and what to adopt. *Requested 2026-11-10.* The jar is only JDownloader's launcher and updater, so the app itself was read in its public source. Recorded in `SPECIFICATION.md` §14; the items below are the ones picked.
-- [ ] **Check each link in Add Links, and read web pages for files:** every row shows whether its link works (Online, Offline, Needs a sign-in) with its real name and size before anything is added, offline links come unchecked, and a web page's address is replaced by the files it links to. *Requested 2026-11-10, from studying JDownloader 2's Link Grabber.* Done in #121: rows were already checked (name, size) and pages already read (#71); a link that fails now says "Offline (…)" or "Needs a sign-in" and comes unchecked.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Check each link in Add Links, and read web pages for files:** every row shows whether its link works (Online, Offline, Needs a sign-in) with its real name and size before anything is added, offline links come unchecked, and a web page's address is replaced by the files it links to. *Requested 2026-11-10, from studying JDownloader 2's Link Grabber.* Done in #121: rows were already checked (name, size) and pages already read (#71); a link that fails now says "Offline (…)" or "Needs a sign-in" and comes unchecked.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Keep the computer awake while downloading:** the computer doesn't go to sleep while a download runs, and sleeps as usual once nothing is downloading (the display may still turn off). *Requested 2026-11-10, from studying JDownloader 2.* Done in #118: checked on each platform while a test copy downloaded (the Mac's `pmset -g assertions`, GNOME's session inhibitors, Windows' `powercfg /requests`), and released when it paused or finished.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.* Built in #119: Linux asks the desktop for each address (GNOME's settings and automatic setup scripts, through the portal); the Mac and Windows follow their fixed proxy settings. Not yet: automatic setup scripts (PAC) on the Mac and Windows. A core test proves requests go through the proxy named; no machine's real proxy settings were changed to try it.
+- [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.* Built in #119: Linux asks the desktop for each address (GNOME's settings and automatic setup scripts, through the portal); the Mac and Windows follow their fixed proxy settings. Not yet: automatic setup scripts (PAC) on the Mac and Windows. A core test proves requests go through the proxy named; no machine's real proxy settings were changed to try it. Shipped in #119; the Mac and Windows stay open for automatic setup scripts (PAC).
   - [ ] Mac
-  - [ ] Linux
+  - [x] Linux
   - [ ] Windows
 - [x] **Handle long and invalid file names, and keep some disk space free:** characters a file system refuses are replaced, a name or path too long for it is shortened (the extension kept), and a download pauses with a clear message before it would leave the disk nearly full. *Requested 2026-11-10, from studying JDownloader 2.* Done in #120: every name is fitted in the core (all three platforms), and downloads and streams stop with 128 MB left, keeping what they have. Checked by a test that fills a pretended disk mid-download and resumes, and by name tests.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [x] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); the Mac and Windows wait for a try (their clipboards weren't overwritten in a test).
+- [x] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); Windows checked 2026-11-11 in a test copy (a link copied in another app opened Add 1 Link; the clipboard was put back after). The Mac waits for a try (its clipboard isn't overwritten in a test).
   - [ ] Mac
   - [x] Linux
-  - [ ] Windows
-- [ ] **Find a page's media without playing it, in the extension and the app, the way JDownloader does:** the extension looks through the page as soon as its list opens and hands the app every frame as the browser shows it, with its cookies; the app's scan reads embedded players, decodes hidden addresses (escapes, entities, percent-encoding, base64, packed scripts), takes a player's media by its key, lists DASH, and takes links that are themselves files or streams; pages are read with a browser's User-Agent. *Requested 2026-11-11, from testing Facebook and Instagram reels and two streaming sites against JDownloader and Video DownloadHelper.* JDownloader's site plugins aren't imported (Java, GPL, changed daily); their common methods are done generically instead, nothing site-specific and nothing that gets round a site's protection.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Make any mirror the main link:** Make Main Link in the download window's Mirrors tab (a button, and on right-clicking a mirror), keeping what was downloaded; and done on its own when the link fails and a mirror served the file. *Requested 2026-11-11.* (§7.3)
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **The extension's list laid out like Video DownloadHelper's, themed like the app:** one card an item (picture with a play mark and its length, a kind badge before a two-line name, ×), ✏ to name it first, its format and quality as chips, a Download button with ▾ for Add to Queue, Sound Only and Copy Address, and a bar of tools at the bottom (Naming Rules, No video?, Refresh, Find Files, order, side panel); the app's colors, system blue and line icons, light and dark. *Requested 2026-11-11, with a picture of DownloadHelper's list.* Extension 1.17, with its version beside Naming Rules (asked 2026-11-11). Checked in a browser with a stand-in for the extension's API, light and dark; needs a try in the real extension.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **The extension's toolbar icon as big as the other extensions' icons:** it looked smaller. *Requested 2026-11-11.* The toolbar icons are drawn without the app icon's margin (`icon/make.sh`). Extension 1.17.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Download a section of a long video:** **Download Section…** in the ▾ menu beside Download asks From and To (hours, minutes and seconds) and downloads only that part. *Requested 2026-11-11.* HLS streams, cut on the stream's piece boundaries (never re-encoded), named after the part; also `hdm add --from --to` and the MCP tool. Not yet: DASH, live streams, whole video files. Extension 1.19.
+  - [x] Windows
+- [x] **Find a page's media without playing it, in the extension and the app, the way JDownloader does:** the extension looks through the page as soon as its list opens and hands the app every frame as the browser shows it, with its cookies; the app's scan reads embedded players, decodes hidden addresses (escapes, entities, percent-encoding, base64, packed scripts), takes a player's media by its key, lists DASH, and takes links that are themselves files or streams; pages are read with a browser's User-Agent. *Requested 2026-11-11, from testing Facebook and Instagram reels and two streaming sites against JDownloader and Video DownloadHelper.* JDownloader's site plugins aren't imported (Java, GPL, changed daily); their common methods are done generically instead, nothing site-specific and nothing that gets round a site's protection.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Make any mirror the main link:** Make Main Link in the download window's Mirrors tab (a button, and on right-clicking a mirror), keeping what was downloaded; and done on its own when the link fails and a mirror served the file. *Requested 2026-11-11.* (§7.3) Shipped in #116 and #117 (streams too); checked on Linux.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **The extension's list laid out like Video DownloadHelper's, themed like the app:** one card an item (picture with a play mark and its length, a kind badge before a two-line name, ×), ✏ to name it first, its format and quality as chips, a Download button with ▾ for Add to Queue, Sound Only and Copy Address, and a bar of tools at the bottom (Naming Rules, No video?, Refresh, Find Files, order, side panel); the app's colors, system blue and line icons, light and dark. *Requested 2026-11-11, with a picture of DownloadHelper's list.* Extension 1.17, with its version beside Naming Rules (asked 2026-11-11). Checked in a browser with a stand-in for the extension's API, light and dark; needs a try in the real extension. Checked in the real extension in Edge on Linux.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **The extension's toolbar icon as big as the other extensions' icons:** it looked smaller. *Requested 2026-11-11.* The toolbar icons are drawn without the app icon's margin (`icon/make.sh`). Extension 1.17. Checked in Edge on Linux.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Download a section of a long video:** **Download Section…** in the ▾ menu beside Download asks From and To (hours, minutes and seconds) and downloads only that part. *Requested 2026-11-11.* HLS streams, cut on the stream's piece boundaries (never re-encoded), named after the part; also `hdm add --from --to` and the MCP tool. Not yet: DASH, live streams, whole video files. Extension 1.19. Shipped in #113.
 - [ ] **Choose a button in an alert with the keyboard:** Tab and the arrow keys move the highlight, Return or Enter presses it, Esc cancels, in the Mac app's alerts (as Linux's and Windows' dialogs already do) and the browser extension's ▾ menu (↑ ↓, Tab, Home, End, Return, Esc; extension 1.20). *Requested 2026-11-11, with a picture of the Delete alert.* The Mac's keys couldn't be pressed in a test here; they wait for Herbert's try.
   - [ ] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **The GitHub link in About, as in PTZ Control,** instead of its own Help item. *Requested 2026-11-11.* About shows the name, version, what it is, "By dunkelherzmann" and the link (clickable on every platform).
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **A Help guide:** `HELP.md`, drafted from the spec (download managers such as IDM, AB Download Manager and JDownloader have Help menus), opened by Help ▸ Herb's Download Manager Help (⌘?, F1). *Requested 2026-11-11.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **The GitHub link in About, as in PTZ Control,** instead of its own Help item. *Requested 2026-11-11.* About shows the name, version, what it is, "By dunkelherzmann" and the link (clickable on every platform). Shipped in #114 (Linux #116); checked on Linux.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **A Help guide:** `HELP.md`, drafted from the spec (download managers such as IDM, AB Download Manager and JDownloader have Help menus), opened by Help ▸ Herb's Download Manager Help (⌘?, F1). *Requested 2026-11-11.* Shipped in #114.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Copy a mirror's link from the Mirrors tab:** a way to copy a source's address (the link or a mirror) from the download window's Mirrors tab. *Requested 2026-11-11.* Built in the copy-link PR: a Copy Link button, Copy Link on right-clicking a source (Mac), and ⌘C / Ctrl+C in the list, on all three. Checked on Linux (button and Ctrl+C, the link and a mirror); Windows compiles; the Mac builds and waits for your try.
 - [x] **The browser's right-click menu opens the app when it's closed:** Download Now and Add to Queue from the extension's right-click menu (links, pictures, videos, and the page's media) open Herb's Download Manager in the background and minimized when it isn't running, then start or queue the link as chosen; using the menu is a request for the app. *Requested 2026-11-11, with a picture of the menu in Edge.* Built in the open-from-menu PR (extension 1.22): the menu's adds carry `open`, and `hdm` starts the app with `--background` (minimized without taking the focus on all three), then hands it the link. A download the browser starts on its own still stays in the browser when the app is closed. Checked on all three with a test copy: the add came back, the app opened minimized with the focus left where it was, and the file downloaded. Found on Windows: the app inherited hdm's pipe to the browser, holding it open; hdm now keeps its own handles to itself.
   - [x] Mac
