@@ -359,6 +359,52 @@ fn a_stream_whose_player_sent_no_referer_goes_without_one() {
 }
 
 #[test]
+fn a_stream_whose_pieces_want_the_players_fetch_headers_gets_them() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let media = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/media/h264-ts");
+    s.put("/cf/index.m3u8", MockFile::new(std::fs::read(media.join("index.m3u8")).unwrap()));
+    // As a Cloudflare rule against hotlinking: pieces only to a fetch from the player's own page.
+    for n in 0..3 {
+        let mut piece = MockFile::new(std::fs::read(media.join(format!("s{n}.ts"))).unwrap());
+        piece.requires = vec![("sec-fetch-site".into(), "same-origin".into()), ("sec-fetch-mode".into(), "cors".into()), ("accept".into(), "*/*".into())];
+        piece.forbids = vec!["referer".into()];
+        s.put(&format!("/cf/s{n}.ts"), piece);
+    }
+    let dir = folder("fetch-headers");
+    let m = Manager::open(&dir).unwrap();
+    control::serve(&m, dir.join("files")).unwrap();
+    let add = |extra: Value| {
+        let mut message = json!({"command": "add", "urls": [s.url("/cf/index.m3u8")], "check": true, "stream": true, "referer": "", "origin": ""});
+        message.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let mut out = Vec::new();
+        assert_eq!(cli::native(&mut framed(&[message]).as_slice(), &mut out, &dir), 0);
+        unframed(&out)[0].clone()
+    };
+    let wait = |name: &str| -> hd_core::manager::Status {
+        let until = Instant::now() + Duration::from_secs(30);
+        loop {
+            let row = m.rows().into_iter().find(|r| r.name == name).unwrap();
+            if matches!(row.status, hd_core::manager::Status::Finished | hd_core::manager::Status::Failed(_)) || Instant::now() > until {
+                return row.status;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    assert_eq!(add(json!({"name": "bare.mp4"}))["ok"], true);
+    assert!(matches!(wait("bare.mp4"), hd_core::manager::Status::Failed(_)), "refused without the player's headers");
+    let bare = m.rows().into_iter().find(|r| r.name == "bare.mp4").unwrap().id;
+    m.remove(&[bare], false);
+    // With them (a Cookie or Range among them is left to the app), it downloads.
+    let headers = json!([["Accept", "*/*"], ["Sec-Fetch-Site", "same-origin"], ["Sec-Fetch-Mode", "cors"], ["Sec-Fetch-Dest", "empty"],
+                         ["Cookie", "x=1"], ["Range", "bytes=0-"]]);
+    let answer = add(json!({"name": "player.mp4", "headers": headers}));
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(wait("player.mp4"), hd_core::manager::Status::Finished);
+    assert!(m.quit(Duration::from_secs(5)));
+}
+
+#[test]
 fn a_naming_rules_subfolder_is_made_inside_the_save_folder() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let s = rt.block_on(MockServer::start()).unwrap();

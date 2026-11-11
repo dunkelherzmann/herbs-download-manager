@@ -87,3 +87,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **The zilla-networks stream still failed with 403 after extension 1.23 and a restart.** *Reported 2026-11-11, with the playlist and the playlist request's headers from DevTools.* Mac. Found: the pieces (`/segs/<id>/NNN.html`, and `init.html`) are on the playlist's own server, behind Cloudflare; the player sends no Referer (Referrer Policy: no-referrer) and no cookies, but Edge sends `Sec-Fetch-Site: same-origin`, `Sec-Fetch-Mode: cors`, `Sec-Fetch-Dest: empty`, `Accept: */*`, `Accept-Language` and the `Sec-Ch-Ua` lines, and the app sent none of them, so a rule against fetches from outside the player refuses the pieces while letting the playlist through. Extension 1.24 hands over the rest of the player's lines too (not its cookies, Host, Range or lengths), and the app sends them with every request of the download. A core test stands in for such a rule; not tried against the site itself. Add it again from the extension after updating it.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

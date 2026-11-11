@@ -175,7 +175,8 @@ test("a stream a player in an embedded frame fetched is handed over with the pla
 test("a player that sent no Referer is handed over without one, even after the background script slept", async () => {
   const b = load({ tabs: [PAGE], fetch: () => ({ body: VOD }) });
   const url = "https://player.example.org/m3u8/7075342";
-  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url, type: "xmlhttprequest", requestHeaders: headers({ Origin: "https://player.example.org", "User-Agent": "Player UA" }) });
+  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url, type: "xmlhttprequest", requestHeaders: headers({ Origin: "https://player.example.org", "User-Agent": "Player UA",
+    Accept: "*/*", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", Cookie: "s=1", Range: "bytes=0-", Priority: "u=1, i" }) });
   await b.respond({ url, responseHeaders: headers({ "content-type": "application/vnd.apple.mpegurl" }) });
   // Put to sleep and woken again: what it saw in memory is gone, what it kept with the item isn't.
   b.get("pageHeaders").clear();
@@ -185,6 +186,8 @@ test("a player that sent no Referer is handed over without one, even after the b
   assert.equal(sent.referer, "", "none, as the player sent none: not the tab's page");
   assert.equal(sent.origin, "https://player.example.org");
   assert.equal(sent.user_agent, "Player UA");
+  // The rest of what it sent, for every piece: not its cookies or the transfer's own lines.
+  assert.deepEqual(sent.headers, [["Accept", "*/*"], ["Sec-Fetch-Site", "same-origin"], ["Sec-Fetch-Mode", "cors"]]);
 });
 
 test("another page in the tab forgets what the last one played", async () => {

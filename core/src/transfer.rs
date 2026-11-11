@@ -64,6 +64,10 @@ pub struct Dress {
     /// The Origin the browser sent ("" for none); `None` derives one from `referer` for another site.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// The rest of what the browser sent ([name, value]: Accept, Sec-Fetch-*, …), as it sent it: servers behind
+    /// Cloudflare refuse a stream's pieces to a request that doesn't look like the player's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<(String, String)>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -1837,6 +1841,18 @@ pub(crate) fn signed_as(rb: reqwest::RequestBuilder, url: &reqwest::Url, vault: 
     if let Some(d) = dress {
         if let Some(agent) = d.user_agent.as_deref().filter(|a| !a.is_empty()) {
             rb = rb.header(reqwest::header::USER_AGENT, agent);
+        }
+        // Never the transfer's own lines (it sets Range, the length and the connection itself), nor cookies, which
+        // go with the sign-in.
+        const OURS: [&str; 9] = ["host", "range", "content-length", "connection", "cookie", "accept-encoding", "referer", "origin", "user-agent"];
+        for (name, value) in &d.headers {
+            let lower = name.to_ascii_lowercase();
+            if OURS.contains(&lower.as_str()) || lower.starts_with(':') || lower.starts_with("if-") {
+                continue;
+            }
+            if let (Ok(name), Ok(value)) = (reqwest::header::HeaderName::from_bytes(name.as_bytes()), reqwest::header::HeaderValue::from_str(value)) {
+                rb = rb.header(name, value);
+            }
         }
         let page = d.referer.as_deref().and_then(|r| reqwest::Url::parse(r).ok());
         if let Some(page) = &page

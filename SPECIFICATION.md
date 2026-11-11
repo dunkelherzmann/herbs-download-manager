@@ -585,7 +585,9 @@ downloads to the app. The browser keeps a download the app doesn't take.
   looks like the app (its colors, system blue, monochrome line icons, light and dark), laid out as Video
   DownloadHelper's.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
-  the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none: a
+  the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none,
+  and the rest of its lines (Accept, Accept-Language, Sec-Fetch-*, Sec-Ch-Ua*, its own tokens; not its cookies,
+  which go apart, nor Host, Range or lengths), which servers behind Cloudflare check on a stream's pieces: a
   player embedded from another site sends its frame's address or nothing, and its server refuses any other; kept an
   hour, and with the listed item so the extension's background script going to sleep doesn't lose them; an empty
   Referer replaces one the app remembered for the site; for a stream whose own address the browser didn't see

@@ -54,6 +54,9 @@ pub struct Request {
     /// add, from the browser extension: the Origin the player sent for the link ("" when it sent none); without it
     /// one is derived from `referer`.
     pub origin: Option<String>,
+    /// add, from the browser extension: the rest of the headers the player sent for the link ([name, value]), sent
+    /// with every request of the download (Accept, Sec-Fetch-*, …).
+    pub headers: Vec<(String, String)>,
     /// add, from the browser extension: the browser's cookies for the link (a Cookie header). Kept for this session
     /// only, as an unremembered sign-in for the link's site (§9.1); never written to disk.
     pub cookies: Option<String>,
@@ -492,11 +495,13 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                 return Answer::error(format!("Sound only works for streamed video (.m3u8, .mpd), and “{url}” isn't one"));
             }
             // Asked for as the browser asked: its User-Agent and the page.
-            let dress = (r.user_agent.is_some() || r.referer.is_some() || r.origin.is_some()).then(|| crate::transfer::Dress {
-                user_agent: r.user_agent.clone(),
-                referer: r.referer.clone(),
-                origin: r.origin.clone(),
-            });
+            let dress = (r.user_agent.is_some() || r.referer.is_some() || r.origin.is_some() || !r.headers.is_empty())
+                .then(|| crate::transfer::Dress {
+                    user_agent: r.user_agent.clone(),
+                    referer: r.referer.clone(),
+                    origin: r.origin.clone(),
+                    headers: r.headers.clone(),
+                });
             let links = r
                 .urls
                 .iter()

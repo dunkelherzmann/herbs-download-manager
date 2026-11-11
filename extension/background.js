@@ -97,6 +97,9 @@ async function send(url, referer, extra = {}, tabId = -1) {
   };
   // The Origin the player sent (none for a request to its own site); without it the app derives one from the Referer.
   if (exact) message.origin = header("origin") || "";
+  // The rest of what the player sent, as it sent it: the app asks for every piece with them.
+  const rest = seen && (seen.all || []).filter((h) => !/^(referer|origin|user-agent)$/i.test(h.name) && h.value !== undefined);
+  if (rest && rest.length) message.headers = rest.map((h) => [h.name, h.value]);
   try {
     return await api.runtime.sendNativeMessage(HOST, message);
   } catch {
@@ -307,6 +310,11 @@ async function variantsOf(url) {
 const pageHeaders = new Map();
 const hostHeaders = new Map();
 const SKIP_HEADERS = /^(cookie|host|content-length|connection|accept-encoding|sec-|priority|upgrade-insecure-requests|range)/i;
+// What the app is handed to ask as the player asked (Accept, Accept-Language, Sec-Fetch-*, Sec-Ch-Ua*, its own
+// tokens): servers behind Cloudflare refuse a stream's pieces to a request that doesn't look like the player's
+// (bugs.md, 2026-11-11). Cookies go apart; the transfer's own lines (Host, Range, lengths) are the app's.
+const FORWARD_SKIP = /^(cookie|host|content-length|connection|accept-encoding|range|if-|priority|upgrade-insecure-requests|:)/i;
+const forwardable = (headers) => (headers || []).filter((h) => !FORWARD_SKIP.test(h.name));
 const FORBIDDEN = /^(referer|origin|user-agent)$/i;
 if (api.webRequest && api.webRequest.onSendHeaders) {
   const spec = ["requestHeaders"];
@@ -320,14 +328,14 @@ if (api.webRequest && api.webRequest.onSendHeaders) {
       // asked (found by a scan, or by its type only) goes with its player's headers all the same.
       try {
         hostHeaders.delete(`${d.tabId} ${new URL(d.url).host}`);
-        hostHeaders.set(`${d.tabId} ${new URL(d.url).host}`, { headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)) });
+        hostHeaders.set(`${d.tabId} ${new URL(d.url).host}`, { headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)), all: forwardable(d.requestHeaders) });
       } catch {}
       if (hostHeaders.size > 300) hostHeaders.delete(hostHeaders.keys().next().value);
       if (!/\.(m3u8|mpd)$/.test(path) && !MAYBE_STREAM(d.url) && d.type !== "media") return;
       const now = Date.now();
       for (const [k, v] of pageHeaders) if (now - v.at > 60 * 60 * 1000) pageHeaders.delete(k);
       if (pageHeaders.size > 500) pageHeaders.delete(pageHeaders.keys().next().value);
-      pageHeaders.set(d.url, { at: now, headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)) });
+      pageHeaders.set(d.url, { at: now, headers: (d.requestHeaders || []).filter((h) => !SKIP_HEADERS.test(h.name)), all: forwardable(d.requestHeaders) });
     },
     { urls: ["<all_urls>"], types: ["xmlhttprequest", "media", "other"] },
     spec,
@@ -571,7 +579,7 @@ function note(d, found) {
     const item = { url: d.url, kind: found.kind, size: found.size || 0, mime: found.mime || "", hidden: false, seen: Date.now() };
     // What the browser sent for it, kept with it: a background script put to sleep forgets pageHeaders (send()).
     const asked = pageHeaders.get(d.url);
-    if (asked) item.asked = { headers: asked.headers.filter((h) => /^(referer|origin|user-agent)$/i.test(h.name)) };
+    if (asked) item.asked = { headers: asked.all || asked.headers, all: asked.all || [] };
     if (found.name) item.name = found.name;
     const dashPage = found.kind === "dash" || items.some((i) => i.kind === "dash");
     if (dashPage && pieceOfDash(item)) item.hidden = true;
