@@ -5,65 +5,65 @@ A box is ticked once the change has shipped. A request that covers several platf
 
 - [x] **Set up the project, locally and on GitHub,** with `SPECIFICATION.md`, `bugs.md`, `enhancements.md` and `pending.md`. *Requested 2026-11-08.* Done in #1.
 - [x] **Study Internet Download Manager, Free Download Manager, XDM, Progressive Downloader and AB Download Manager** with Craft Anything and REA, Progressive Downloader as the main inspiration, and record their features in the spec. *Requested 2026-11-08.* Done in #1 (`SPECIFICATION.md` §14).
-- [ ] **Multi-threaded downloading:** many connections per file, split dynamically. *Requested 2026-11-08.* Mac, Linux and Windows. (§8) The shared engine does it (#5); each app still needs its window.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Mirror support:** one file from several sources, with connections spread over them. *Requested 2026-11-08.* Mac, Linux and Windows. (§7) The shared engine does it (#7); each app still needs its controls.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Add mirrors before, during and after adding a download.** *Requested 2026-11-08.* Mac, Linux and Windows. (§7.1) The shared engine does it (#7); each app still needs its controls.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Stop and resume downloads.** *Requested 2026-11-08.* Mac, Linux and Windows. (§10) The shared engine does it (#6); each app still needs its controls.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Multi-threaded downloading:** many connections per file, split dynamically. *Requested 2026-11-08.* Mac, Linux and Windows. (§8) The shared engine does it (#5); each app still needs its window. All three apps have it: the Mac's Download window (#14), Linux's (#43) and Windows' (#44).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Mirror support:** one file from several sources, with connections spread over them. *Requested 2026-11-08.* Mac, Linux and Windows. (§7) The shared engine does it (#7); each app still needs its controls. All three apps have it: the Mac's Download window (#14), Linux's (#43) and Windows' (#44).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Add mirrors before, during and after adding a download.** *Requested 2026-11-08.* Mac, Linux and Windows. (§7.1) The shared engine does it (#7); each app still needs its controls. All three apps have it: New Download's Mirrors field and Add Mirror… in the Download window (Mac #13/#14, Linux #41/#43, Windows #42/#44).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Stop and resume downloads.** *Requested 2026-11-08.* Mac, Linux and Windows. (§10) The shared engine does it (#6); each app still needs its controls. All three apps have it (Mac #11, Linux #38, Windows #39).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **No tags.** *Requested 2026-11-08.* The spec has fixed status filters and file-type groups only (§2.1). Done in #1.
-- [ ] **Menu bar, toolbar, icons and UI based on AB Download Manager.** *Requested 2026-11-08.* Mac, Linux and Windows. (§2–§4)
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Menu bar, toolbar, icons and UI based on AB Download Manager.** *Requested 2026-11-08.* Mac, Linux and Windows. (§2–§4) Done for the Mac (#8, #10), Linux (#38) and Windows (#39).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Study IDM on the Windows PC with Craft Anything and REA** instead of only its website: its menus, toolbar, dialogs and strings from `IDMan.exe`, and its main window while running. *Requested 2026-11-08.* Done in #2 (`SPECIFICATION.md` §14).
 - [x] **Up to 32 connections per download,** chosen from 1 to 32. *Requested 2026-11-09.* Spec: 32 by default for downloads and per server, with a 1–32 picker (§5.1 A5, §9 S2–S3). Done in #3.
-- [ ] **Use the most appropriate, portable language, evaluating Rust.** *Requested 2026-11-09.* Spec: Rust core on all three platforms, Swift/AppKit host on the Mac, Rust Win32 and GTK 4 hosts (§1). Done in #3; built per platform below.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5, pause and resume in #6, mirrors in #7, the main window and the download list in #8, the menus and context menu in #10, pause and resume in the app in #11, adding downloads (New Download, Add Links, clipboard, drag and drop, Batch) in #13, the Download window and mirrors in the app in #14, the queue in #16.
-- [ ] **A name of its own: Herb's Download Manager, Herb's DM for short.** *Requested 2026-11-09.* Chosen after checking names against existing download managers. Renamed everywhere in #9 (window, menus, About, bundle id `com.herbertcisneros.HerbsDownloadManager`, Flatpak `org.herbsdownloadmanager.app`); the Mac list moves from the old data folder on first launch. Built per platform as each app ships.
+- [x] **Use the most appropriate, portable language, evaluating Rust.** *Requested 2026-11-09.* Spec: Rust core on all three platforms, Swift/AppKit host on the Mac, Rust Win32 and GTK 4 hosts (§1). Done in #3; built per platform below.
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
+  - [x] Linux
+  - [x] Windows
+- [x] **Build the Mac app first for testing,** before Linux and Windows. *Requested 2026-11-09.* In progress, in the order of `pending.md`: the skeleton is done in #4, the download engine in #5, pause and resume in #6, mirrors in #7, the main window and the download list in #8, the menus and context menu in #10, pause and resume in the app in #11, adding downloads (New Download, Add Links, clipboard, drag and drop, Batch) in #13, the Download window and mirrors in the app in #14, the queue in #16. The Mac app was built first; Linux and Windows followed it (#35, #36).
+- [x] **A name of its own: Herb's Download Manager, Herb's DM for short.** *Requested 2026-11-09.* Chosen after checking names against existing download managers. Renamed everywhere in #9 (window, menus, About, bundle id `com.herbertcisneros.HerbsDownloadManager`, Flatpak `org.herbsdownloadmanager.app`); the Mac list moves from the old data folder on first launch. Built per platform as each app ships. Linux and Windows carry it from their first builds (#35, #36).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 
 - [x] **Keep each platform's files in its own folder.** The root holds only what applies to the whole project (Rust core and bindings, docs, trackers, version and test scripts); `macos/` holds the Mac app's `Package.swift`, sources, build script and `pending.md`, and `linux/` and `windows/` their own. Also line endings fixed by `.gitattributes` and a build check on every pull request (GitHub Actions). *Requested 2026-11-09.* All platforms. Done in #12.
 
-- [ ] **All menus and submenus in the app's window, on macOS too.** Nothing in the macOS menu bar beyond the app menu macOS always shows, so on wide screens no command needs a trip to the top of the screen. Top priority: the next item in every `pending.md`. *Requested 2026-11-09.* All platforms.
+- [x] **All menus and submenus in the app's window, on macOS too.** Nothing in the macOS menu bar beyond the app menu macOS always shows, so on wide screens no command needs a trip to the top of the screen. Top priority: the next item in every `pending.md`. *Requested 2026-11-09.* All platforms. Linux in #38, Windows in #39.
   - [x] Mac (#19)
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **An original "download" app icon in the macOS style.** *Requested 2026-11-09.* A drive with a download arrow coming in from above, in a blue rounded square with a dark blue rim, the drive frosted white and the arrow gray; first drawn as three lanes over a tray, then redesigned from two icons Herbert showed (the colors and contour of the macOS App Store icon, the layout of a drive-and-arrow icon), light on the right of the base, colors a little darker. One SVG (`icon/icon.svg`) drawn into `.icns`, Linux PNGs and `.ico` by `icon/make.sh`. Done for the Mac in #18.
+  - [x] Linux
+  - [x] Windows
+- [x] **An original "download" app icon in the macOS style.** *Requested 2026-11-09.* A drive with a download arrow coming in from above, in a blue rounded square with a dark blue rim, the drive frosted white and the arrow gray; first drawn as three lanes over a tray, then redesigned from two icons Herbert showed (the colors and contour of the macOS App Store icon, the layout of a drive-and-arrow icon), light on the right of the base, colors a little darker. One SVG (`icon/icon.svg`) drawn into `.icns`, Linux PNGs and `.ico` by `icon/make.sh`. Done for the Mac in #18. Linux uses its PNGs (`linux/icons`), Windows its `.ico` (`windows/icons`).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21. Asked again 2026-11-10: dragging a link from a browser into the app. Windows only takes dropped files so far (a link from a browser needs an OLE drop target). Still to do: links dropped on a row becoming its mirrors (Linux and Windows), and links dragged from a browser on Windows.
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Drag and drop links, hyperlinks and files to start a download or add a mirror.** *Requested 2026-11-09.* Links, text and `.txt`/`.html` files dropped on the window or the Dock icon already open Add Links (#13); dropped on a download in the list, they become its mirrors. Done for the Mac in #21. Asked again 2026-11-10: dragging a link from a browser into the app. Windows only takes dropped files so far (a link from a browser needs an OLE drop target).
+- [x] **A link that matches a download already in the list is added as its mirror,** not as a separate download. *Requested 2026-11-09.* Done for the Mac in #21. Linux and Windows add through the core's `AddSession` (#41, #42), which does it.
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **A link that matches a download already in the list is added as its mirror,** not as a separate download. *Requested 2026-11-09.* Done for the Mac in #21.
+  - [x] Linux
+  - [x] Windows
+- [x] **Show when a finished download is being put together** instead of looking stuck at 99%. *Requested 2026-11-09.* Done for the Mac in #21. Linux and Windows show the core's "Finishing…" status.
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Show when a finished download is being put together** instead of looking stuck at 99%. *Requested 2026-11-09.* Done for the Mac in #21.
+  - [x] Linux
+  - [x] Windows
+- [x] **Import links from a file.** *Requested 2026-11-09.* File ▸ Import Links… reads any text-based file: no extension, `.txt`, `.md`, `.rtf`, `.html`, `.csv` and the like. The links found are added with those for the same file grouped into one download and its mirrors. Everywhere a download is added, a file of the same name that isn't the same file asks whether to skip, replace, or keep both, the new one named "<name> - kept.<extension>". Done for the Mac in #22. Linux in #41, Windows in #42.
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Import links from a file.** *Requested 2026-11-09.* File ▸ Import Links… reads any text-based file: no extension, `.txt`, `.md`, `.rtf`, `.html`, `.csv` and the like. The links found are added with those for the same file grouped into one download and its mirrors. Everywhere a download is added, a file of the same name that isn't the same file asks whether to skip, replace, or keep both, the new one named "<name> - kept.<extension>". Done for the Mac in #22.
-  - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
+  - [x] Linux
+  - [x] Windows
 
 - [x] **Check the free space before a download starts.** When the file's size is known and it won't fit, say so before downloading, counting the space macOS frees on demand as Finder does; warn too when a file over 4 GB goes to a FAT32 drive. *Requested 2026-11-09, from studying Mister Download Manager.* Done in the core, so all three apps have it (#50).
   - [x] Mac
@@ -110,33 +110,33 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **All menus in one Main Menu (☰) button, as in Herb's Terminal,** instead of a menu bar beside the window controls, which looked odd. *Requested 2026-11-09.* On the Mac it sits at the right end of the toolbar, after Search; on Linux and Windows in the left corner, as Herb's Terminal does. Also, a finished download's name sits level with the other columns instead of high in its row. Done for the Mac in #26.
+- [x] **All menus in one Main Menu (☰) button, as in Herb's Terminal,** instead of a menu bar beside the window controls, which looked odd. *Requested 2026-11-09.* On the Mac it sits at the right end of the toolbar, after Search; on Linux and Windows in the left corner, as Herb's Terminal does. Also, a finished download's name sits level with the other columns instead of high in its row. Done for the Mac in #26. Linux in #38, Windows in #39.
   - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
+  - [x] Linux
+  - [x] Windows
 - [x] **No paid CI.** *Requested 2026-11-09.* GitHub charges for a private repo's Actions minutes, so the GitHub build no longer runs on pull requests or pushes (it can still be started by hand). Every pull request is checked instead on Herbert's own machines with `scripts/check.sh`: the Mac build and tests here, `cargo test --workspace` on Linux and Windows over ssh. Done in #27.
-- [ ] **Search as a 🔍 button that opens a find bar,** as in Herb's Terminal, instead of a search field always in the title bar. *Requested 2026-11-09.* ⌘F or the button shows it at the top right of the list; it filters as you type; Done or Esc hides it and clears the filter. Done for the Mac in #29.
+- [x] **Search as a 🔍 button that opens a find bar,** as in Herb's Terminal, instead of a search field always in the title bar. *Requested 2026-11-09.* ⌘F or the button shows it at the top right of the list; it filters as you type; Done or Esc hides it and clears the filter. Done for the Mac in #29. Linux and Windows have the find bar (#38, #39).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **Drop more links, such as several mirrors of one file, onto an open Add Links window,** each listed as another row. *Requested 2026-11-09.* Drops on the main window or the Dock icon join the open window too; a link already listed is skipped; links to the same file still become one download and its mirrors. Done for the Mac in #32. Linux and Windows: drops on the main window or on Add Links join the open list (#41, #42).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [ ] **A Keep on Top toggle (📌) between Settings and Search** that keeps the download manager above every other app. *Requested 2026-11-09.* Also View ▸ Keep on Top (⌃⌘T); every window of the app floats above other apps' windows, full-screen ones included; remembered between launches. Done for the Mac in #33. Windows has it (Ctrl+Alt+T); Linux desktops (GTK 4, Wayland) don't let an app keep itself above others, so its item shows, disabled, with a note in its hover text.
   - [x] Mac
   - [ ] Linux
-  - [ ] Windows
-- [ ] **Drop more links, such as several mirrors of one file, onto an open Add Links window,** each listed as another row. *Requested 2026-11-09.* Drops on the main window or the Dock icon join the open window too; a link already listed is skipped; links to the same file still become one download and its mirrors. Done for the Mac in #32.
-  - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **A Keep on Top toggle (📌) between Settings and Search** that keeps the download manager above every other app. *Requested 2026-11-09.* Also View ▸ Keep on Top (⌃⌘T); every window of the app floats above other apps' windows, full-screen ones included; remembered between launches. Done for the Mac in #33.
-  - [x] Mac
-  - [ ] Linux
-  - [ ] Windows
-- [ ] **Delete sends files to the Trash instead of erasing them,** so they can be put back. *Requested 2026-11-09* (after a 6.6 GB file deleted with "Delete Files Too" couldn't be recovered). The button is now "Move to Trash Too"; the Recycle Bin on Windows, the desktop's trash on Linux; a file that can't go to the Trash stays where it is and the footer says so. Done in the shared core, and for the Mac's dialog, in #34; Linux and Windows have it since their delete dialogs (#43, #44), checked by the feature test on all three.
+  - [x] Windows
+- [x] **Delete sends files to the Trash instead of erasing them,** so they can be put back. *Requested 2026-11-09* (after a 6.6 GB file deleted with "Delete Files Too" couldn't be recovered). The button is now "Move to Trash Too"; the Recycle Bin on Windows, the desktop's trash on Linux; a file that can't go to the Trash stays where it is and the footer says so. Done in the shared core, and for the Mac's dialog, in #34; Linux and Windows have it since their delete dialogs (#43, #44), checked by the feature test on all three.
   - [x] Mac
   - [x] Linux
   - [x] Windows
 - [x] **Natural wording in the spec's platform table:** "Built on Mac", "Built on Windows", "Built on Linux". *Requested 2026-11-09.* Done in the Download window PR for Linux.
 - [x] **Make the repository public when releases are ready to go on it.** *Requested 2026-11-09; done 2026-11-10 on request, after the audit (gitleaks over every ref and pull request found only the extension's public key; no personal addresses, tokens or site links; README updated in #91).* Before switching it: a scan for secrets and private details (in the code and in the history), stale branches removed, a description and topics, and a README with install steps for Mac, Linux and Windows. Public repositories get GitHub Actions free, so the automatic checks on pull requests can come back then.
-- [ ] **Download a page's videos and sounds, streamed ones too,** as Video DownloadHelper and Mister Download Manager do: the browser extension notices the media a page plays (HLS `.m3u8` and DASH `.mpd` streams, and whole video and sound files), and the app downloads a stream's pieces (`.ts` or fragments) and joins them into one `.mp4`, without re-encoding. *Requested 2026-11-10, from studying both.* Protected (DRM) video stays out of reach. Never transcoded: the pieces are only joined, so the file keeps the original quality (Herbert, 2026-11-10). The joining is done by the app's own Rust core, held to ffmpeg's standard: tests compare its files with ffmpeg's copy-mode output (same frames, same timing), and a stream it can't join is saved as one `.ts` file instead (Herbert: "if our own rust core is equal or better than ffmpeg use rust", 2026-11-10). The joiner is in the core (#64); HLS stream links download from the list, live streams are recorded (Pause saves the recording; Herbert asked for live streams to be accepted, 2026-11-10), and DRM-protected ones stay refused (#66). The browser extension lists what a page plays and adds an item to the queue with a click (#67). When a video or sound plays on a page, the extension's button lists what can be downloaded, and clicking an item adds it to the app's queue.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Download a page's videos and sounds, streamed ones too,** as Video DownloadHelper and Mister Download Manager do: the browser extension notices the media a page plays (HLS `.m3u8` and DASH `.mpd` streams, and whole video and sound files), and the app downloads a stream's pieces (`.ts` or fragments) and joins them into one `.mp4`, without re-encoding. *Requested 2026-11-10, from studying both.* Protected (DRM) video stays out of reach. Never transcoded: the pieces are only joined, so the file keeps the original quality (Herbert, 2026-11-10). The joining is done by the app's own Rust core, held to ffmpeg's standard: tests compare its files with ffmpeg's copy-mode output (same frames, same timing), and a stream it can't join is saved as one `.ts` file instead (Herbert: "if our own rust core is equal or better than ffmpeg use rust", 2026-11-10). The joiner is in the core (#64); HLS stream links download from the list, live streams are recorded (Pause saves the recording; Herbert asked for live streams to be accepted, 2026-11-10), and DRM-protected ones stay refused (#66). The browser extension lists what a page plays and adds an item to the queue with a click (#67). When a video or sound plays on a page, the extension's button lists what can be downloaded, and clicking an item adds it to the app's queue.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Find a page's downloadable files and media:** the files a page links to or plays, never its scripts, styles or bits of HTML, listed to tick and add to the queue. *Requested 2026-11-10.* From the browser extension, and in the app itself: a web page's address typed in, pasted or dragged into the app is scanned, and its media and files are listed to add to the queue. Done in #71: Add Links and New Download turn a page's address into the files and media on it, `hdm scan` and the MCP tool `scan_page` do the same, and the extension's list has Find Files on This Page (SPECIFICATION.md §15).
   - [x] Mac
   - [x] Linux
@@ -156,10 +156,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **More detail on the media the browser extension finds,** as Video DownloadHelper shows it: a picture from the video, its length, its format and quality (each HLS quality listed to choose from: format, size in pixels, bit rate), a name that can be changed before downloading, and a Download button; the same stream listed once. *Requested 2026-11-10, with pictures of DownloadHelper's list.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **More detail on the media the browser extension finds,** as Video DownloadHelper shows it: a picture from the video, its length, its format and quality (each HLS quality listed to choose from: format, size in pixels, bit rate), a name that can be changed before downloading, and a Download button; the same stream listed once. *Requested 2026-11-10, with pictures of DownloadHelper's list.* Done across #76 (quality picker), #79 (picture and length), #83 (a name to change first: the Ask for a name action) and #89 (Download and Add to Queue).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Choose the quality and the sound track, with defaults in Settings,** as Video DownloadHelper does: a preferred quality (Highest by default, as before, then 2160p down to 360p) used when nothing else is picked, each found stream's own quality picker overriding it, and a preferred sound language (the stream's own by default) for streams that offer several sound tracks; HDR versions are left out when a standard one exists. `hdm add --quality/--sound` and the MCP tool too. Done in #76 (Settings S13 and S14, the extension's two lists under a stream, extension 1.5; SPECIFICATION.md §9, §12, §15). *Requested 2026-11-10, from studying how Video DownloadHelper 10.6.7.2 presents it.*
   - [x] Mac
   - [x] Linux
@@ -172,10 +172,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **The extension's list in a smarter order and easier to reach,** as Video DownloadHelper's: streams before whole files, finished streams before live ones, the page's own site before others (Oldest and Newest as the other choices); the tab's media also in the right-click menu and on a keyboard shortcut; the list can open in the browser's side panel instead of the popup; with nothing found, it says to start the video (and skip any ads) and offers **Look Again**, which reloads the page. *Requested 2026-11-10, from studying Video DownloadHelper.* Built in #82 (extension 1.8): Smart, Oldest and Newest order, the right-click menu, Alt+Shift+H (Control+Shift+H on the Mac), Open in the side panel (Chrome and Edge), Look Again. Checked with a stand-in for the browser's extension API and the order on sample items; the menu, shortcut and side panel need a try in a real browser.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **The extension's list in a smarter order and easier to reach,** as Video DownloadHelper's: streams before whole files, finished streams before live ones, the page's own site before others (Oldest and Newest as the other choices); the tab's media also in the right-click menu and on a keyboard shortcut; the list can open in the browser's side panel instead of the popup; with nothing found, it says to start the video (and skip any ads) and offers **Look Again**, which reloads the page. *Requested 2026-11-10, from studying Video DownloadHelper.* Built in #82 (extension 1.8): Smart, Oldest and Newest order, the right-click menu, Alt+Shift+H (Control+Shift+H on the Mac), Open in the side panel (Chrome and Edge), Look Again. Checked with a stand-in for the browser's extension API and the order on sample items; the menu, shortcut and side panel need a try in a real browser.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **Naming rules for found media:** a name pattern (`%title`, `%site`, and text taken from the page by a CSS selector), find-and-replace pairs, a length limit and a sub-folder, set per site, with the page's title as the default; and a default action per site (download, ask for a name, sound only, copy the address). *Requested 2026-11-10, from studying Video DownloadHelper.* Done in #83 (extension 1.9): the Naming Rules page, applied in the list and the right-click menu, sub-folders kept inside the save folder by `hdm`. Checked with a stand-in for the browser's extension API, the naming code in Node, and the sub-folder end to end; needs a try in a real browser.
   - [x] Mac
   - [x] Linux
