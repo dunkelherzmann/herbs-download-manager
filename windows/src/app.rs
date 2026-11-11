@@ -808,6 +808,7 @@ fn refresh() {
         s.finished_ids = Some(finished);
 
         let active: Vec<&Row> = s.rows.iter().filter(|r| r.status.is_running()).collect();
+        keep_awake(!active.is_empty());
         let mut parts = vec![format!("{} selected", selection.len()), format!("{} active", active.len())];
         let speed: u64 = active.iter().map(|r| r.speed).sum();
         if speed > 0 {
@@ -1623,3 +1624,20 @@ fn about(hwnd: HWND) {
         let _ = TaskDialogIndirect(&config, None, None, None);
     }
 }
+
+thread_local! {
+    static AWAKE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The PC doesn't go to sleep while a download runs (SPECIFICATION.md §10): the window's thread asks Windows to keep
+/// the system on while any download is active, and lets go when none is. The display still turns off as set.
+fn keep_awake(downloading: bool) {
+    use windows::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
+    if AWAKE.get() != downloading {
+        unsafe {
+            SetThreadExecutionState(if downloading { ES_CONTINUOUS | ES_SYSTEM_REQUIRED } else { ES_CONTINUOUS });
+        }
+        AWAKE.set(downloading);
+    }
+}
+

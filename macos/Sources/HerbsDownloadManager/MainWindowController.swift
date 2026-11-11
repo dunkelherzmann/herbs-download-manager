@@ -152,6 +152,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
     private func update() {
         let rows = AppModel.shared.rows
         let active = rows.filter { $0.status.isRunning }
+        KeepAwake.set(!active.isEmpty)
         let speed = active.reduce(UInt64(0)) { $0 + $1.speed }
         let selected = list.selectedRows.count
         var parts = ["\(selected) selected", "\(active.count) active"]

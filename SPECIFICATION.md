@@ -431,6 +431,11 @@ hand-written list alone until it's changed there.
 
 ## 10. Stop and resume
 
+- **Kept awake while downloading:** while any download runs, the computer doesn't go to sleep on its own (the
+  display still turns off as set): an activity that holds off idle sleep on the Mac, a request to the desktop not to
+  suspend on Linux (through its portal, in the Flatpak), and `SetThreadExecutionState` on Windows. When nothing is
+  downloading, it sleeps as usual. Closing a laptop's lid or choosing Sleep still sleeps it.
+
 - **Pause** stops a download's connections and keeps every downloaded byte. The resume state (sources, validators,
   remaining ranges) is saved with each pause, every 5 seconds while downloading, and on quit.
 - **Resume** reconnects to the working sources and fetches only the remaining ranges. It works after quitting the

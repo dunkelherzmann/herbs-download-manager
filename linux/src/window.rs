@@ -336,6 +336,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             }
             let selected = ui.list.selected();
             let active: Vec<&Row> = rows.iter().filter(|r| r.status.is_running()).collect();
+            keep_awake(&window, !active.is_empty());
             let mut parts = vec![format!("{} selected", selected.len()), format!("{} active", active.len())];
             let speed: u64 = active.iter().map(|r| r.speed).sum();
             if speed > 0 {
@@ -859,3 +860,22 @@ fn tell(window: &adw::ApplicationWindow, text: &str) {
     d.add_response("ok", "OK");
     d.present(Some(window));
 }
+
+thread_local! {
+    /// The inhibit cookie held while downloads run (0: none).
+    static AWAKE: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// The computer doesn't suspend while a download runs (SPECIFICATION.md §10): the app asks the desktop (through its
+/// portal, in the Flatpak) not to suspend while any download is active, and lets go when none is.
+fn keep_awake(window: &adw::ApplicationWindow, downloading: bool) {
+    let Some(app) = window.application() else { return };
+    let held = AWAKE.get();
+    if downloading && held == 0 {
+        AWAKE.set(app.inhibit(Some(window), gtk::ApplicationInhibitFlags::SUSPEND, Some("Downloads are running")));
+    } else if !downloading && held != 0 {
+        app.uninhibit(held);
+        AWAKE.set(0);
+    }
+}
+

@@ -229,10 +229,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Keep the computer awake while downloading:** the computer doesn't go to sleep while a download runs, and sleeps as usual once nothing is downloading (the display may still turn off). *Requested 2026-11-10, from studying JDownloader 2.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Keep the computer awake while downloading:** the computer doesn't go to sleep while a download runs, and sleeps as usual once nothing is downloading (the display may still turn off). *Requested 2026-11-10, from studying JDownloader 2.* Done in #118: checked on each platform while a test copy downloaded (the Mac's `pmset -g assertions`, GNOME's session inhibitors, Windows' `powercfg /requests`), and released when it paused or finished.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.*
   - [ ] Mac
   - [ ] Linux
