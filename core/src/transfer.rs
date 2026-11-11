@@ -82,6 +82,9 @@ pub struct Tuning {
     pub tick: Duration,
     /// A connection under a quarter of the average speed for this long hands its range to a faster source.
     pub slow_after: Duration,
+    /// A server that accepts a request and sends no answer for this long counts as not answering, so a source that
+    /// hangs never holds up the others.
+    pub first_answer_timeout: Duration,
 }
 
 impl Default for Tuning {
@@ -95,6 +98,7 @@ impl Default for Tuning {
             save_interval: Duration::from_secs(5),
             tick: Duration::from_secs(1),
             slow_after: Duration::from_secs(15),
+            first_answer_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -121,7 +125,7 @@ pub enum SourceStatus {
 
 impl SourceStatus {
     /// Never used again in this run.
-    fn is_dead(&self) -> bool {
+    pub fn is_dead(&self) -> bool {
         matches!(
             self,
             SourceStatus::Failed(_) | SourceStatus::DifferentFile | SourceStatus::FileChanged | SourceStatus::NoResumeSupport
@@ -543,7 +547,11 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
         return Outcome::Failed("Not a valid link".into());
     }
     let max_conns = req.connections.clamp(1, 32) as usize;
-    let saved = req.state_file.as_deref().and_then(|p| ResumeState::load(p).ok()).filter(|s| s.url == req.url);
+    // The saved state is this download's while its link is among the sources: a mirror made the main link (by hand
+    // or on its own) keeps what was downloaded.
+    let saved = req.state_file.as_deref().and_then(|p| ResumeState::load(p).ok()).filter(|s| {
+        same_link(&s.url, &req.url) || req.mirrors.iter().any(|m| same_link(m, &s.url))
+    });
 
     // The sources: saved ones first (with their validators and states), then the link and mirrors from the request.
     let mut sources: Vec<SavedSource> = saved.as_ref().map(|s| s.sources.clone()).unwrap_or_default();
@@ -582,53 +590,89 @@ pub async fn download(client: &reqwest::Client, req: Request, tuning: Tuning, pr
             let segs = Segments::from_saved(state.segments.clone(), tuning.min_split);
             *progress.announced.lock().unwrap() = state.announced.clone();
             progress.downloaded.store(segs.downloaded(), Ordering::SeqCst);
-            let job = Job::new(client, &req, tuning, state.clone(), sources, file, segs, progress, &control, false, max_conns);
+            let mut state = state.clone();
+            state.url = req.url.clone();
+            let job = Job::new(client, &req, tuning, state, sources, file, segs, progress, &control, false, max_conns);
             return run(job, None, max_conns, stop).await;
         }
     }
 
-    // A fresh start: ask the sources in turn for the whole file until one answers. One with ranges and a size is
-    // preferred, so a mirror can save a download whose link has no ranges.
+    // A fresh start: ask every source at once for the whole file, so a source that hangs or fails never holds up the
+    // others. One with ranges and a size is preferred (the earliest in the list among those answering within a moment
+    // of the first), so a mirror can save a download whose link has no ranges; a web page is taken only when no source
+    // sends anything else (an expired link's "please sign in" page isn't the file).
     let mut attempt = 0usize;
     let (first_idx, first) = 'chosen: loop {
     let (first_idx, first) = loop {
-        let mut plain: Option<(usize, reqwest::Response)> = None;
-        let mut reason = None;
-        for (i, s) in sources.iter_mut().enumerate() {
+        let mut asks = tokio::task::JoinSet::new();
+        for (i, s) in sources.iter().enumerate() {
             if !s.enabled || s.status.is_dead() {
                 continue;
             }
             let Ok(url) = reqwest::Url::parse(&s.url) else { continue };
             let host = url.host_str().unwrap_or("").to_string();
             let sent = signed_as(client.get(url.clone()), &url, &req.vault, req.dress.as_ref()).header(RANGE, "bytes=0-").header(ACCEPT_ENCODING, "identity").send();
-            let result = tokio::select! {
-                r = sent => r,
-                _ = stopped(stop.clone()) => return outcome_for_stop(&stop),
+            let wait = tuning.first_answer_timeout;
+            asks.spawn(async move { (i, host, tokio::time::timeout(wait, sent).await) });
+        }
+        let mut ranged: Option<(usize, reqwest::Response)> = None;
+        let mut plain: Option<(usize, reqwest::Response)> = None;
+        let mut page: Option<(usize, reqwest::Response)> = None;
+        let mut reason = None;
+        let mut grace: Option<tokio::time::Instant> = None;
+        let earlier = |kept: &Option<(usize, reqwest::Response)>, i: usize| kept.as_ref().is_none_or(|(j, _)| i < *j);
+        loop {
+            let joined = match grace {
+                Some(until) => match tokio::time::timeout_at(until, asks.join_next()).await {
+                    Ok(j) => j,
+                    Err(_) => break,
+                },
+                None => tokio::select! {
+                    j = asks.join_next() => j,
+                    _ = stopped(stop.clone()) => return outcome_for_stop(&stop),
+                },
             };
+            let Some(joined) = joined else { break };
+            let Ok((i, host, result)) = joined else { continue };
             match result {
-                Ok(r) if r.status() == StatusCode::PARTIAL_CONTENT && http::content_range_total(r.headers()).is_some() => {
-                    plain = Some((i, r));
-                    break;
-                }
-                Ok(r) if r.status().is_success() => {
-                    if plain.is_none() {
+                Err(_) => reason = Some("The server didn't answer".to_string()),
+                Ok(Err(e)) => reason = Some(error_text(&e)),
+                Ok(Ok(r)) if r.status().is_success() => {
+                    if http::is_page(r.headers()) {
+                        if earlier(&page, i) {
+                            page = Some((i, r));
+                        }
+                    } else if r.status() == StatusCode::PARTIAL_CONTENT && http::content_range_total(r.headers()).is_some() {
+                        if earlier(&ranged, i) {
+                            ranged = Some((i, r));
+                        }
+                        grace.get_or_insert_with(|| tokio::time::Instant::now() + Duration::from_millis(300));
+                    } else if earlier(&plain, i) {
                         plain = Some((i, r));
                     }
                 }
-                Ok(r) => match status_problem(r.status()) {
+                Ok(Ok(r)) => match status_problem(r.status()) {
                     Problem::Permanent(msg) => {
                         if r.status() == StatusCode::UNAUTHORIZED {
                             *progress.needs_login.lock().unwrap() = Some(host);
                         }
-                        s.status = SourceStatus::Failed(msg.clone());
+                        sources[i].status = SourceStatus::Failed(msg.clone());
                         reason = Some(msg);
                     }
                     Problem::Transient(msg) => reason = Some(msg),
                     _ => reason = Some(format!("{} {}", r.status().as_u16(), r.status().canonical_reason().unwrap_or(""))),
                 },
-                Err(e) => reason = Some(error_text(&e)),
             }
         }
+        asks.abort_all();
+        let file = ranged.or(plain);
+        // A source that sent a web page while another sent the file isn't serving it.
+        if file.is_some()
+            && let Some((j, _)) = &page
+        {
+            sources[*j].status = SourceStatus::DifferentFile;
+        }
+        let plain = file.or(page);
         if let Some(found) = plain {
             break found;
         }
@@ -1271,7 +1315,10 @@ impl Job {
         }
         let mut stop = self.stop.clone();
         let response = tokio::select! {
-            r = req.send() => r.map_err(|e| Problem::Transient(error_text(&e)))?,
+            r = tokio::time::timeout(self.tuning.first_answer_timeout, req.send()) => match r {
+                Ok(r) => r.map_err(|e| Problem::Transient(error_text(&e)))?,
+                Err(_) => return Err(Problem::Transient("The server didn't answer".into())),
+            },
             _ = stopped_ref(&mut stop) => return Err(Problem::Stopped),
         };
         let status = response.status();
@@ -1439,7 +1486,9 @@ impl Job {
                 .header(ACCEPT_ENCODING, "identity");
             let mut stop = self.stop.clone();
             let result = tokio::select! {
-                r = req.send() => r,
+                r = tokio::time::timeout(self.tuning.first_answer_timeout, req.send()) => {
+                    r.map_err(|_| "The server didn't answer".to_string()).and_then(|r| r.map_err(|e| error_text(&e)))
+                }
                 _ = stopped_ref(&mut stop) => return,
             };
             let problem = match result {
@@ -1466,7 +1515,7 @@ impl Job {
                     self.note_login(&source.url, r.status());
                     status_problem(r.status())
                 }
-                Err(e) => Problem::Transient(error_text(&e)),
+                Err(e) => Problem::Transient(e),
             };
             match problem {
                 Problem::Transient(msg) | Problem::Permanent(msg) if attempt >= self.retries as usize => {

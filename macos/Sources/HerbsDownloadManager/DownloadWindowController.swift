@@ -19,6 +19,7 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
     private let addConnection = NSButton(title: "+", target: nil, action: nil)
     private let removeConnection = NSButton(title: "−", target: nil, action: nil)
     private let removeMirror = NSButton(title: "Remove", target: nil, action: nil)
+    private let makeMain = NSButton(title: "Make Main Link", target: nil, action: nil)
     private let optionConnections = NSPopUpButton()
     private let optionSpeed = SpeedLimitControl(what: "this download")
     /// The limit last shown, so a refresh never overwrites a number being typed.
@@ -176,7 +177,16 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         removeMirror.target = self
         removeMirror.action = #selector(removeSelectedMirror(_:))
         removeMirror.toolTip = "Remove the selected mirror; the original link can only be turned off"
-        let buttons = NSStackView(views: [add, removeMirror])
+        makeMain.target = self
+        makeMain.action = #selector(makeSelectedMirrorMain(_:))
+        makeMain.toolTip = "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept"
+        makeMain.setAccessibilityLabel("Make the selected mirror the main link")
+        // Right-clicking a source offers the same.
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Make Main Link", action: #selector(makeClickedMirrorMain(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Remove", action: #selector(removeClickedMirror(_:)), keyEquivalent: "").target = self
+        sourcesTable.menu = menu
+        let buttons = NSStackView(views: [add, makeMain, removeMirror])
         return stacked(scroll, buttons)
     }
 
@@ -313,6 +323,7 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         reloadKeepingSelection(sourcesTable)
         let selected = sourcesTable.selectedRow
         removeMirror.isEnabled = selected >= 0 && selected < d.sources.count && !d.sources[selected].isOriginal
+        makeMain.isEnabled = removeMirror.isEnabled
     }
 
     private func reloadKeepingSelection(_ t: NSTableView) {
@@ -370,6 +381,7 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
         guard let d = detail else { return }
         let selected = sourcesTable.selectedRow
         removeMirror.isEnabled = selected >= 0 && selected < d.sources.count && !d.sources[selected].isOriginal
+        makeMain.isEnabled = removeMirror.isEnabled
     }
 
     // MARK: actions
@@ -408,6 +420,28 @@ final class DownloadWindowController: NSWindowController, NSWindowDelegate, NSTa
     @objc func addMirror(_ sender: Any?) {
         guard let window else { return }
         AddMirrorSheet.ask(for: id, on: window)
+    }
+
+    @objc func makeSelectedMirrorMain(_ sender: Any?) {
+        makeMain(at: sourcesTable.selectedRow)
+    }
+
+    @objc func makeClickedMirrorMain(_ sender: Any?) {
+        makeMain(at: sourcesTable.clickedRow)
+    }
+
+    @objc func removeClickedMirror(_ sender: Any?) {
+        guard let d = detail, sourcesTable.clickedRow >= 0, sourcesTable.clickedRow < d.sources.count else { return }
+        let source = d.sources[sourcesTable.clickedRow]
+        guard !source.isOriginal else { return }
+        AppModel.shared.manager.removeSource(id: id, url: source.url)
+        AppModel.shared.refresh()
+    }
+
+    private func makeMain(at row: Int) {
+        guard let d = detail, row >= 0, row < d.sources.count, !d.sources[row].isOriginal else { return }
+        _ = AppModel.shared.manager.makeMain(id: id, url: d.sources[row].url)
+        AppModel.shared.refresh()
     }
 
     @objc func removeSelectedMirror(_ sender: Any?) {
@@ -495,5 +529,14 @@ enum AddMirrorSheet {
                 AppModel.shared.refresh()
             }
         }
+    }
+}
+
+extension DownloadWindowController: NSMenuItemValidation {
+    /// The sources' right-click menu: Make Main Link and Remove only for a mirror, never the main link.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item.action == #selector(makeClickedMirrorMain(_:)) || item.action == #selector(removeClickedMirror(_:)) else { return true }
+        guard let d = detail, sourcesTable.clickedRow >= 0, sourcesTable.clickedRow < d.sources.count else { return false }
+        return !d.sources[sourcesTable.clickedRow].isOriginal
     }
 }

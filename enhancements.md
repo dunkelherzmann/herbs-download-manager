@@ -249,3 +249,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Make any mirror the main link:** Make Main Link in the download window's Mirrors tab (a button, and on right-clicking a mirror), keeping what was downloaded; and done on its own when the link fails and a mirror served the file. *Requested 2026-11-11.* (§7.3)
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

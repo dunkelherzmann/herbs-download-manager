@@ -128,6 +128,9 @@ reinstall your build (theirs may have replaced it) and run again.
   can finish: the client hangs up about 0.2 ms before it lowers its count, and the server frees the slot on its
   last byte, so a slow CI runner sees one connection too many (#103). Check limits where nothing can finish (a server
   too slow to end a range), and trace both sides with env-gated `eprintln!` before guessing which one is wrong.
+- A Manager download retries as Settings say (S6, 5 retries up to 60 s apart), not as `NewDownload.retries`: to
+  make one reach Failed in a test, give it failures retrying can't fix (404, a sign-in it lacks), or it stays
+  Connecting past the test's wait (#108).
 - Anything measured per tick (speeds, slow connections) must count bytes received, not written (#25).
 - A test that moves the scheduler's clock (`advance_clock`) must move it to exact times worked out from
   `scheduler_now()`, never by fixed amounts: real time keeps running under the offset, so a test that starts late in a

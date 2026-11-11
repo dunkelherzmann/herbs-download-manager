@@ -320,6 +320,13 @@ Different file, File changed, No resume support), active connections, speed and 
 moves its connections to the others; checking it again makes it available. The original link can be unchecked too,
 as long as one source stays on.
 
+**Make Main Link** (a button beside Add Mirror… and Remove, and on right-clicking a mirror; hover text "Make Main Link:
+the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept") makes
+the selected mirror the download's link; the old link goes first among its mirrors. A running download goes on
+without a pause, and a stopped one keeps what it has. The download does it on its own too: when it stops (finished,
+paused or failed) with its link failed (gone, behind a sign-in, another file or a web page) and a mirror that served
+the file, that mirror becomes its link.
+
 ### 7.4 Spreading connections
 
 - A download uses up to its **connections** setting in total (§9), and at most **connections per server** on any
@@ -335,8 +342,12 @@ as long as one source stays on.
   the ones it accepted; the download stops opening more to that host and tries again one at a time after 60 s.
 - A connection that is far slower than the others (under a quarter of the download's average per-connection speed
   for 15 s) gives its remaining range to a faster source; its source is marked Slow.
-- The link counts no more than a mirror. A bad link (missing, behind a login, stalling, refusing every connection)
-  is marked and set aside like a bad mirror. With two or more mirrors, each source is asked its file's size when a
+- The link counts no more than a mirror. At a fresh start every source is asked at once, so one that hangs or fails
+  never holds up the others; the earliest in the list that answers with ranges and a size (within a moment of the
+  first) is used. A server that sends no answer for 30 s counts as not answering, at the start and on every later
+  request. A source that sends a web page while another sends the file (an expired link's "please sign in" page) is
+  marked "Different file". One good mirror is enough: a bad link (missing, behind a login, stalling, refusing every
+  connection, never answering, unreachable, or sending a web page) is marked and set aside like a bad mirror. With two or more mirrors, each source is asked its file's size when a
   download starts: a source serving another file, when two or more others agree on a different size, is marked
   "Different file", even the link, and the download starts from one that agrees. (With one mirror, the link's file
   decides.)

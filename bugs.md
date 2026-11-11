@@ -60,3 +60,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [ ] **A download with a bad main link stayed failed although it had a good mirror,** and couldn't be started, restarted or resumed. *Reported 2026-11-11.* Mac, Linux, Windows. Found: a link that accepts the connection and never answers held the start (and each later connection) forever, since the sources were asked one after another with no time limit; and a link sending a web page (an expired link's sign-in page) could be taken for the file. Now every source is asked at once with a 30 s limit, a web page loses to a file, and a mirror that served the file becomes the main link.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows

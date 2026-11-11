@@ -73,8 +73,14 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     let add_mirror = gtk::Button::with_label("Add Mirror…");
     let remove_mirror = gtk::Button::with_label("Remove");
     remove_mirror.set_tooltip_text(Some("Remove the selected mirror (the original link stays)"));
+    let make_main = gtk::Button::with_label("Make Main Link");
+    make_main.set_tooltip_text(Some(
+        "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept",
+    ));
+    make_main.update_property(&[gtk::accessible::Property::Label("Make the selected mirror the main link")]);
     let src_buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     src_buttons.append(&add_mirror);
+    src_buttons.append(&make_main);
     src_buttons.append(&remove_mirror);
     let src_page = page(&src_list, &src_buttons);
 
@@ -218,6 +224,17 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     {
         let ctx = ctx.clone();
         add_mirror.connect_clicked(move |_| ask_mirrors(&ctx, id_));
+    }
+    {
+        let (manager, src_list, detail) = (manager.clone(), src_list.clone(), detail.clone());
+        make_main.connect_clicked(move |_| {
+            if let Some(row) = src_list.selected_row()
+                && let Some(s) = detail.borrow().sources.get(row.index() as usize)
+                && s.url != detail.borrow().row.url
+            {
+                manager.make_main(id_, &s.url);
+            }
+        });
     }
     {
         let (manager, src_list, detail) = (manager.clone(), src_list.clone(), detail.clone());

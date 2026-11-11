@@ -641,6 +641,11 @@ impl DownloadManager {
         self.inner.add_mirrors(id, &urls) as u32
     }
 
+    /// Make Main Link: a mirror becomes the download's link, the old link a mirror; false if `url` isn't a mirror.
+    pub fn make_main(&self, id: u64, url: String) -> bool {
+        self.inner.make_main(id, &url)
+    }
+
     /// Remove a mirror (the original link stays).
     pub fn remove_source(&self, id: u64, url: String) {
         self.inner.remove_source(id, &url);

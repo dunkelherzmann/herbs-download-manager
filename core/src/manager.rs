@@ -301,6 +301,15 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+/// A mirror becomes the download's main link; the old link goes first among its mirrors.
+fn promote(e: &mut Entry, new: &str) {
+    let old = std::mem::replace(&mut e.url, new.to_string());
+    e.mirrors.retain(|m| !transfer::same_link(m, new));
+    if !e.mirrors.iter().any(|m| transfer::same_link(m, &old)) {
+        e.mirrors.insert(0, old);
+    }
+}
+
 impl Manager {
     /// Opens the list kept in `dir` (created when missing). Downloads that were running come back Paused.
     pub fn open(dir: &Path) -> std::io::Result<Manager> {
@@ -628,6 +637,7 @@ impl Manager {
 
     /// The engine is done with a download: record how it ended.
     fn finished(&self, id: u64, running: &Arc<Running>, outcome: Outcome) {
+        let mut promoted: Option<String> = None;
         if running.restart.load(Ordering::SeqCst) {
             {
                 let mut slots = self.inner.slots.lock().unwrap();
@@ -660,6 +670,21 @@ impl Manager {
             if let Some(state) = state {
                 e.dest = Some(state.dest);
             }
+            // A main link that failed (gone, a sign-in, another file…) while a mirror served the file gives way to
+            // that mirror, so the download shows, and starts from, a link that works (Herbert, 2026-11-11).
+            let sources = running.progress.sources();
+            let main_dead = sources.iter().any(|s| transfer::same_link(&s.url, &e.url) && s.status.is_dead());
+            if main_dead
+                && let Some(best) = sources
+                    .iter()
+                    .filter(|s| !transfer::same_link(&s.url, &e.url) && s.enabled && !s.status.is_dead())
+                    .filter(|s| s.bytes > 0 || s.status == transfer::SourceStatus::Working)
+                    .max_by_key(|s| (s.status == transfer::SourceStatus::Working, s.bytes))
+            {
+                let new = best.url.clone();
+                promote(e, &new);
+                promoted = Some(new);
+            }
             // Only a download that quitting paused starts again at launch.
             e.resume_at_launch &= matches!(outcome, Outcome::Paused);
             match outcome {
@@ -680,6 +705,9 @@ impl Manager {
                     e.status = Status::Failed(reason);
                 }
             }
+        }
+        if let Some(new) = promoted {
+            self.edit_state(id, |s| s.url = new);
         }
         self.save();
         self.pump();
@@ -1625,6 +1653,26 @@ impl Manager {
         };
         self.save();
         added
+    }
+
+    /// Make Main Link (Mirrors tab, §7.3): a mirror becomes the download's link and the old link its first mirror.
+    /// A running download goes on without a pause; what was downloaded is kept either way. False when `url` isn't
+    /// one of its mirrors.
+    pub fn make_main(&self, id: u64, url: &str) -> bool {
+        {
+            let mut slots = self.inner.slots.lock().unwrap();
+            let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return false };
+            if slot.entry.stream || !slot.entry.mirrors.iter().any(|m| transfer::same_link(m, url)) {
+                return false;
+            }
+            let new = slot.entry.mirrors.iter().find(|m| transfer::same_link(m, url)).cloned().unwrap_or_default();
+            promote(&mut slot.entry, &new);
+            if slot.running.is_none() {
+                self.edit_state(id, |s| s.url = new);
+            }
+        }
+        self.save();
+        true
     }
 
     /// Remove (Mirrors tab): drops a mirror; its connections move to the other sources. The original link stays.

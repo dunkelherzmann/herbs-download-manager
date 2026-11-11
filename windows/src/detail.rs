@@ -37,6 +37,7 @@ const D_MINUS: u16 = 42;
 const D_SOURCES: u16 = 43;
 const D_ADD_MIRROR: u16 = 44;
 const D_REMOVE: u16 = 45;
+const D_MAKE_MAIN: u16 = 55;
 const D_CONN_LABEL: u16 = 46;
 const D_CONN_COUNT: u16 = 47;
 const D_LIMIT_ON: u16 = 48;
@@ -89,7 +90,7 @@ const PAGES: [&[u16]; 4] = [
     &[D_INFO, D_INFO + 1, D_INFO + 2, D_INFO + 3, D_INFO + 4, D_INFO + 5, D_INFO + 6,
       D_INFO + 10, D_INFO + 11, D_INFO + 12, D_INFO + 13, D_INFO + 14, D_INFO + 15, D_INFO + 16],
     &[D_CONNS, D_PLUS, D_MINUS],
-    &[D_SOURCES, D_ADD_MIRROR, D_REMOVE],
+    &[D_SOURCES, D_ADD_MIRROR, D_MAKE_MAIN, D_REMOVE],
     &[D_CONN_LABEL, D_CONN_COUNT, D_LIMIT_ON, D_LIMIT, D_UNIT, D_ALGO_LABEL, D_ALGO, D_VALUE, D_NOTE],
 ];
 
@@ -250,7 +251,8 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_MINUS, w!("BUTTON"), "−", BUTTON, 62, 408, 36, 28),
         (D_SOURCES, WC_LISTVIEWW, "", LVS_REPORT | LVS_NOSORTHEADER | LVS_SINGLESEL | LVS_SHOWSELALWAYS, 22, 110, 636, 290),
         (D_ADD_MIRROR, w!("BUTTON"), "Add Mirror…", BUTTON, 22, 408, 110, 28),
-        (D_REMOVE, w!("BUTTON"), "Remove", BUTTON, 140, 408, 90, 28),
+        (D_MAKE_MAIN, w!("BUTTON"), "Make Main Link", BUTTON, 140, 408, 130, 28),
+        (D_REMOVE, w!("BUTTON"), "Remove", BUTTON, 278, 408, 90, 28),
         (D_CONN_LABEL, w!("STATIC"), "Connections:", LABEL, 22, 124, 110, 20),
         (D_CONN_COUNT, w!("EDIT"), "", EDIT | ES_NUMBER as u32, 140, 120, 60, 24),
         (D_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 22, 160, 110, 24),
@@ -299,6 +301,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_MINUS, "Remove a connection", "Remove a connection now"),
         (D_SOURCES, "Sources", "The link and its mirrors: untick one to stop using it"),
         (D_ADD_MIRROR, "", "Add other links to the same file (Ctrl+Alt+M)"),
+        (D_MAKE_MAIN, "Make the selected mirror the main link", "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept"),
         (D_REMOVE, "", "Remove the selected mirror (the original link stays)"),
         (D_CONN_COUNT, "", "Connections for this download (1–32), applied when you leave the field"),
         (D_LIMIT_ON, "", "Limit this download's speed"),
@@ -850,6 +853,16 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                                 ask_mirrors(&ctx, did);
                             }
                         }
+                        D_MAKE_MAIN => drop(with_win(hwnd, |w| {
+                            let row = SendMessageW(w.controls[&D_SOURCES], LVM_GETNEXTITEM, Some(WPARAM(usize::MAX)), Some(LPARAM(LVNI_SELECTED as isize))).0;
+                            if let Kind::Download { detail: Some(d), .. } = &w.kind
+                                && row >= 0
+                                && let Some(s) = d.sources.get(row as usize)
+                                && s.url != d.row.url
+                            {
+                                w.ctx.manager.make_main(did, &s.url);
+                            }
+                        })),
                         D_REMOVE => drop(with_win(hwnd, |w| {
                             let row = SendMessageW(w.controls[&D_SOURCES], LVM_GETNEXTITEM, Some(WPARAM(usize::MAX)), Some(LPARAM(LVNI_SELECTED as isize))).0;
                             if let Kind::Download { detail: Some(d), .. } = &w.kind

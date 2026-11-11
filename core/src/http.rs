@@ -29,6 +29,14 @@ pub fn content_range_start(headers: &HeaderMap) -> Option<u64> {
 }
 
 /// What identifies this version of the file: the ETag (unless weak), else Last-Modified. Sent back in `If-Range`.
+/// An answer that is a web page (`text/html`, XHTML) rather than a file.
+pub fn is_page(headers: &HeaderMap) -> bool {
+    headers
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|t| { let t = t.to_ascii_lowercase(); t.starts_with("text/html") || t.starts_with("application/xhtml") })
+}
+
 pub fn validator(headers: &HeaderMap) -> Option<String> {
     if let Some(e) = headers.get(ETAG).and_then(|v| v.to_str().ok())
         && !e.starts_with("W/") {

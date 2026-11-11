@@ -869,3 +869,78 @@ fn a_note_is_kept_found_by_the_search_and_removed_when_blank() {
     assert_eq!(m.rows()[0].note, "");
     assert!(!m.rows()[0].matches("laptop"));
 }
+
+/// A good mirror takes the place of a link that failed (Herbert, 2026-11-11): the download finishes from it, and the
+/// mirror becomes its main link, the old link its first mirror.
+#[test]
+fn a_mirror_that_served_the_file_replaces_a_dead_link() {
+    let data = pattern(3 * MIB, 41);
+    let (_rt, good) = server(&data, None);
+    let (_rt2, dead) = server(&data, None);
+    dead.remove("/f.bin");
+    let dir = folder("promote-auto");
+    let m = Manager::open(&dir).unwrap();
+    let link = dead.url("/f.bin");
+    let mirror = good.url("/f.bin");
+    let id = m.add(NewDownload { mirrors: vec![mirror.clone()], ..new(link.clone(), &dir, true) });
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    let row = m.rows().remove(0);
+    assert_eq!(row.url, mirror, "the mirror is the main link now");
+    let sources: Vec<String> = m.detail(id).unwrap().sources.into_iter().map(|s| s.url).collect();
+    assert!(sources.contains(&link), "the old link stays as a mirror: {sources:?}");
+}
+
+/// Make Main Link on a paused download: what was downloaded is kept, and the new main link finishes it.
+#[test]
+fn make_main_link_keeps_what_was_downloaded() {
+    let data = pattern(8 * MIB, 42);
+    let (_rt, a) = server(&data, Some(MIB as u64));
+    let (_rt2, b) = server(&data, Some(MIB as u64));
+    let dir = folder("promote-hand");
+    let m = Manager::open(&dir).unwrap();
+    let (link, mirror) = (a.url("/f.bin"), b.url("/f.bin"));
+    let id = m.add(NewDownload { mirrors: vec![mirror.clone()], ..new(link.clone(), &dir, true) });
+    wait(&m, id, |s| *s == Status::Downloading);
+    std::thread::sleep(Duration::from_millis(800));
+    m.pause(&[id]);
+    wait(&m, id, |s| *s == Status::Paused);
+    let before = m.rows()[0].downloaded;
+    assert!(before > 0);
+    assert!(!m.make_main(id, "http://127.0.0.1:9/not-a-mirror.bin"), "only a mirror can become the main link");
+    assert!(m.make_main(id, &mirror));
+    assert_eq!(m.rows()[0].url, mirror);
+    let sent_before = a.stats("/f.bin").bytes + b.stats("/f.bin").bytes;
+    for s in [&a, &b] {
+        s.update("/f.bin", |f| f.rate = None);
+    }
+    m.resume(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    let sent_after = a.stats("/f.bin").bytes + b.stats("/f.bin").bytes - sent_before;
+    assert!(sent_after < data.len() as u64, "resumed, not fetched again ({sent_after} bytes after {before} kept)");
+}
+
+/// A download that failed while its link and mirror were both down resumes from the mirror once it's back, even
+/// though its link stays gone.
+#[test]
+fn a_failed_download_resumes_from_a_mirror_that_came_back() {
+    let data = pattern(3 * MIB, 43);
+    let (_rt, good) = server(&data, None);
+    let (_rt2, dead) = server(&data, None);
+    dead.remove("/f.bin");
+    // The mirror wants a sign-in for now, so the download fails at once.
+    let mut locked = MockFile::new(data.clone());
+    locked.requires = vec![("authorization".into(), "Basic nobody".into())];
+    good.put("/f.bin", locked);
+    let dir = folder("promote-later");
+    let m = Manager::open(&dir).unwrap();
+    let mirror = good.url("/f.bin");
+    let id = m.add(NewDownload { mirrors: vec![mirror.clone()], ..new(dead.url("/f.bin"), &dir, true) });
+    wait(&m, id, |s| matches!(s, Status::Failed(_)));
+    good.put("/f.bin", MockFile::new(data.clone()));
+    m.resume(&[id]);
+    wait(&m, id, |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    assert_eq!(m.rows()[0].url, mirror);
+}

@@ -113,7 +113,8 @@ async fn a_mirror_with_a_different_size_is_never_used() {
     let outcome = finish(task).await;
     assert_eq!(std::fs::read(finished(&outcome)).unwrap(), data);
     assert_eq!(status_of(&progress, &mirror), SourceStatus::DifferentFile);
-    assert_eq!(other[0].stats("/f.bin").requests, 1, "only the check");
+    // Every source is asked at the start (so a hanging link never holds up a mirror), then checked before use.
+    assert_eq!(other[0].stats("/f.bin").requests, 2, "only the first ask and the check");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -414,5 +415,74 @@ async fn a_bad_link_in_every_way_is_ignored_when_its_mirrors_are_good() {
             }
             other => panic!("a link that's {kind}, with two good mirrors: {other:?}"),
         }
+    }
+}
+
+/// A link that accepts connections and never answers, as a server that hangs does.
+async fn silent_link() -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/f.bin", listener.local_addr().unwrap());
+    let task = tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((socket, _)) = listener.accept().await {
+            held.push(socket);
+        }
+    });
+    (url, task)
+}
+
+/// One good mirror is enough (Herbert, 2026-11-11: "At least 1 good mirror should be able to replace a bad main
+/// download link"): a link bad in any way, even one that never answers, one that's closed, one whose name doesn't
+/// resolve, or one that sends a web page instead of the file, gives way to the mirror.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_good_mirror_replaces_a_bad_link() {
+    let data = pattern(4 * MIB, 14);
+    for kind in ["missing", "login", "stalls", "refuses", "silent", "closed", "no such host", "web page"] {
+        let good = servers(1, &data, None).await;
+        let mut keep = Vec::new();
+        let mut held = None;
+        let link = match kind {
+            "silent" => {
+                let (url, task) = silent_link().await;
+                held = Some(task);
+                url
+            }
+            "closed" => {
+                let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let url = format!("http://{}/f.bin", l.local_addr().unwrap());
+                drop(l);
+                url
+            }
+            "no such host" => "http://no-such-host.invalid/f.bin".to_string(),
+            "web page" => {
+                let s = MockServer::start().await.unwrap();
+                let mut f = MockFile::new(b"<html><body>This link has expired. Please sign in.</body></html>".to_vec());
+                f.ranges = false;
+                f.headers = vec!["Content-Type: text/html; charset=utf-8".into()];
+                s.put("/f.bin", f);
+                let url = s.url("/f.bin");
+                keep.push(s);
+                url
+            }
+            _ => {
+                let (url, s) = link_bad_in_one_way(kind, &data).await;
+                keep.push(s);
+                url
+            }
+        };
+        let dir = folder(&format!("onemirror-{}", kind.replace(' ', "-")));
+        let tuning = Tuning { first_answer_timeout: Duration::from_secs(2), ..fast() };
+        let (_c, progress, task) = spawn(request(link.clone(), vec![good[0].url("/f.bin")], &dir, 4), tuning);
+        let outcome = tokio::time::timeout(Duration::from_secs(30), finish(task)).await.unwrap_or(Outcome::Failed("still running after 30 s".into()));
+        match &outcome {
+            Outcome::Finished(path) => assert!(std::fs::read(path).unwrap() == data, "{kind}: not the mirror's file"),
+            other => panic!("a link that's {kind}, with one good mirror: {other:?}"),
+        }
+        // A link that's gone, wants a sign-in or sends a web page is set aside; one that can't be reached now is
+        // still tried again (connection errors may pass).
+        if ["missing", "login", "web page"].contains(&kind) {
+            assert!(status_of(&progress, &link).is_dead(), "{kind}: {:?}", status_of(&progress, &link));
+        }
+        drop(held);
     }
 }
