@@ -146,3 +146,8 @@ reinstall your build (theirs may have replaced it) and run again.
   (`use_trash_folder`), or their files go to Herbert's real Trash (one test's empty pieces folder did, #87).
 - A test that fails now and then: run it 30–60 times on the machine where it fails to get the real error first
   (Windows "access denied" on a name being deleted, #30).
+- **When a stream fails to join,** rejoin the kept `.hdparts` pieces with a scratch test (`Joiner` on the folder)
+  and diff `ffprobe` packet times against the raw pieces: decode-only checks miss fragment drift and a wrong
+  VP9 pick.
+- **A session sign-in remembered from an earlier browser add** overrides a download's Dress Referer for that host
+  until the app restarts: when testing header changes, add with a fresh host or check the vault's session entries.

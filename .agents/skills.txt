@@ -1,16 +1,5 @@
 # Skills for Herb's Download Manager (in addition to ~/.agents/skills-core.txt). Run `sh ~/.agents/sync-skills.sh` after editing.
-appkit-interop
-swiftpm-macos
-build-run-debug
-signing-entitlements
-packaging-notarization
-test-triage
-security-diff-scan
-
-# Reviews (adapted from ECC)
-review-swift
-review-security
-review-reliability
-review-accessibility
-review-test-coverage
+# Only skills this project's sessions really open are linked: each one's description loads into every session.
+# The rest (review-*, appkit-interop, swiftpm-macos, signing, packaging…) are read from ~/.agents/library when needed.
 master-control
+app-parity
