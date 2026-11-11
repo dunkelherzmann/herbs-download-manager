@@ -383,6 +383,55 @@ function row(tab, item, label, facts) {
     field.focus();
     field.setSelectionRange(0, Math.max(0, field.value.lastIndexOf(".")));
   };
+  // Download Section: From and To (H:MM:SS), To filled in with its length when known; then Download.
+  const section = () => {
+    if (body.querySelector(".section")) return;
+    const form = document.createElement("form");
+    form.className = "naming section";
+    const time = (label, value) => {
+      const field = document.createElement("input");
+      field.className = "time-field";
+      field.value = value;
+      field.placeholder = "0:00:00";
+      field.inputMode = "numeric";
+      field.setAttribute("aria-label", label);
+      field.title = `${label} (hours, minutes and seconds: 1:02:30)`;
+      const words = document.createElement("label");
+      words.className = "time-label";
+      words.textContent = label;
+      words.append(field);
+      form.append(words);
+      return field;
+    };
+    const clock = (s) => { const t = Math.round(s); return `${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
+    const from = time("From", "0:00:00");
+    const to = time("To", item.seconds ? clock(item.seconds) : "");
+    const ok = document.createElement("button");
+    ok.type = "submit";
+    ok.textContent = "Download";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.onclick = () => form.remove();
+    form.append(ok, cancel);
+    const valid = (t) => /^\d{1,6}(:[0-5]?\d){0,2}$/.test(t.trim());
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const [a, b] = [from.value.trim(), to.value.trim()];
+      const bad = [from, to].find((f) => f.value.trim() && !valid(f.value));
+      if (bad) {
+        detail.className = "detail bad";
+        detail.textContent = `“${bad.value}” isn't a time: give hours, minutes and seconds, such as 1:02:30`;
+        bad.focus();
+        return;
+      }
+      form.remove();
+      add({ start: true, from: a || "0:00:00", ...(b ? { to: b } : {}) });
+    };
+    tools.before(form);
+    from.focus();
+    from.select();
+  };
   // What Download does on this site (its naming rule's action, §13): download it, ask for a name first, take only
   // the sound, or copy the address. `start`: Download now; otherwise it waits its turn in the queue.
   const action = siteAction === "sound" && !streamed ? "download" : siteAction === "copy" && !item.url ? "download" : siteAction;
@@ -464,6 +513,8 @@ function row(tab, item, label, facts) {
   if (streamed && !(item.kind === "page-dash" && item.sound === false)) {
     entry("Sound Only", "Download only its sound (.m4a, or .mp3), as the site sends it", () => add({ start: true, soundOnly: true }));
   }
+  // A part of a long stream: from and to (HLS streams, whose pieces say their length).
+  if (item.kind === "stream") entry("Download Section…", "Download only a part of it: from one time to another (hours, minutes, seconds)", () => section());
   if (item.url && action !== "copy") entry("Copy Address", "Copy its address", copy);
   const close = () => {
     menu.hidden = true;

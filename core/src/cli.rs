@@ -16,7 +16,7 @@ hdm controls Herb's Download Manager while it runs.
 
   hdm list [--filter all|downloading|paused|finished|unfinished] [--search TEXT] [--json]
   hdm add LINK… [--folder FOLDER] [--queue] [--quality highest|1080|720…] [--sound LANGUAGE] [--sound-only]
-                              [--subtitles LANGUAGE|all|none]
+                              [--subtitles LANGUAGE|all|none] [--from H:MM:SS] [--to H:MM:SS]
   hdm pause ID…
   hdm resume ID…
   hdm remove ID… [--delete-files]
@@ -123,6 +123,8 @@ pub fn parse(args: &[String]) -> Result<(Request, bool), String> {
             "--quality" if r.command == "add" => r.quality = Some(value("--quality")?),
             "--sound" if r.command == "add" => r.sound = Some(value("--sound")?),
             "--sound-only" if r.command == "add" => r.sound_only = true,
+            "--from" if r.command == "add" => r.from = Some(value("--from")?),
+            "--to" if r.command == "add" => r.to = Some(value("--to")?),
             "--subtitles" if r.command == "add" => r.subtitles = Some(value("--subtitles")?),
             "--delete-files" if r.command == "remove" => r.delete_files = true,
             flag if flag.starts_with("--") => return Err(format!("{} doesn't take {flag}", r.command)),
@@ -225,7 +227,9 @@ fn tools() -> Value {
              "quality": {"type": "string", "description": "A streamed video's quality: highest, or the most lines such as 1080 or 720 (default: Settings')"},
              "sound": {"type": "string", "description": "A streamed video's sound language, such as en or de (default: Settings')"},
              "subtitles": {"type": "string", "description": "A streamed video's subtitles to keep in the file: a language such as en, all, or none (default: Settings')"},
-             "sound_only": {"type": "boolean", "description": "Save only a streamed video's sound (.m4a, or .mp3), never re-encoded"}}},
+             "sound_only": {"type": "boolean", "description": "Save only a streamed video's sound (.m4a, or .mp3), never re-encoded"},
+             "from": {"type": "string", "description": "A streamed video's section: from this time (H:MM:SS)"},
+             "to": {"type": "string", "description": "A streamed video's section: to this time (H:MM:SS); without it, to the end"}}},
          "annotations": {"readOnlyHint": false, "destructiveHint": false, "openWorldHint": true}},
         {"name": "pause_downloads", "title": "Pause downloads", "description": "Pauses downloads, keeping what's downloaded.",
          "inputSchema": {"type": "object", "required": ["ids"], "properties": {"ids": ids}},
@@ -268,6 +272,8 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
             sound: text("sound"),
             sound_only: flag("sound_only"),
             subtitles: text("subtitles"),
+            from: text("from"),
+            to: text("to"),
             ..Default::default()
         },
         "pause_downloads" => Request { command: "pause".into(), ids: ids(), ..Default::default() },

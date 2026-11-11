@@ -75,6 +75,10 @@ pub struct Request {
     pub manifest: Option<String>,
     /// add and scan, from the browser extension: the browser's User-Agent, sent with the download's requests.
     pub user_agent: Option<String>,
+    /// add, a stream: download only the section from this time ("0:12:00", hours, minutes and seconds).
+    pub from: Option<String>,
+    /// add, a stream: … to this time; absent with `from`, to its end.
+    pub to: Option<String>,
     /// scan, from the browser extension: the page as the browser shows it, every frame with its own cookies.
     pub pages: Vec<ScanPage>,
     /// scan, from the browser extension: the addresses the page already fetched.
@@ -466,6 +470,13 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                 Ok(c) => c,
                 Err(e) => return Answer::error(e),
             };
+            // A section is taken from a stream's pieces; a whole video file isn't split (yet).
+            if (r.from.is_some() || r.to.is_some())
+                && !r.stream
+                && let Some(url) = r.urls.iter().find(|u| !crate::media::download::is_stream_link(u))
+            {
+                return Answer::error(format!("A section works for streamed video (.m3u8), and “{url}” isn't one"));
+            }
             // Sound only is taken from a stream's own sound track; a whole video file isn't split (yet).
             if r.sound_only
                 && !r.stream
@@ -617,11 +628,22 @@ pub fn open_app(dir: &Path, wait: Duration) -> Result<(), String> {
 
 /// A stream's quality and sound track from an add request, over Settings' (S13, S14); `None` when it gives neither.
 fn stream_choice(settings: &crate::settings::Settings, r: &Request) -> Result<Option<crate::media::StreamChoice>, String> {
-    if r.quality.is_none() && r.sound.is_none() && r.subtitles.is_none() && !r.sound_only {
+    if r.quality.is_none() && r.sound.is_none() && r.subtitles.is_none() && !r.sound_only && r.from.is_none() && r.to.is_none() {
         return Ok(None);
     }
     let mut choice = settings.stream_choice();
     choice.sound_only = r.sound_only;
+    if r.from.is_some() || r.to.is_some() {
+        let time = |t: &Option<String>, default: u32| match t.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            None => Ok(default),
+            Some(t) => crate::media::parse_time(t).ok_or(format!("“{t}” isn't a time: give hours, minutes and seconds, such as 1:02:30")),
+        };
+        let (from, to) = (time(&r.from, 0)?, time(&r.to, u32::MAX)?);
+        if from >= to {
+            return Err("The section's end must come after its start".into());
+        }
+        choice.section = Some((from, to));
+    }
     if let Some(q) = r.quality.as_deref().map(str::trim) {
         choice.quality = match q.trim_end_matches(['p', 'P']) {
             "" | "highest" | "best" => None,
@@ -668,5 +690,14 @@ mod tests {
         assert!(choice(Some("big"), None).is_err());
         let c = stream_choice(&settings, &Request { sound_only: true, ..Default::default() }).unwrap().unwrap();
         assert_eq!((c.quality, c.sound_only), (Some(720), true), "sound only keeps Settings' quality and sound");
+        // A section: from and to, either one alone.
+        let section = |from: Option<&str>, to: Option<&str>| {
+            stream_choice(&settings, &Request { from: from.map(String::from), to: to.map(String::from), ..Default::default() }).map(|c| c.unwrap().section)
+        };
+        assert_eq!(section(Some("1:02:00"), Some("1:10:00")), Ok(Some((3720, 4200))));
+        assert_eq!(section(Some("12:00"), None), Ok(Some((720, u32::MAX))), "without an end: to the end");
+        assert_eq!(section(None, Some("0:30")), Ok(Some((0, 30))), "without a start: from the start");
+        assert!(section(Some("1:10:00"), Some("1:02:00")).unwrap_err().contains("after its start"));
+        assert!(section(Some("noon"), None).unwrap_err().contains("isn't a time"));
     }
 }

@@ -304,3 +304,14 @@ test("Find Files hands the app every frame of the page as the browser shows it, 
   assert.ok(sent.pages.every((p) => p.cookies === "s=1" && p.html.length > 0));
   assert.deepEqual(sent.resources, ["https://cdn.example.net/v/master.m3u8", "data:x"]);
 });
+
+test("Download Section hands the app the stream's from and to", async () => {
+  const b = load({ tabs: [PAGE] });
+  const url = "https://cdn.example.net/hls/long/master.m3u8";
+  await b.ask({ type: "add", tabId: 1, item: { url, kind: "stream" }, start: true, from: "1:02:00", to: "1:10:00" });
+  const sent = plain(b.sent.find((m) => m.command === "add"));
+  assert.deepEqual([sent.from, sent.to, sent.stream, sent.queue], ["1:02:00", "1:10:00", true, false]);
+  // A whole file isn't split: no section goes with it.
+  await b.ask({ type: "add", tabId: 1, item: { url: "https://cdn.example.net/v.mp4", kind: "video" }, from: "0:10" });
+  assert.equal(plain(b.sent.at(-1)).from, undefined);
+});

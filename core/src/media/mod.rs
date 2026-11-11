@@ -34,6 +34,50 @@ pub struct StreamChoice {
     /// Subtitle languages to keep in the file (S15): empty for none, `*` for every one the stream has.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub subtitles: Vec<String>,
+    /// Only this part of the stream: from and to, in seconds from its start. The pieces that cover it are
+    /// downloaded and joined, so the file starts and ends on the stream's piece boundaries (a few seconds wider).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<(u32, u32)>,
+}
+
+/// A time written as hours, minutes and seconds ("1:02:03", "02:03", "75"), in seconds.
+pub fn parse_time(text: &str) -> Option<u32> {
+    let parts: Vec<&str> = text.trim().split(':').collect();
+    if parts.is_empty() || parts.len() > 3 || parts.iter().any(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) || p.len() > 6) {
+        return None;
+    }
+    let n: Vec<u32> = parts.iter().map(|p| p.parse().unwrap_or(0)).collect();
+    // Minutes and seconds after the first part stay under 60.
+    if n.iter().skip(1).any(|v| *v >= 60) {
+        return None;
+    }
+    Some(n.iter().fold(0, |t, v| t * 60 + v))
+}
+
+/// A time for a file's name: "1h02m03s", "12m00s".
+pub fn clock(seconds: u32) -> String {
+    let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    if h > 0 { format!("{h}h{m:02}m{s:02}s") } else { format!("{m}m{s:02}s") }
+}
+
+/// A section's file name: "Rain.mp4" becomes "Rain (1h02m00s–1h10m00s).mp4".
+pub fn section_name(name: &str, (from, to): (u32, u32)) -> String {
+    let (stem, ext) = name.rsplit_once('.').map(|(s, e)| (s, format!(".{e}"))).unwrap_or((name, String::new()));
+    format!("{stem} ({}–{}){ext}", clock(from), clock(to))
+}
+
+/// The pieces of a stream's track that cover `from`..`to` seconds, counted from its first piece.
+pub fn pieces_in_section<T>(pieces: Vec<T>, duration: impl Fn(&T) -> f64, (from, to): (u32, u32)) -> Vec<T> {
+    let (from, to) = (from as f64, to as f64);
+    let mut at = 0.0;
+    pieces
+        .into_iter()
+        .filter(|p| {
+            let (start, end) = (at, at + duration(p));
+            at = end;
+            start < to && end > from
+        })
+        .collect()
 }
 
 /// A stream's file name when only its sound is saved: `.mp4` becomes `.m4a` (an `.mp3` name stays).
@@ -154,3 +198,27 @@ impl std::fmt::Display for JoinError {
         }
     }
 }
+
+#[cfg(test)]
+mod section_tests {
+    use super::*;
+
+    #[test]
+    fn times_names_and_pieces_of_a_section() {
+        assert_eq!(parse_time("1:02:03"), Some(3723));
+        assert_eq!(parse_time("02:03"), Some(123));
+        assert_eq!(parse_time("75"), Some(75));
+        assert_eq!(parse_time("00:00:00"), Some(0));
+        for bad in ["", "1:60:00", "1:2:3:4", "a:00", "1::2", "-5"] {
+            assert_eq!(parse_time(bad), None, "{bad}");
+        }
+        assert_eq!(clock(3723), "1h02m03s");
+        assert_eq!(clock(125), "2m05s");
+        assert_eq!(section_name("Rain.mp4", (3720, 4200)), "Rain (1h02m00s–1h10m00s).mp4");
+        // Pieces of 6 s: 0:10–0:20 needs the second (6–12), third (12–18) and fourth (18–24).
+        let kept = pieces_in_section((0..10).collect::<Vec<u32>>(), |_| 6.0, (10, 20));
+        assert_eq!(kept, [1, 2, 3]);
+        assert_eq!(pieces_in_section((0..3).collect::<Vec<u32>>(), |_| 6.0, (0, u32::MAX)), [0, 1, 2], "to the end");
+    }
+}
+

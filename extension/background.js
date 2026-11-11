@@ -769,6 +769,9 @@ async function addItem(tab, item, message) {
   if (message.sound !== undefined) options.sound = message.sound;
   // Only its sound, saved as it is (.m4a, or .mp3).
   if (message.soundOnly && options.stream) options.sound_only = true;
+  // Only a section of it (H:MM:SS), for a long stream.
+  if (options.stream && message.from) options.from = message.from;
+  if (options.stream && message.to) options.to = message.to;
   // The rule's sub-folder, inside the folder Settings saves to.
   if (rule && rule.folder) options.subfolder = rule.folder;
   let answer;

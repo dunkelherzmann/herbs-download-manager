@@ -84,6 +84,7 @@ impl Settings {
             sound: self.sound_languages.clone(),
             sound_only: false,
             subtitles: self.subtitle_languages.clone(),
+            section: None,
         }
     }
 

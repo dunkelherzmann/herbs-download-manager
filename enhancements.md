@@ -261,3 +261,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Download a section of a long video:** **Download Section…** in the ▾ menu beside Download asks From and To (hours, minutes and seconds) and downloads only that part. *Requested 2026-11-11.* HLS streams, cut on the stream's piece boundaries (never re-encoded), named after the part; also `hdm add --from --to` and the MCP tool. Not yet: DASH, live streams, whole video files. Extension 1.19.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+

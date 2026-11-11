@@ -316,3 +316,31 @@ fn a_stream_keeps_the_subtitles_chosen_for_it() {
     assert_eq!(subtitle_languages(&add("all.mp4", &["*"])), ["eng", "deu"], "all, forced ones left out");
     assert!(m.quit(Duration::from_secs(5)));
 }
+
+/// A section of a long video (Herbert, 2026-11-11): only the pieces that cover it are downloaded and joined, and the
+/// file is named after the part it holds.
+#[test]
+fn a_section_downloads_only_the_pieces_that_cover_it() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    serve(&s, "h264-ts", None);
+    let dir = folder("section");
+    let m = Manager::open(&dir).unwrap();
+    // Pieces of 2 s each: 0:02–0:04 is the second one alone.
+    let choice = hd_core::media::StreamChoice { section: Some((2, 4)), ..Default::default() };
+    let id = m.add(NewDownload { url: s.url("/h264-ts/index.m3u8"), folder: dir.join("files"), connections: 4, start: true, choice: Some(choice), ..NewDownload::default() });
+    assert_eq!(m.rows().into_iter().find(|r| r.id == id).unwrap().name, "h264-ts (0m02s–0m04s).mp4");
+    wait_for(&m, id, "finished", |s| *s == Status::Finished);
+    assert_eq!((s.stats("/h264-ts/s0.ts").requests, s.stats("/h264-ts/s1.ts").requests, s.stats("/h264-ts/s2.ts").requests), (0, 1, 0), "only the piece that covers the section");
+    // The same file as joining that one piece directly.
+    let mut j = Joiner::new(&dir.join("direct-spool")).unwrap();
+    let source = j.source();
+    j.piece(source, &std::fs::read(fixtures().join("h264-ts/s1.ts")).unwrap(), false).unwrap();
+    j.finish(&dir.join("direct.mp4")).unwrap();
+    assert_eq!(std::fs::read(dir.join("files/h264-ts (0m02s–0m04s).mp4")).unwrap(), std::fs::read(dir.join("direct.mp4")).unwrap());
+    // A section past the end says how long the stream is.
+    let late = hd_core::media::StreamChoice { section: Some((60, 70)), ..Default::default() };
+    let id = m.add(NewDownload { url: s.url("/h264-ts/index.m3u8"), folder: dir.join("files"), connections: 4, start: true, choice: Some(late), ..NewDownload::default() });
+    wait_for(&m, id, "failed", |s| matches!(s, Status::Failed(r) if r.contains("after the stream ends (0m06s long)")));
+    assert!(m.quit(Duration::from_secs(5)));
+}

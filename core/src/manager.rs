@@ -516,6 +516,11 @@ impl Manager {
             Some(c) if c.sound_only => name.map(|n| crate::media::sound_only_name(&n)),
             _ => name,
         };
+        // A section is named after the part it holds.
+        let name = match choice.as_ref().and_then(|c| c.section) {
+            Some(section) => name.map(|n| crate::media::section_name(&n, section)),
+            None => name,
+        };
         let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();

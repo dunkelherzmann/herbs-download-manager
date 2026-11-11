@@ -487,7 +487,7 @@ Linux Flatpak (`flatpak run --command=hdm org.herbsdownloadmanager.app`).
 | Command | What it does |
 |---|---|
 | `hdm list [--filter all\|downloading\|paused\|finished\|unfinished] [--search TEXT] [--json]` | id, status, size, name and note; `--json` gives every field |
-| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE] [--sound-only] [--subtitles LANGUAGE|all|none]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14, `--subtitles` keeps a language's subtitles (or `all`, or `none`) instead of S15, and `--sound-only` saves just its sound (§15; a link that isn't a stream is refused); the MCP tool `add_downloads` takes `quality`, `sound`, `subtitles` and `sound_only` the same way |
+| `hdm add LINK… [--folder FOLDER] [--queue] [--quality Q] [--sound LANGUAGE] [--sound-only] [--subtitles LANGUAGE|all|none] [--from H:MM:SS] [--to H:MM:SS]` | adds http and https links through the add flow (§5): links to one file become one download with mirrors; a name already in use is kept under a new name, never replaced. Starts them, or with `--queue` leaves them waiting. The folder is S1 unless given. For a stream, `--quality` (`highest`, or lines such as `1080`) and `--sound` (a language code such as `de`) choose instead of S13 and S14, `--subtitles` keeps a language's subtitles (or `all`, or `none`) instead of S15, `--sound-only` saves just its sound (§15; a link that isn't a stream is refused), and `--from`/`--to` download only a section of it (§15); the MCP tool `add_downloads` takes `quality`, `sound`, `subtitles`, `sound_only`, `from` and `to` the same way |
 | `hdm pause ID…` · `hdm resume ID…` | as Pause and Resume |
 | `hdm remove ID… [--delete-files]` | takes downloads off the list; with `--delete-files` their files go to the Trash (Recycle Bin) |
 | `hdm note ID TEXT…` | sets the note (§4.1); empty text removes it |
@@ -726,6 +726,13 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   stream's start. DASH: WebVTT kept as one file per language (subtitles inside MP4 pieces aren't read yet). Cues
   lose WebVTT's markup and styling; overlapping ones show on separate lines. A language whose subtitles can't be read
   is left out without failing the video; live recordings and sound only keep none.
+- **A section of a long video:** the extension's **Download Section…** (under ▾, HLS streams) asks **From** and
+  **To** (hours, minutes and seconds; To filled in with its length, From with 0:00:00) and downloads only the pieces
+  that cover that part, joined into one MP4 as a whole stream is, never re-encoded: the file starts and ends on the
+  stream's piece boundaries, so it's a few seconds wider than asked at most. It's named after the part:
+  "Rain (1h02m00s–1h10m00s).mp4". Without To, it runs to the end. `hdm add --from --to` does the same. A section
+  past the stream's end fails saying how long the stream is ("The section starts after the stream ends (12h01m01s
+  long)"); live streams and DASH manifests refuse a section for now, and a whole video file isn't split.
 - **Sound only:** a stream added with Only the sound (New Download A7, Add Links, the extension's **Sound Only**,
   `hdm add --sound-only`) downloads just its sound track and saves it as it came, never re-encoded: AAC as an `.m4a`
   file (MP4 with no picture), MP3 as an `.mp3` file (its frames one after the other). The name ends in `.m4a` from

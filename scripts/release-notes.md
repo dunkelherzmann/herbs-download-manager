@@ -15,6 +15,10 @@ This is a testing app in early development (0.x), shared as is: no support is pr
 - **A new look for the extension's list:** each item as a card with its picture and length, a Download button with
   more choices beside it, and a bar of tools at the bottom with the extension's version. Its toolbar icon is now as
   big as other extensions' icons.
+- **Download a section of a long video:** Download Section… in the extension (and `hdm add --from --to`) downloads
+  only the part between two times of an HLS stream.
+- **Streams played by embedded players:** the extension hands the app the player's own Referer, so their servers
+  no longer refuse the pieces.
 - **Export Links** writes downloads and their mirrors to a file.
 
 ## Install

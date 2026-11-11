@@ -462,6 +462,21 @@ async fn run(client: &reqwest::Client, req: &StreamRequest, progress: &Arc<Progr
                 Track::Hls(playlist) => media_playlist(client, playlist, &req.vault, req.dress.as_ref()).await?,
                 Track::Listed(segments) => (segments.clone(), true),
             };
+            // A section: only the pieces that cover it. Each piece's length is in an HLS playlist; a live stream has
+            // no fixed start, and a DASH manifest's pieces aren't timed here yet.
+            let segments = match req.choice.section {
+                None => segments,
+                Some(_) if !done => return Err("A section can't be taken from a live stream".into()),
+                Some(_) if matches!(track, Track::Listed(_)) => return Err("A section can be downloaded from HLS streams only, for now".into()),
+                Some(section) => {
+                    let total: f64 = segments.iter().map(|s| s.duration).sum();
+                    let kept = super::pieces_in_section(segments, |s| s.duration, section);
+                    if kept.is_empty() {
+                        return Err(format!("The section starts after the stream ends ({} long)", super::clock(total.round() as u32)));
+                    }
+                    kept
+                }
+            };
             ended &= done;
             if let Some(last) = segments.last() {
                 round_seconds = round_seconds.min(last.duration.max(1.0));

@@ -101,6 +101,11 @@ select.chip { max-width: 150px; appearance: none; padding-right: 18px; text-over
 .naming input { flex: 1; min-width: 0; height: 24px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 5px; background: var(--card); font-size: 12px; }
 .naming button { height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--control); font-size: 12px; cursor: pointer; }
 .naming button[type="submit"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.section { flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.time-label { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--dim); }
+.time-field { width: 62px; height: 24px; padding: 0 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--fg);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.time-field:focus { border-color: var(--accent); outline: none; }
 
 .empty, .note { margin: var(--l) var(--s) var(--s); color: var(--dim); }
 .empty p { margin: 0 0 var(--m); }
