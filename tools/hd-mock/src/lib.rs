@@ -36,6 +36,8 @@ pub struct MockFile {
     pub validators: bool,
     /// Header values a request must carry (name in lowercase, value), or it gets 401: a login, cookies, a referer.
     pub requires: Vec<(String, String)>,
+    /// Headers that make it answer 403 (a stream's server refusing a request that names another page).
+    pub forbids: Vec<String>,
     /// More header lines to send ("Repr-Digest: sha-256=:…:").
     pub headers: Vec<String>,
 }
@@ -54,6 +56,7 @@ impl MockFile {
             etag,
             validators: true,
             requires: Vec::new(),
+            forbids: Vec::new(),
             headers: Vec::new(),
         }
     }
@@ -292,6 +295,10 @@ async fn send_file(
     stop: &mut watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let len = file.data.len() as u64;
+    if file.forbids.iter().any(|name| req.headers.contains_key(name.as_str())) {
+        let head = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        return stream.write_all(head.as_bytes()).await;
+    }
     if !file.requires.iter().all(|(name, value)| req.headers.get(name.as_str()).is_some_and(|v| v == value)) {
         let head = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"mock\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         return stream.write_all(head.as_bytes()).await;

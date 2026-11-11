@@ -172,6 +172,21 @@ test("a stream a player in an embedded frame fetched is handed over with the pla
   assert.equal(plain(b.sent.find((m) => m.urls && m.urls[0] === other)).referer, PAGE.url);
 });
 
+test("a player that sent no Referer is handed over without one, even after the background script slept", async () => {
+  const b = load({ tabs: [PAGE], fetch: () => ({ body: VOD }) });
+  const url = "https://player.example.org/m3u8/7075342";
+  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url, type: "xmlhttprequest", requestHeaders: headers({ Origin: "https://player.example.org", "User-Agent": "Player UA" }) });
+  await b.respond({ url, responseHeaders: headers({ "content-type": "application/vnd.apple.mpegurl" }) });
+  // Put to sleep and woken again: what it saw in memory is gone, what it kept with the item isn't.
+  b.get("pageHeaders").clear();
+  b.get("hostHeaders").clear();
+  await b.ask({ type: "add", tabId: 1, item: { url, kind: "stream" } });
+  const sent = plain(b.sent.at(-1));
+  assert.equal(sent.referer, "", "none, as the player sent none: not the tab's page");
+  assert.equal(sent.origin, "https://player.example.org");
+  assert.equal(sent.user_agent, "Player UA");
+});
+
 test("another page in the tab forgets what the last one played", async () => {
   const b = load({ tabs: [PAGE] });
   await b.respond({ url: "https://cdn.example.com/m.mpd" });

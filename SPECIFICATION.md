@@ -585,9 +585,11 @@ downloads to the app. The browser keeps a download the app doesn't take.
   looks like the app (its colors, system blue, monochrome line icons, light and dark), laid out as Video
   DownloadHelper's.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
-  the browser saw a player fetch it, that request's own Referer and User-Agent: a player embedded from another site
-  sends its frame's address, and its server refuses any other; kept an hour; for a stream whose own address the
-  browser didn't see asked, the last headers the tab sent to its host), and
+  the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none: a
+  player embedded from another site sends its frame's address or nothing, and its server refuses any other; kept an
+  hour, and with the listed item so the extension's background script going to sleep doesn't lose them; an empty
+  Referer replaces one the app remembered for the site; for a stream whose own address the browser didn't see
+  asked, the last headers the tab sent to its host), and otherwise
   the page's Origin when the request goes to another site (as a web player's fetches do), with every request of
   that download (a stream's playlists, keys and pieces too). Guarded streams refuse pieces to a downloader that
   introduces itself otherwise (403). When a stream is still refused, its failure says why if its links tell: a

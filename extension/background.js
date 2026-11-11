@@ -79,15 +79,24 @@ const previews = new Map();
 
 async function send(url, referer, extra = {}, tabId = -1) {
   // As the browser asks: its User-Agent and the page, which guarded streams want with every piece. When the browser
-  // saw the player fetch this address, the player's own Referer and User-Agent go instead of the tab's: a player in
-  // an embedded frame sends its frame's address, and the stream's server refuses any other (403).
+  // saw the player fetch this address, exactly what the player sent goes instead of the tab's page: its own Referer
+  // and Origin, or none when it sent none (a player in an embedded frame often sends its frame's address, or nothing
+  // at all, and the stream's server refuses anything else with 403). Kept with the listed item too, so a background
+  // script that was put to sleep since still knows them.
   let seen = pageHeaders.get(url);
+  if (!seen && tabId >= 0) {
+    const item = (await itemsOf(tabId)).find((i) => i.url === url && i.asked);
+    if (item) seen = item.asked;
+  }
+  let exact = Boolean(seen);
   if (!seen) try { seen = hostHeaders.get(`${tabId} ${new URL(url).host}`); } catch {}
   const header = (name) => seen && (seen.headers.find((h) => h.name.toLowerCase() === name) || {}).value;
   const message = {
-    command: "add", urls: [url], referer: header("referer") || referer || "", cookies: await cookiesFor(url), check: true,
-    user_agent: header("user-agent") || navigator.userAgent, ...extra,
+    command: "add", urls: [url], referer: exact ? header("referer") || "" : header("referer") || referer || "",
+    cookies: await cookiesFor(url), check: true, user_agent: header("user-agent") || navigator.userAgent, ...extra,
   };
+  // The Origin the player sent (none for a request to its own site); without it the app derives one from the Referer.
+  if (exact) message.origin = header("origin") || "";
   try {
     return await api.runtime.sendNativeMessage(HOST, message);
   } catch {
@@ -560,6 +569,9 @@ function note(d, found) {
       probes.set(d.tabId, n + 1);
     }
     const item = { url: d.url, kind: found.kind, size: found.size || 0, mime: found.mime || "", hidden: false, seen: Date.now() };
+    // What the browser sent for it, kept with it: a background script put to sleep forgets pageHeaders (send()).
+    const asked = pageHeaders.get(d.url);
+    if (asked) item.asked = { headers: asked.headers.filter((h) => /^(referer|origin|user-agent)$/i.test(h.name)) };
     if (found.name) item.name = found.name;
     const dashPage = found.kind === "dash" || items.some((i) => i.kind === "dash");
     if (dashPage && pieceOfDash(item)) item.hidden = true;

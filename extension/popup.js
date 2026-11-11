@@ -331,10 +331,12 @@ function row(tab, item, label, facts) {
     enable(false);
     detail.className = "detail";
     detail.textContent = "Adding…";
-    const answer = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen(), ...extra });
+    // Download and Add are a request for the app: it's opened in the background when it isn't running (§13).
+    const answer = await ask({ type: "add", tabId: tab.id, item, ...pick.chosen(), ...extra, open: true });
     if (answer && answer.ok) {
       detail.className = "detail ok";
       detail.textContent = extra.start ? "Downloading" : "Added to the queue";
+      appAnswered();
     } else if (answer && answer.not_running) {
       // The app isn't open: offer to open it, then download this at once.
       detail.className = "detail";
@@ -348,6 +350,7 @@ function row(tab, item, label, facts) {
         if (added && added.ok) {
           detail.className = "detail ok";
           detail.textContent = "Downloading";
+          appAnswered();
         }
         return added;
       }, detail));
@@ -572,6 +575,16 @@ function row(tab, item, label, facts) {
 
 // A button under an item or a note that opens the app and carries on (`then`): it goes once done, and a failure is
 // written into `detail`.
+// The app answered after all (opened from the list): a scan that found it closed looks again, so "isn't running"
+// doesn't stay under a download it just took.
+function appAnswered() {
+  const note = $("scan-note");
+  if (note.hidden || !/isn't running/.test(note.textContent)) return;
+  note.hidden = true;
+  note.parentElement.querySelectorAll(":scope > button.open").forEach((b) => b.remove());
+  $("scan").click();
+}
+
 function openButton(label, then, detail) {
   const open = document.createElement("button");
   open.className = "text-button open";

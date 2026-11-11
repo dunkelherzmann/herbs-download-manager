@@ -51,6 +51,9 @@ pub struct Request {
     pub delete_files: bool,
     /// add, from the browser extension (§13): the page the link was on, sent with each request to its site.
     pub referer: Option<String>,
+    /// add, from the browser extension: the Origin the player sent for the link ("" when it sent none); without it
+    /// one is derived from `referer`.
+    pub origin: Option<String>,
     /// add, from the browser extension: the browser's cookies for the link (a Cookie header). Kept for this session
     /// only, as an unremembered sign-in for the link's site (§9.1); never written to disk.
     pub cookies: Option<String>,
@@ -286,7 +289,8 @@ fn safe_name(name: &str) -> String {
 /// user name and password they keep).
 fn browser_sign_ins(manager: &Manager, r: &Request) {
     let (cookies, referer) = (r.cookies.clone().unwrap_or_default(), r.referer.clone().unwrap_or_default());
-    if cookies.is_empty() && referer.is_empty() {
+    // An empty Referer from the browser is an answer too (the player sent none): it replaces an earlier one.
+    if cookies.is_empty() && r.referer.is_none() {
         return;
     }
     let vault = manager.vault();
@@ -488,8 +492,11 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                 return Answer::error(format!("Sound only works for streamed video (.m3u8, .mpd), and “{url}” isn't one"));
             }
             // Asked for as the browser asked: its User-Agent and the page.
-            let dress = (r.user_agent.is_some() || r.referer.is_some())
-                .then(|| crate::transfer::Dress { user_agent: r.user_agent.clone(), referer: r.referer.clone() });
+            let dress = (r.user_agent.is_some() || r.referer.is_some() || r.origin.is_some()).then(|| crate::transfer::Dress {
+                user_agent: r.user_agent.clone(),
+                referer: r.referer.clone(),
+                origin: r.origin.clone(),
+            });
             let links = r
                 .urls
                 .iter()

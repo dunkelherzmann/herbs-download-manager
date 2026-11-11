@@ -61,6 +61,9 @@ pub struct Dress {
     pub user_agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub referer: Option<String>,
+    /// The Origin the browser sent ("" for none); `None` derives one from `referer` for another site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// Timings and sizes the spec fixes; tests shorten them.
@@ -1835,12 +1838,25 @@ pub(crate) fn signed_as(rb: reqwest::RequestBuilder, url: &reqwest::Url, vault: 
         if let Some(agent) = d.user_agent.as_deref().filter(|a| !a.is_empty()) {
             rb = rb.header(reqwest::header::USER_AGENT, agent);
         }
-        if let Some(page) = d.referer.as_deref().and_then(|r| reqwest::Url::parse(r).ok()) {
-            if sign_in.as_ref().is_none_or(|s| s.referer.is_empty()) {
-                rb = rb.header(REFERER, page.as_str());
+        let page = d.referer.as_deref().and_then(|r| reqwest::Url::parse(r).ok());
+        if let Some(page) = &page
+            && sign_in.as_ref().is_none_or(|s| s.referer.is_empty())
+        {
+            rb = rb.header(REFERER, page.as_str());
+        }
+        match d.origin.as_deref() {
+            // As the browser sent it, or none when it sent none.
+            Some(origin) => {
+                if !origin.is_empty() {
+                    rb = rb.header(reqwest::header::ORIGIN, origin);
+                }
             }
-            if page.origin() != url.origin() {
-                rb = rb.header(reqwest::header::ORIGIN, page.origin().ascii_serialization());
+            None => {
+                if let Some(page) = &page
+                    && page.origin() != url.origin()
+                {
+                    rb = rb.header(reqwest::header::ORIGIN, page.origin().ascii_serialization());
+                }
             }
         }
     }

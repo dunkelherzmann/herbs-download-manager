@@ -314,6 +314,51 @@ fn a_stream_whose_pieces_want_the_browser_downloads_as_the_browser_asked() {
 }
 
 #[test]
+fn a_stream_whose_player_sent_no_referer_goes_without_one() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let media = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/media/h264-ts");
+    s.put("/player/index.m3u8", MockFile::new(std::fs::read(media.join("index.m3u8")).unwrap()));
+    // A player in an embedded frame that sends no Referer, only its Origin: its server refuses any page named.
+    for n in 0..3 {
+        let mut piece = MockFile::new(std::fs::read(media.join(format!("s{n}.ts"))).unwrap());
+        piece.requires = vec![("origin".into(), "https://player.films.example".into())];
+        piece.forbids = vec!["referer".into()];
+        s.put(&format!("/player/s{n}.ts"), piece);
+    }
+    let dir = folder("no-referer");
+    let m = Manager::open(&dir).unwrap();
+    control::serve(&m, dir.join("files")).unwrap();
+    let add = |extra: Value| {
+        let mut message = json!({"command": "add", "urls": [s.url("/player/index.m3u8")], "check": true, "stream": true});
+        message.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let mut out = Vec::new();
+        assert_eq!(cli::native(&mut framed(&[message]).as_slice(), &mut out, &dir), 0);
+        unframed(&out)[0].clone()
+    };
+    let wait = |name: &str| -> hd_core::manager::Status {
+        let until = Instant::now() + Duration::from_secs(30);
+        loop {
+            let row = m.rows().into_iter().find(|r| r.name == name).unwrap();
+            if matches!(row.status, hd_core::manager::Status::Finished | hd_core::manager::Status::Failed(_)) || Instant::now() > until {
+                return row.status;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    // The tab's page as Referer (what the extension sent before 1.23): refused, 403.
+    assert_eq!(add(json!({"name": "page.mp4", "referer": "https://films.example/watch/1"}))["ok"], true);
+    assert!(matches!(wait("page.mp4"), hd_core::manager::Status::Failed(e) if e.contains("403")));
+    let page = m.rows().into_iter().find(|r| r.name == "page.mp4").unwrap().id;
+    m.remove(&[page], false);
+    // Exactly as the player asked: no Referer, its Origin.
+    let answer = add(json!({"name": "player.mp4", "referer": "", "origin": "https://player.films.example"}));
+    assert_eq!(answer["ok"], true, "{answer}");
+    assert_eq!(wait("player.mp4"), hd_core::manager::Status::Finished);
+    assert!(m.quit(Duration::from_secs(5)));
+}
+
+#[test]
 fn a_naming_rules_subfolder_is_made_inside_the_save_folder() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let s = rt.block_on(MockServer::start()).unwrap();

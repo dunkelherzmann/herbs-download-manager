@@ -83,4 +83,7 @@ No bugs reported yet.
   - [x] Windows
 - [x] **Linux: Add Links crashed when a link failed** (*found in testing*, 2026-11-11, before it shipped): unticking the failed row ran its checkbox's handler while the list was still borrowed. The row is now unticked after the list is let go (#121).
   - [x] Linux
-
+- [x] **The animeav1 / zilla-networks stream still failed with 403 after extension 1.22, and the list said the app wasn't running while it was.** *Reported 2026-11-11, with pictures.* Mac (all three). Found: the download still carried the tab's page as Referer, so the extension had none of the player's own headers to give: they were kept only in the background script's memory, which the browser empties when it puts the script to sleep, and when the player sent no Referer at all the extension put the tab's page in its place, which a strict server refuses. An add without a Referer also left the app sending the one remembered for the site from an earlier add. The "isn't running" line was left over from the list's scan before Open and Download opened the app. Extension 1.23 keeps the headers with the listed item, hands over exactly what the player sent (its Origin too, or none), and Download in the list opens the app in the background as the right-click menu does; the line goes once the app answers. The app takes the Origin as given, and an empty Referer replaces the remembered one. Not tried against the site itself (not tested on unlicensed streaming sites); a core test stands in for a server that refuses any Referer. Add it again from the extension after updating it.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
