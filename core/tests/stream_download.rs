@@ -1,6 +1,8 @@
 //! Downloading streams from the list (SPECIFICATION.md §15): the test streams in `tests/media`, served by hd-mock, added
 //! as links like any other download. The joined file must be exactly what joining the pieces directly gives.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -12,9 +14,9 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/media")
 }
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-stream-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// The test's own folder (with `files` in it for downloads), removed when the test ends.
+fn folder(name: &str) -> common::Scratch {
+    let dir = common::Scratch::new(&format!("stream-{name}"));
     std::fs::create_dir_all(dir.join("files")).unwrap();
     dir
 }

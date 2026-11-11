@@ -1,6 +1,8 @@
 //! Scanning a web page for its files and media (SPECIFICATION.md §15), on a page served by hd-mock with one of every
 //! kind of link: what's listed must be the real files only, checked, named and sized.
 
+mod common;
+
 use hd_core::manager::Manager;
 use hd_core::media::scan::Kind;
 use hd_mock::{MockFile, MockServer, pattern};
@@ -37,7 +39,7 @@ fn a_page_lists_its_files_and_streams_never_its_site() {
         b = base.trim_end_matches('/').replace('/', "\\/")
     );
     s.put("/holiday.html", typed(page.into_bytes(), &["Content-Type: text/html; charset=utf-8"]));
-    let dir = std::env::temp_dir().join(format!("hd-scan-{}", std::process::id()));
+    let dir = common::Scratch::new("scan");
     let m = Manager::open(&dir).unwrap();
 
     assert!(m.probe(&s.url("/holiday.html")).unwrap().page, "probe says it's a web page");
@@ -66,8 +68,7 @@ fn hdm_scans_a_page_and_adds_what_it_found() {
     let s = rt.block_on(MockServer::start()).unwrap();
     s.put("/a.zip", typed(pattern(40_000, 1), &["Content-Type: application/zip"]));
     s.put("/p.html", typed(b"<title>Files</title><a href=\"/a.zip\">a</a> <a href=\"/b.zip\">b</a>".to_vec(), &["Content-Type: text/html"]));
-    let dir = std::env::temp_dir().join(format!("hd-scan-cli-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = common::Scratch::new("scan-cli");
     let m = Manager::open(&dir).unwrap();
     hd_core::control::serve(&m, dir.join("files")).unwrap();
     let (request, _) = hd_core::cli::parse(&["scan".into(), s.url("/p.html"), "--add".into()]).unwrap();

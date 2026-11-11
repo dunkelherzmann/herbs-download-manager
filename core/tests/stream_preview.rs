@@ -1,6 +1,8 @@
 //! Previews for the browser extension's list (SPECIFICATION.md §15): `hdm`'s native messaging side answers `preview`
 //! by itself with one picture of the stream's smallest quality, as a tiny MP4, and the stream's length.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -20,7 +22,7 @@ fn serve(s: &MockServer, name: &str) {
 
 /// One message through `hdm`'s native messaging side, and its answer.
 fn ask(message: Value) -> Value {
-    let dir = std::env::temp_dir().join(format!("hd-preview-{}", std::process::id()));
+    let dir = common::Scratch::new("preview");
     let body = message.to_string().into_bytes();
     let mut input = (body.len() as u32).to_ne_bytes().to_vec();
     input.extend(body);

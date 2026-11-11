@@ -1,6 +1,7 @@
 //! The download list (SPECIFICATION.md §2.2, §10) against the local test server.
 
-use std::path::PathBuf;
+mod common;
+
 use std::time::{Duration, Instant};
 
 use hd_core::manager::{Added, Clash, Manager, NewDownload, Plan, Status};
@@ -8,9 +9,9 @@ use hd_mock::{MockFile, MockServer, pattern};
 
 const MIB: usize = 1024 * 1024;
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-manager-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// The test's own folder (with `files` in it for downloads), removed when the test ends.
+fn folder(name: &str) -> common::Scratch {
+    let dir = common::Scratch::new(&format!("manager-{name}"));
     std::fs::create_dir_all(dir.join("files")).unwrap();
     dir
 }

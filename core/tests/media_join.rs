@@ -3,6 +3,8 @@
 //! the same stream (`-c copy`, no re-encoding): every decoded frame and sound block the same, at the same times. That proves nothing was
 //! lost or changed, the "as good as ffmpeg" bar Herbert set (enhancements.md).
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -14,11 +16,9 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/media")
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-media-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// The test's own folder, removed when the test ends.
+fn scratch(name: &str) -> common::Scratch {
+    common::Scratch::new(&format!("media-{name}"))
 }
 
 fn read(url: &Url) -> Vec<u8> {
@@ -46,14 +46,16 @@ fn add_playlist(joiner: &mut Joiner, url: &Url) {
     }
 }
 
-/// Joins `name`'s playlist in a scratch folder of the test's own (`test`), so tests running at once never share one.
-fn join(test: &str, name: &str, playlist: &str) -> PathBuf {
-    join_as(test, name, playlist, false).0
+/// Joins `name`'s playlist in a scratch folder of the test's own (`test`), so tests running at once never share one:
+/// the folder (removed when it's dropped, so kept while the file is looked at) and the joined file in it.
+fn join(test: &str, name: &str, playlist: &str) -> (common::Scratch, PathBuf) {
+    let (dir, file, _) = join_as(test, name, playlist, false);
+    (dir, file)
 }
 
 /// `join`, or with `sound_only` only the sound (from the separate sound playlist when there is one, as the download
-/// does): the file and what was written.
-fn join_as(test: &str, name: &str, playlist: &str, sound_only: bool) -> (PathBuf, Written) {
+/// does): the folder, the file and what was written.
+fn join_as(test: &str, name: &str, playlist: &str, sound_only: bool) -> (common::Scratch, PathBuf, Written) {
     let dir = scratch(test);
     let url = Url::from_file_path(fixtures().join(name).join(playlist)).unwrap();
     let mut joiner = Joiner::new(&dir.join("spool")).unwrap();
@@ -76,7 +78,7 @@ fn join_as(test: &str, name: &str, playlist: &str, sound_only: bool) -> (PathBuf
     }
     let out = dir.join("joined.mp4");
     let written = joiner.finish(&out).unwrap();
-    (out, written)
+    (dir, out, written)
 }
 
 fn ffmpeg() -> Option<PathBuf> {
@@ -120,7 +122,7 @@ fn decoded(ffmpeg: &Path, input: &Path) -> Vec<Vec<(f64, String)>> {
 
 /// Ours against ffmpeg's reading of the original: the same frames in the same order, the same spacing in time.
 fn same_as_ffmpeg(name: &str, playlist: &str) {
-    let joined = join(name, name, playlist);
+    let (_dir, joined) = join(name, name, playlist);
     let Some(ffmpeg) = ffmpeg() else {
         eprintln!("no ffmpeg here: {name} joined but not compared");
         return;
@@ -192,7 +194,7 @@ fn aes_128_encrypted_pieces() {
 
 #[test]
 fn the_joined_file_starts_with_its_index() {
-    let joined = join("index-first", "h264-ts", "index.m3u8");
+    let (_dir, joined) = join("index-first", "h264-ts", "index.m3u8");
     let bytes = std::fs::read(&joined).unwrap();
     let kinds: Vec<[u8; 4]> = hd_core::media::mp4::boxes(&bytes).into_iter().map(|(k, _)| k).collect();
     assert_eq!(kinds, [*b"ftyp", *b"moov", *b"mdat"], "moov before mdat: it plays before it's read to the end");
@@ -201,7 +203,7 @@ fn the_joined_file_starts_with_its_index() {
 /// Sound only: ours holds just the sound, frame for frame what ffmpeg copies out of the stream with `-vn -c copy`
 /// (MP3 sound as an .mp3 file, AAC as MP4 sound).
 fn sound_only_same_as_ffmpeg(name: &str, playlist: &str, expected: Written) {
-    let (joined, written) = join_as(&format!("{name}-sound"), name, playlist, true);
+    let (_dir, joined, written) = join_as(&format!("{name}-sound"), name, playlist, true);
     assert_eq!(written, expected, "{name}: written as");
     let Some(ffmpeg) = ffmpeg() else {
         eprintln!("no ffmpeg here: {name}'s sound saved but not compared");

@@ -1,5 +1,7 @@
 //! Mirrors (SPECIFICATION.md §7) against several local test servers serving the same file.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -10,10 +12,9 @@ use hd_mock::{MockFile, MockServer, pattern};
 
 const MIB: usize = 1024 * 1024;
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-mirrors-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+/// The test's own folder (with `files` in it for downloads), removed when the test ends.
+fn folder(name: &str) -> common::Scratch {
+    let dir = common::Scratch::new(&format!("mirrors-{name}"));
     dir
 }
 

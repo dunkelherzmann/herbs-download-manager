@@ -1,5 +1,7 @@
 //! The download engine against the local test server (tools/hd-mock).
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -9,10 +11,9 @@ use hd_mock::{MockFile, MockServer, pattern};
 
 const MIB: usize = 1024 * 1024;
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-engine-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+/// The test's own folder (with `files` in it for downloads), removed when the test ends.
+fn folder(name: &str) -> common::Scratch {
+    let dir = common::Scratch::new(&format!("engine-{name}"));
     dir
 }
 

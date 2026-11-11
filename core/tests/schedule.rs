@@ -1,5 +1,7 @@
 //! The scheduler (SPECIFICATION.md §11.1) on a real list: its clock is moved forward instead of waiting for it.
 
+mod common;
+
 use std::time::{Duration, Instant};
 
 use chrono::{Local, TimeZone, Timelike};
@@ -7,9 +9,9 @@ use hd_core::manager::{Manager, NewDownload, Status};
 use hd_core::schedule::{Schedule, WhenDone};
 use hd_mock::{MockFile, MockServer, pattern};
 
-fn folder(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-schedule-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// The test's own folder (with `files` in it), removed when the test ends.
+fn folder(name: &str) -> common::Scratch {
+    let dir = common::Scratch::new(&format!("schedule-{name}"));
     std::fs::create_dir_all(dir.join("files")).unwrap();
     dir
 }

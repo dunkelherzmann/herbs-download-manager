@@ -1,13 +1,15 @@
 //! Registering hdm with the browsers (SPECIFICATION.md §13), in a made-up home folder. Its own test binary, since it
 //! changes HOME for the whole process. Windows registers in the registry, which a test leaves alone.
+
 #![cfg(unix)]
+
+mod common;
 
 use hd_core::browser::{self, CHROME_ID, FIREFOX_ID, HOST};
 
 #[test]
 fn hdm_is_registered_with_the_browsers_found_and_only_those() {
-    let home = std::env::temp_dir().join(format!("hd-browser-home-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&home);
+    let home = common::Scratch::new("browser-home");
     let (chrome, firefox, missing) = if cfg!(target_os = "macos") {
         ("Library/Application Support/Microsoft Edge", "Library/Application Support/Firefox", "Library/Application Support/Vivaldi")
     } else {
@@ -16,7 +18,7 @@ fn hdm_is_registered_with_the_browsers_found_and_only_those() {
     std::fs::create_dir_all(home.join(chrome)).unwrap();
     std::fs::create_dir_all(home.join(firefox)).unwrap();
     // SAFETY: this test binary has only this test, so nothing else reads the environment meanwhile.
-    unsafe { std::env::set_var("HOME", &home) };
+    unsafe { std::env::set_var("HOME", home.as_path()) };
     let hdm = home.join("app/hdm");
     assert!(browser::register(&hdm, &home.join("data")).is_empty());
 
@@ -29,5 +31,4 @@ fn hdm_is_registered_with_the_browsers_found_and_only_those() {
     // Outside the Flatpak (as here) the browsers start hdm itself.
     assert_eq!(edge["path"], hdm.display().to_string());
     assert!(!home.join(missing).exists(), "a browser that isn't there gets no folder");
-    std::fs::remove_dir_all(home).unwrap();
 }

@@ -56,3 +56,7 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **The core's tests left their scratch folders in the temp folder, and filled the Windows disk.** *Found 2026-11-11* (Windows had 3 GB free: 46 GB of `hd-engine-*`, `hd-manager-*` and other folders, about 0.11 GB each, one set per `scripts/check.sh` run; checks then failed with "paging file too small" and linker errors). Fixed: the integration tests make their folders through `core/tests/common` (`Scratch`), which removes its folder when the test ends, passed or failed; helpers that return a file in it hand the folder back with it. A full `cargo test -p hd-core` now leaves no `hd-*` folder behind. Windows also runs an hourly "Clean Temp" task, and `check.sh` removes its own check folders after a day (#105).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

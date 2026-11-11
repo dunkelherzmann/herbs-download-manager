@@ -1,6 +1,7 @@
 //! The command line and MCP server (SPECIFICATION.md §12) against a list with its control server running.
 
-use std::path::PathBuf;
+mod common;
+
 use std::time::{Duration, Instant};
 
 use hd_core::cli;
@@ -9,9 +10,9 @@ use hd_core::manager::Manager;
 use hd_mock::{MockFile, MockServer, pattern};
 use serde_json::{Value, json};
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-control-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// The test's own folder (with `files` in it for downloads), removed when the test ends.
+fn folder(name: &str) -> common::Scratch {
+    let dir = common::Scratch::new(&format!("control-{name}"));
     std::fs::create_dir_all(dir.join("files")).unwrap();
     dir
 }

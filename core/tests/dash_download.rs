@@ -3,6 +3,8 @@
 //! ffmpeg's two template layouts. Where ffmpeg is installed (this Mac's; the app never uses it), each joined file must
 //! decode to the same pictures and sound as ffmpeg's own join of the same video and sound.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -21,10 +23,10 @@ fn serve(s: &MockServer, name: &str) {
     }
 }
 
-/// Downloads the stream at `link` through the list; returns the joined file.
-fn download(test: &str, link: String) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hd-dash-{}-{test}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// Downloads the stream at `link` through the list; returns the test's folder (removed when it's dropped, so kept
+/// while the file is looked at) and the joined file in it.
+fn download(test: &str, link: String) -> (common::Scratch, PathBuf) {
+    let dir = common::Scratch::new(&format!("dash-{test}"));
     std::fs::create_dir_all(dir.join("files")).unwrap();
     let m = Manager::open(&dir).unwrap();
     let id = m.add(NewDownload { url: link, folder: dir.join("files"), connections: 4, start: true, ..NewDownload::default() });
@@ -40,7 +42,8 @@ fn download(test: &str, link: String) -> PathBuf {
     }
     let path = m.rows().into_iter().find(|r| r.id == id).unwrap().path.unwrap();
     assert!(m.quit(Duration::from_secs(5)));
-    path
+    drop(m);
+    (dir, path)
 }
 
 fn ffmpeg() -> Option<PathBuf> {
@@ -103,7 +106,7 @@ fn one_file_per_quality_as_facebook_serves_reels() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let s = rt.block_on(MockServer::start()).unwrap();
     serve(&s, "dash-ondemand");
-    let path = download("ondemand", s.url("/dash-ondemand/manifest.mpd"));
+    let (_dir, path) = download("ondemand", s.url("/dash-ondemand/manifest.mpd"));
     assert_eq!(path.file_name().unwrap(), "dash-ondemand.mp4");
     assert!(!path.with_file_name("dash-ondemand.mp4.hdparts").exists());
     // The 80x45 quality's file doesn't exist: the best one was taken, never touched.
@@ -116,7 +119,7 @@ fn numbered_pieces_with_a_timeline() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let s = rt.block_on(MockServer::start()).unwrap();
     serve(&s, "dash-template");
-    let path = download("template", s.url("/dash-template/manifest.mpd"));
+    let (_dir, path) = download("template", s.url("/dash-template/manifest.mpd"));
     // ffmpeg's reference: its own join of the same pieces (init + chunks per track).
     let dir = path.parent().unwrap();
     let cat = |stream: &str, out: &str| {
@@ -137,7 +140,7 @@ fn numbered_pieces_of_a_fixed_length() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let s = rt.block_on(MockServer::start()).unwrap();
     serve(&s, "dash-number");
-    let path = download("number", s.url("/dash-number/manifest.mpd"));
+    let (_dir, path) = download("number", s.url("/dash-number/manifest.mpd"));
     let bytes = std::fs::read(&path).unwrap();
     let kinds: Vec<[u8; 4]> = hd_core::media::mp4::boxes(&bytes).into_iter().map(|(k, _)| k).collect();
     assert_eq!(kinds, [*b"ftyp", *b"moov", *b"mdat"]);
