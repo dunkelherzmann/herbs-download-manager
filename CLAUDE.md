@@ -91,6 +91,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Test there, not with throwaway scripts: a new detection, ordering or naming rule gets its case in
   `background.test.js`. Tests stay out of `extension/`, which ships whole (every file in it is embedded, #83).
 
+- The list (popup) isn't covered by the Node tests: check its look and keys with `sh tests/extension/popup-preview/serve.sh`
+  (stand-in items in `stub.js`) in the app's built-in browser, light and dark, at 460 × 620. Keys pressed there stay
+  in the page; never press keys on the Mac's desktop. Its emulated size shifts the page sideways in pictures: check
+  `main.scrollLeft` before calling it a layout bug (2026-11-11).
 - Every change to `extension/` raises `version` in `extension/manifest.json` (1.1 → 1.2): each install step copies a
   version Herbert hasn't got yet into his Downloads folder as "Herb's DM extension <version>" (his request,
   2026-11-10), and the app's Show Extension Folder copy is rewritten from the same files.
