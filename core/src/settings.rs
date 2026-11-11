@@ -53,6 +53,8 @@ pub struct Settings {
     pub sound_languages: Vec<String>,
     /// S15: subtitle languages a stream's file keeps; empty for none, `*` for all the stream has.
     pub subtitle_languages: Vec<String>,
+    /// S16: links copied in other apps open Add Links (off by default).
+    pub watch_clipboard: bool,
 }
 
 impl Default for Settings {
@@ -70,6 +72,7 @@ impl Default for Settings {
             keep_server_date: false,
             schedule: crate::schedule::Schedule::default(),
             stream_quality: None,
+            watch_clipboard: false,
             sound_languages: Vec::new(),
             subtitle_languages: Vec::new(),
         }

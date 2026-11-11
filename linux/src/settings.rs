@@ -150,6 +150,8 @@ pub fn open(ctx: &Ctx) {
         .active(s.look_for_checksum_files).build();
     crate::explain_row(&exists, "What happens when a different file already has a new download's name");
     crate::explain_row(&notify, "Show a notification each time a download finishes");
+    let watch_clipboard = adw::SwitchRow::builder().title("Watch the clipboard for links").active(s.watch_clipboard).build();
+    crate::explain_row(&watch_clipboard, "Watch the clipboard: links copied in other apps open Add Links (what was copied before this was on is left alone)");
     crate::explain_row(&checksum_files, "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)");
     let server_date = adw::SwitchRow::builder().title("Keep the server's date for finished files")
         .subtitle("The date the server gives the file, instead of when it finished downloading")
@@ -159,6 +161,7 @@ pub fn open(ctx: &Ctx) {
     behaviour.add(&checksum_files);
     behaviour.add(&server_date);
     behaviour.add(&notify);
+    behaviour.add(&watch_clipboard);
 
     // Q1–Q4 (§11.1).
     let start = TimeRow::new("Start the queue at", "On the days chosen below", s.schedule.start, 60);
@@ -217,7 +220,7 @@ pub fn open(ctx: &Ctx) {
         let (manager, limit, limit_value, unit) = (ctx.manager.clone(), limit.clone(), limit_value.clone(), unit.clone());
         let (at_once, per_download, per_server, retries, exists, notify, checksum_files) = (at_once.clone(), per_download.clone(),
             per_server.clone(), retries.clone(), exists.clone(), notify.clone(), checksum_files.clone());
-        let server_date = server_date.clone();
+        let (server_date, watch) = (server_date.clone(), watch_clipboard.clone());
         let (start, stop, days, when_done) = (start.value_source(), stop.value_source(), days.clone(), when_done.clone());
         move || {
             let mut schedule = manager.settings().schedule;
@@ -239,6 +242,7 @@ pub fn open(ctx: &Ctx) {
                 notify_when_finished: notify.is_active(),
                 look_for_checksum_files: checksum_files.is_active(),
                 keep_server_date: server_date.is_active(),
+                watch_clipboard: watch.is_active(),
                 ..manager.settings()
             };
             manager.set_settings(s);
@@ -278,6 +282,10 @@ pub fn open(ctx: &Ctx) {
     {
         let save = save.clone();
         server_date.connect_active_notify(move |_| save());
+    }
+    {
+        let save = save.clone();
+        watch_clipboard.connect_active_notify(move |_| save());
     }
     notify.connect_active_notify(move |_| save());
 

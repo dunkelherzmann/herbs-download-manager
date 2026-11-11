@@ -241,9 +241,9 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.*
+- [x] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); the Mac and Windows wait for a try (their clipboards weren't overwritten in a test).
   - [ ] Mac
-  - [ ] Linux
+  - [x] Linux
   - [ ] Windows
 - [ ] **Find a page's media without playing it, in the extension and the app, the way JDownloader does:** the extension looks through the page as soon as its list opens and hands the app every frame as the browser shows it, with its cookies; the app's scan reads embedded players, decodes hidden addresses (escapes, entities, percent-encoding, base64, packed scripts), takes a player's media by its key, lists DASH, and takes links that are themselves files or streams; pages are read with a browser's User-Agent. *Requested 2026-11-11, from testing Facebook and Instagram reels and two streaming sites against JDownloader and Video DownloadHelper.* JDownloader's site plugins aren't imported (Java, GPL, changed daily); their common methods are done generically instead, nothing site-specific and nothing that gets round a site's protection.
   - [ ] Mac

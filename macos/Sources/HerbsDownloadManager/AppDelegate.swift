@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         window.showWindow(nil)
+        window.startWatchingClipboard()
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
         if !pending.isEmpty { window.openLinks(pending); pending = [] }

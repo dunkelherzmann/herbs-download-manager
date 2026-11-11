@@ -102,6 +102,7 @@ final class SettingsWindowController: NSWindowController {
     private let checksumFiles = NSButton(checkboxWithTitle: "Look for checksum files next to the link", target: nil, action: nil)
     private let notify = NSButton(checkboxWithTitle: "Show a notification when a download finishes", target: nil,
                                   action: nil)
+    private let watchClipboard = NSButton(checkboxWithTitle: "Watch the clipboard for links", target: nil, action: nil)
 
     private let startOn = NSButton(checkboxWithTitle: "Start the queue at", target: nil, action: nil)
     private let startTime = NSDatePicker()
@@ -201,6 +202,9 @@ final class SettingsWindowController: NSWindowController {
         notify.action = #selector(save(_:))
         notify.toolTip = "Show a macOS notification each time a download finishes"
         notify.setAccessibilityIdentifier("settings-notify")
+        watchClipboard.target = self
+        watchClipboard.action = #selector(save(_:))
+        watchClipboard.toolTip = "Watch the clipboard: links copied in other apps open Add Links (what was copied before this was on is left alone)"
 
         buildScheduler()
         buildStreams()
@@ -238,6 +242,7 @@ final class SettingsWindowController: NSWindowController {
             [NSGridCell.emptyContentView, checksumFiles],
             [NSGridCell.emptyContentView, serverDate],
             [NSGridCell.emptyContentView, notify],
+            [NSGridCell.emptyContentView, watchClipboard],
         ])
         grid.column(at: 0).xPlacement = .trailing
         grid.rowAlignment = .firstBaseline
@@ -273,6 +278,7 @@ final class SettingsWindowController: NSWindowController {
         showHostLimits()
         showSignIns()
         notify.state = s.notifyWhenFinished ? .on : .off
+        watchClipboard.state = s.watchClipboard ? .on : .off
         startOn.state = s.scheduleStart == nil ? .off : .on
         stopOn.state = s.scheduleStop == nil ? .off : .on
         startTime.dateValue = Self.date(s.scheduleStart ?? 60)
@@ -389,6 +395,7 @@ final class SettingsWindowController: NSWindowController {
         s.lookForChecksumFiles = checksumFiles.state == .on
         s.keepServerDate = serverDate.state == .on
         s.notifyWhenFinished = notify.state == .on
+        s.watchClipboard = watchClipboard.state == .on
         s.scheduleStart = startOn.state == .on ? Self.minutes(startTime.dateValue) : nil
         s.scheduleStop = stopOn.state == .on ? Self.minutes(stopTime.dateValue) : nil
         s.scheduleDays = days.map { $0.state == .on }

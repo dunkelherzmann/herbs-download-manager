@@ -407,6 +407,7 @@ the file, that mirror becomes its link.
 | S13 | Video stream quality | Highest | Highest, 2160p, 1440p, 1080p, 720p, 480p, 360p (§15) |
 | S14 | Sound language | The stream's own | the stream's own, or one of 24 languages, each named in its own language (§15) |
 | S15 | Subtitles | None | None, All, or one of the same 24 languages: the stream's subtitles kept in its file (§15) |
+| S16 | Watch the clipboard for links | Off | links copied in other apps open Add Links (§5.3); what was copied before it was on, and copies made in this app (Copy Link), are left alone. Hover text: "Watch the clipboard: links copied in other apps open Add Links (what was copied before this was on is left alone)" |
 
 Settings opens with ⌘, (Ctrl+, on Linux and Windows) as one window, and each change applies at once, with no OK
 button. They are kept in `settings.json` in the app's data folder, the same file on every platform; a missing or

@@ -412,6 +412,35 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             });
         }
     }
+    // S16, Watch the clipboard: links copied in other apps open Add Links; copies made in this app are left alone.
+    {
+        // GTK tells of the clipboard's contents when it first learns them too: the text seen last is kept (from the
+        // start), and only different text counts as copied.
+        let seen: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        {
+            let (seen, clipboard) = (seen.clone(), window.clipboard());
+            glib::spawn_future_local(async move {
+                let text = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
+                seen.borrow_mut().get_or_insert(text);
+            });
+        }
+        let ctx2 = ctx.clone();
+        window.clipboard().connect_changed(move |clipboard| {
+            let (ctx, clipboard, seen) = (ctx2.clone(), clipboard.clone(), seen.clone());
+            glib::spawn_future_local(async move {
+                let text = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
+                let new = seen.borrow().as_deref() != Some(text.as_str());
+                *seen.borrow_mut() = Some(text.clone());
+                if !new || !ctx.manager.settings().watch_clipboard || ctx.window.is_active() {
+                    return;
+                }
+                let links = hd_core::links::find(&text);
+                if !links.is_empty() {
+                    crate::add::add_links(&ctx, links);
+                }
+            });
+        });
+    }
     // Links, text and link files dropped on the window open Add Links (§5.4).
     {
         let ctx2 = ctx.clone();

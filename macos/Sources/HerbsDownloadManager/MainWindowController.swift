@@ -306,6 +306,29 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         show(NewDownloadWindowController(link: link, onClose: closer()))
     }
 
+    /// S16, Watch the clipboard: links copied in other apps open Add Links. What was there when it was turned on, and
+    /// copies made in this app (Copy Link), are left alone.
+    private var seenClipboard = NSPasteboard.general.changeCount
+    private lazy var clipboardWatch: Timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        MainActor.assumeIsolated { self?.lookAtClipboard() }
+    }
+
+    func startWatchingClipboard() {
+        _ = clipboardWatch
+    }
+
+    private func lookAtClipboard() {
+        let pasteboard = NSPasteboard.general
+        let count = pasteboard.changeCount
+        guard count != seenClipboard else { return }
+        seenClipboard = count
+        guard AppModel.shared.settings.watchClipboard, !NSApp.isActive else { return }
+        var text = pasteboard.string(forType: .string) ?? ""
+        if let html = pasteboard.string(forType: .html) { text += "\n" + html }
+        let links = findLinks(text: text)
+        if !links.isEmpty { openLinks(links) }
+    }
+
     /// Add from Clipboard (§5.2): every link in the clipboard's text opens Add Links.
     @objc func addFromClipboard(_ sender: Any?) {
         let pasteboard = NSPasteboard.general

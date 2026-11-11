@@ -486,6 +486,8 @@ pub fn run() {
         });
         set_keep_on_top(keep_on_top);
         DragAcceptFiles(hwnd, true);
+        // S16: told of every clipboard change (used only while Watch the clipboard is on).
+        let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(hwnd);
         layout(hwnd);
         refresh();
         SetTimer(Some(hwnd), TIMER_REFRESH, 500, None);
@@ -1517,6 +1519,23 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             crate::features::WM_FEATURE => {
                 crate::features::on_main(hwnd, &mut *(lparam.0 as *mut crate::features::Request));
+                LRESULT(0)
+            }
+            WM_CLIPBOARDUPDATE => {
+                // S16, Watch the clipboard: links copied in other apps open Add Links; copies made in this app (Copy
+                // Link) are left alone.
+                let foreground = GetForegroundWindow();
+                let mut pid = 0u32;
+                GetWindowThreadProcessId(foreground, Some(&mut pid));
+                let ours = pid == windows::Win32::System::Threading::GetCurrentProcessId();
+                if !ours && with(|s| s.manager.settings().watch_clipboard).unwrap_or(false) {
+                    let links = hd_core::links::find(&crate::add::clipboard_text(hwnd));
+                    if !links.is_empty()
+                        && let Some(ctx) = add_ctx()
+                    {
+                        crate::add::add_links(&ctx, links);
+                    }
+                }
                 LRESULT(0)
             }
             WM_DROPFILES => {

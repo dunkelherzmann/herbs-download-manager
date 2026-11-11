@@ -56,6 +56,8 @@ pub struct Settings {
     pub when_file_exists: WhenFileExists,
     pub look_for_checksum_files: bool,
     pub notify_when_finished: bool,
+    /// S16: links copied in other apps open Add Links.
+    pub watch_clipboard: bool,
     pub keep_server_date: bool,
     /// The scheduler (§11.1): start and stop times in minutes after midnight, `None` for off.
     pub schedule_start: Option<u32>,
@@ -88,6 +90,7 @@ impl From<settings::Settings> for Settings {
             },
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
+            watch_clipboard: s.watch_clipboard,
             keep_server_date: s.keep_server_date,
             schedule_start: s.schedule.start,
             schedule_stop: s.schedule.stop,
@@ -117,6 +120,7 @@ impl From<Settings> for settings::Settings {
             },
             look_for_checksum_files: s.look_for_checksum_files,
             notify_when_finished: s.notify_when_finished,
+            watch_clipboard: s.watch_clipboard,
             keep_server_date: s.keep_server_date,
             schedule: schedule::Schedule {
                 start: s.schedule_start,

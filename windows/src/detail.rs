@@ -64,6 +64,7 @@ const S_PER_SERVER: u16 = 78;
 const S_RETRIES: u16 = 79;
 const S_EXISTS: u16 = 80;
 const S_NOTIFY: u16 = 81;
+const S_WATCH: u16 = 104;
 const S_CHECKSUM_FILES: u16 = 82;
 const S_LIMITS: u16 = 83;
 const S_FORGET: u16 = 84;
@@ -518,7 +519,7 @@ pub fn settings(ctx: &Ctx) {
     let sign_ins = crate::signins::summary(ctx);
     let start_text = schedule::time_text(s.schedule.start.unwrap_or(60));
     let stop_text = schedule::time_text(s.schedule.stop.unwrap_or(7 * 60));
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 860), &[
+    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 888), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
         (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
@@ -561,16 +562,17 @@ pub fn settings(ctx: &Ctx) {
         (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 540, 340, 24),
         (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 568, 340, 24),
         (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 596, 340, 24),
-        (0, w!("STATIC"), "Server limits:", LABEL, 12, 632, 170, 20),
-        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 632, 250, 20),
-        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 626, 95, 28),
-        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 666, 170, 20),
-        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 666, 250, 20),
-        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 660, 95, 28),
-        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 700, 170, 20),
-        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 694, 190, 28),
-        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 728, 350, 72),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 816, 85, 30),
+        (S_WATCH, w!("BUTTON"), "Watch the clipboard for links", BS_AUTOCHECKBOX as u32, 190, 624, 340, 24),
+        (0, w!("STATIC"), "Server limits:", LABEL, 12, 660, 170, 20),
+        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 660, 250, 20),
+        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 654, 95, 28),
+        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 694, 170, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 694, 250, 20),
+        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 688, 95, 28),
+        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 728, 170, 20),
+        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 722, 190, 28),
+        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 756, 350, 72),
+        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 844, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -585,6 +587,7 @@ pub fn settings(ctx: &Ctx) {
         (S_EXISTS, "", "What happens when a different file already has a new download's name"),
         (S_CHECKSUM_FILES, "", "With no checksum set, check the file with the site's file.sha256 (or .sha512, .sha1, .md5)"),
         (S_NOTIFY, "", "Show a notification each time a download finishes"),
+        (S_WATCH, "", "Watch the clipboard: links copied in other apps open Add Links (what was copied before this was on is left alone)"),
         (S_SERVER_DATE, "", "A finished file gets the date the server gives it (Last-Modified) instead of the time it finished downloading"),
         (S_START_ON, "", "Start the queue at this time (hours:minutes) on the days chosen below"),
         (S_START, "Time to start the queue", "Hours and minutes, such as 01:30"),
@@ -619,6 +622,7 @@ pub fn settings(ctx: &Ctx) {
             set_text(w.controls[&S_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
         }
         set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
+        set_checked(w.controls[&S_WATCH], s.watch_clipboard);
         set_checked(w.controls[&S_CHECKSUM_FILES], s.look_for_checksum_files);
         set_checked(w.controls[&S_SERVER_DATE], s.keep_server_date);
         combo(w.controls[&S_WHEN_DONE], &DONE.map(|d| d.0), DONE.iter().position(|d| d.1 == s.schedule.when_done).unwrap_or(0));
@@ -714,6 +718,7 @@ fn save_settings(hwnd: HWND) {
             retries: number(S_RETRIES, current.retries),
             when_file_exists: EXISTS[selection(w.controls[&S_EXISTS]).min(3)].1,
             notify_when_finished: checked(w.controls[&S_NOTIFY]),
+            watch_clipboard: checked(w.controls[&S_WATCH]),
             look_for_checksum_files: checked(w.controls[&S_CHECKSUM_FILES]),
             keep_server_date: checked(w.controls[&S_SERVER_DATE]),
             schedule: {
@@ -909,7 +914,7 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
                         })),
                         S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES | S_START | S_STOP if code == EN_KILLFOCUS => save_settings(hwnd),
-                        S_LIMIT_ON | S_NOTIFY | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
+                        S_LIMIT_ON | S_NOTIFY | S_WATCH | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
                         id if (S_DAY..S_DAY + 7).contains(&id) => save_settings(hwnd),
                         S_EXTENSION => match hd_core::browser::extension_folder(&crate::data_folder()) {
                             Ok(folder) => crate::app::open_path(&folder, false),
