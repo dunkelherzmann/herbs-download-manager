@@ -83,6 +83,21 @@ impl Run<'_> {
         self.row(spec).ok_or_else(|| format!("no download {spec}"))
     }
 
+    /// The download, given up to 10 s to reach the list: the apps add it through their add flow, which checks the
+    /// link in the background first, and a busy machine takes longer (Linux, bugs.md 2026-11-10).
+    fn soon_row(&self, spec: &str) -> Result<Row, String> {
+        let until = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(r) = self.row(spec) {
+                return Ok(r);
+            }
+            if Instant::now() > until {
+                return Err(format!("no download {spec}"));
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     fn step(&self, words: &[String]) -> Result<(), String> {
         let arg = |i: usize| words.get(i).cloned().ok_or_else(|| format!("“{}” needs more", words.join(" ")));
         match words[0].as_str() {
@@ -220,7 +235,7 @@ impl Run<'_> {
                         Some(_) => Err(format!("{spec} is still in the list")),
                     };
                 }
-                let r = self.need_row(&spec)?;
+                let r = self.soon_row(&spec)?;
                 let value = words[3..].join(" ");
                 match check.as_str() {
                     "file-size" => {
