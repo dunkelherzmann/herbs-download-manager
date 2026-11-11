@@ -44,6 +44,35 @@ async function cookiesFor(url) {
   }
 }
 
+// The page as the browser shows it, for the app's scan: every frame's text after its scripts ran (players fill in
+// their media then), each with its own cookies, and the addresses the frames already fetched. A page that can't be
+// read (the browser's own pages) gives nothing, and the app reads it itself.
+const SCAN_TEXT_MAX = 16 * 1024 * 1024;
+function pageForScan() {
+  const resources = performance.getEntriesByType("resource").map((e) => e.name).filter((n) => /^https?:/.test(n)).slice(-600);
+  return { url: location.href, html: document.documentElement ? document.documentElement.outerHTML : "", resources };
+}
+async function pagesForScan(tabId) {
+  let results = [];
+  try {
+    results = await api.scripting.executeScript({ target: { tabId, allFrames: true }, func: pageForScan });
+  } catch {
+    return { pages: [], resources: [] };
+  }
+  const pages = [];
+  const resources = new Set();
+  let total = 0;
+  for (const r of results || []) {
+    const frame = r && r.result;
+    if (!frame || !web(frame.url) || !frame.html) continue;
+    for (const u of frame.resources || []) resources.add(u);
+    if (total + frame.html.length > SCAN_TEXT_MAX) continue;
+    total += frame.html.length;
+    pages.push({ url: frame.url, html: frame.html, cookies: await cookiesFor(frame.url) });
+  }
+  return { pages, resources: [...resources].slice(-1500) };
+}
+
 // Asks the app to download the link; resolves to its answer ({ok, error, message}). `extra`: queue, stream, name.
 // Previews already made, by link (or manifest): the newest 60.
 const previews = new Map();
@@ -696,7 +725,8 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       }
       try {
         const cookies = await cookiesFor(tab.url);
-        reply(await api.runtime.sendNativeMessage(HOST, { command: "scan", urls: [tab.url], cookies, referer: tab.url, user_agent: navigator.userAgent }));
+        const { pages, resources } = await pagesForScan(tab.id);
+        reply(await api.runtime.sendNativeMessage(HOST, { command: "scan", urls: [tab.url], cookies, referer: tab.url, user_agent: navigator.userAgent, pages, resources }));
       } catch {
         reply({ ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` });
       }

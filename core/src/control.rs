@@ -19,7 +19,8 @@ pub const FILE: &str = "control.json";
 /// What `hdm` says when the app isn't open.
 pub const NOT_RUNNING: &str = "Herb's Download Manager isn't running. Open it, then try again.";
 /// The longest request line read (a batch of links is far shorter).
-const MAX_LINE: u64 = 4 * 1024 * 1024;
+/// The longest request: a scan from the browser carries the page's text, every frame of it.
+const MAX_LINE: u64 = 32 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct Door {
@@ -74,6 +75,20 @@ pub struct Request {
     pub manifest: Option<String>,
     /// add and scan, from the browser extension: the browser's User-Agent, sent with the download's requests.
     pub user_agent: Option<String>,
+    /// scan, from the browser extension: the page as the browser shows it, every frame with its own cookies.
+    pub pages: Vec<ScanPage>,
+    /// scan, from the browser extension: the addresses the page already fetched.
+    pub resources: Vec<String>,
+}
+
+/// One frame of a page the browser extension hands over for a scan.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScanPage {
+    pub url: String,
+    pub html: String,
+    /// The browser's cookies for the frame's address (a Cookie header), for this session only.
+    pub cookies: Option<String>,
 }
 
 /// One download as `list` reports it.
@@ -340,9 +355,19 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
     match r.command.as_str() {
         "scan" => {
             let [url] = r.urls.as_slice() else { return Answer::error("Give the address of one web page to scan.") };
-            // From the browser extension: the page is read with the browser's cookies.
+            // From the browser extension: the page is read with the browser's cookies, and each frame it hands over
+            // brings its own, so the files they name are checked as the browser would fetch them.
             browser_sign_ins(manager, &r);
-            match manager.scan_page(url) {
+            for p in r.pages.iter().filter(|p| p.cookies.as_deref().is_some_and(|c| !c.is_empty())) {
+                let frame = Request { urls: vec![p.url.clone()], cookies: p.cookies.clone(), referer: r.referer.clone(), ..Default::default() };
+                browser_sign_ins(manager, &frame);
+            }
+            let given = crate::media::scan::Given {
+                pages: r.pages.iter().map(|p| crate::media::scan::GivenPage { url: p.url.clone(), html: p.html.clone() }).collect(),
+                resources: r.resources.clone(),
+                user_agent: r.user_agent.clone(),
+            };
+            match manager.scan_page_given(url, given) {
                 Err(e) => Answer::error(format!("Can't scan {url}: {e}")),
                 Ok(scan) => Answer {
                     ok: true,

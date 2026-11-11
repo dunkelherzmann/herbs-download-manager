@@ -1479,8 +1479,14 @@ impl Manager {
     /// Reads a web page and lists the files and media it links to or plays, each checked with its server (§15). Blocks
     /// the calling thread (never the app's main thread) while it reads and checks.
     pub fn scan_page(&self, url: &str) -> Result<crate::media::scan::Scan, String> {
+        self.scan_page_given(url, crate::media::scan::Given::default())
+    }
+
+    /// `scan_page` with what the browser extension hands over: the page as the browser shows it, every frame, the
+    /// addresses it fetched and the browser's User-Agent.
+    pub fn scan_page_given(&self, url: &str, given: crate::media::scan::Given) -> Result<crate::media::scan::Scan, String> {
         let (client, vault, url) = (self.client.clone(), self.inner.vault.clone(), url.to_string());
-        self.handle.block_on(async move { crate::media::scan::scan(&client, &url, vault).await })
+        self.handle.block_on(async move { crate::media::scan::scan(&client, &url, vault, given).await })
     }
 
     /// Blocks the calling thread (never the app's main thread) for up to 20 seconds.

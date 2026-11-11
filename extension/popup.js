@@ -152,7 +152,14 @@ async function show() {
       found.append(row(tab, item, f.name, [f.kind, size(f.size)]));
     }
   };
+  // The page is looked through as soon as the list opens (and in the side panel, whenever its tab shows another
+  // page), so its files and media are found without playing anything first.
+  if (tab.url !== scannedUrl && /^https?:/.test(tab.url || "")) {
+    scannedUrl = tab.url;
+    $("scan").click();
+  }
 }
+let scannedUrl = "";
 
 // A stream's quality and sound pickers, when it offers a choice: "As in Settings" first, then each quality (picture
 // lines and bit rate) and each sound language. `chosen()` gives what to send with the stream.

@@ -289,8 +289,8 @@ fn tool_request(name: &str, a: &Value) -> Result<Request, String> {
 /// `scan`, `ping` and `open` (which opens the app) are passed on to the app, which
 /// answers as for the command line ({ok, error, message}). Ends when the browser closes the pipe.
 pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32 {
-    /// Browsers send at most 4 GB, but a link and its cookies are far less.
-    const MAX: usize = 1024 * 1024;
+    /// Browsers send at most 4 GB; a scan carries the page's text, every frame of it.
+    const MAX: usize = 32 * 1024 * 1024;
     loop {
         let mut size = [0u8; 4];
         if input.read_exact(&mut size).is_err() {
@@ -321,7 +321,16 @@ pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32
             }
             // The extension's "Find Files on This Page": the app reads the page with the browser's cookies.
             Ok(r) if r.command == "scan" => {
-                let request = Request { command: "scan".into(), urls: r.urls, cookies: r.cookies, referer: r.referer, ..Default::default() };
+                let request = Request {
+                    command: "scan".into(),
+                    urls: r.urls,
+                    cookies: r.cookies,
+                    referer: r.referer,
+                    user_agent: r.user_agent,
+                    pages: r.pages,
+                    resources: r.resources,
+                    ..Default::default()
+                };
                 control::send(dir, &request).unwrap_or_else(Answer::failed)
             }
             // The extension's list: a stream's first picture and length, made here with the browser's cookies.

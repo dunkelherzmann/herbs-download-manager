@@ -272,3 +272,20 @@ test("a video from the page's own data can be removed too", async () => {
   await b.ask({ type: "remove", tabId: 1, item: { kind: "page-dash", manifest: mpd(24) } });
   assert.deepEqual(await shown(), [1239]);
 });
+
+test("Find Files hands the app every frame of the page as the browser shows it, with its cookies", async () => {
+  const frames = [
+    { url: "https://www.example.com/watch", html: "<html><iframe src=\"https://player.example.net/e/1\"></iframe></html>", resources: ["https://cdn.example.net/v/master.m3u8", "data:x"] },
+    { url: "https://player.example.net/e/1", html: "<script>setup({file:\"https://cdn.example.net/v/master.m3u8\"})</script>", resources: ["https://cdn.example.net/v/master.m3u8"] },
+    { url: "about:blank", html: "<html></html>", resources: [] },
+  ];
+  const b = load({ tabs: [PAGE], native: () => ({ ok: true, found: [] }), cookies: [{ name: "s", value: "1" }] });
+  b.chrome.scripting.executeScript = async ({ target }) => (target.allFrames ? frames.map((result) => ({ result })) : []);
+  const answer = await b.ask({ type: "scan", tabId: 1 });
+  assert.equal(answer.ok, true);
+  const sent = plain(b.sent.find((m) => m.command === "scan"));
+  assert.deepEqual(sent.urls, [PAGE.url]);
+  assert.deepEqual(sent.pages.map((p) => p.url), ["https://www.example.com/watch", "https://player.example.net/e/1"], "the browser's own blank frame is left out");
+  assert.ok(sent.pages.every((p) => p.cookies === "s=1" && p.html.length > 0));
+  assert.deepEqual(sent.resources, ["https://cdn.example.net/v/master.m3u8", "data:x"]);
+});

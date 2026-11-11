@@ -792,18 +792,36 @@ first its field's button says Download). Every stream also has a **Sound Only** 
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
   kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). A page with nothing on it stays as an unchecked row
   saying "Web page: no files found". `hdm scan PAGE [--json] [--add]`, the MCP tool `scan_page` and the extension's
-  **Find Files on This Page** (read by the app with the browser's cookies) do the same.
+  **Find Files on This Page** do the same. A link that is itself a file or a stream (a playlist, even one whose
+  address names no type) is listed as that one item.
+  - **From the browser:** the extension's list looks through the page as soon as it opens (and in the side panel,
+    whenever its tab shows another page), so nothing has to be played first; **Find Files on This Page** looks again.
+    It hands the app the page as the browser shows it, after its scripts ran: every frame (embedded players
+    included), each with the browser's cookies for it, the addresses the frames already fetched, and the browser's
+    User-Agent. The app checks what they name with those cookies, the browser's User-Agent and the frame as referer.
+    Typed into the app, a page is read with the sign-ins saved for its site and a browser's User-Agent (sites send
+    other programs a bare page without its player).
+  - **Embedded players:** frames and players the page embeds (`<iframe>`, `<frame>`, `<embed>`, `<object>`, JSON-LD's
+    `embedUrl`) and a page that only sends its visitor on (`<meta http-equiv="refresh">`) are read too, two levels
+    deep, at most 12 pages in all, each with the page that embeds it as referer.
   - What's looked at: the page's links and sources (`href`, `src`, `data-src`, `srcset`, `content`, `poster`…),
-    full addresses anywhere in its scripts and data, and quoted paths ending in a known file type (`"clip/
-    index.m3u8"`, as players write them).
+    full addresses anywhere in its scripts and data, quoted paths ending in a known file type (`"clip/
+    index.m3u8"`, as players write them), and addresses a player's setup names as its media by key (`"file":`,
+    `"src":`, `"hls":`, `"video_url":`, `"contentUrl":`…), whatever their address looks like (up to 60 on a page).
+    Addresses hidden in the text are decoded first: JSON and script escapes (`https:\/\/`, `\u002F`, `\x2F`), HTML
+    entities (`&#47;`), percent-encoding (`https%3A%2F%2F`, also twice), base64, and scripts packed with the common
+    `eval(function(p,a,c,k,e,d)…)` packer (its word table is read; nothing is run). Nothing a site does to keep
+    downloaders out is got round: no captchas, waiting pages, sign-in forms, coded addresses or DRM.
   - What's left out before asking: pages (`.html`, `.php`…), the site's own scripts, styles, fonts and icons
     (`.js`, `.css`, `.svg`, `.woff`…), stream pieces (`.ts`, `.m4s`), and links with no file name that don't look
     like a download path (`/download/…`, `?file=…`).
   - Each candidate is checked with its server (up to 400 on a page, 8 at once, 4 to one server): it's listed when
-    its type is a file's (video, sound, picture, document, archive, program, or any type sent as an attachment), at
+    its type is a file's (video, sound, picture, document, archive, program, any type sent as an attachment, or
+    anything over 2 MB that isn't text), or it is an HLS playlist or DASH manifest (read to be sure), at
     least 50 KB for pictures (smaller are icons and thumbnails) and 10 KB for others. Broken links and protected
     streams aren't listed. A master playlist hides its quality playlists; the page's one stream is named after the
-    page ("<title>.mp4"), several after their playlists. The same name and size under two addresses is listed once.
+    page ("<title>.mp4"), several after their playlists. A file whose address gives a name without a type gets its
+    type's extension ("77" sent as `video/mp4` is "77.mp4"). The same name and size under two addresses is listed once.
 - **DASH:** a link ending in `.mpd`, or a manifest the browser extension finds in a page's data (Facebook carries
   its reels' manifests in the page instead of loading them), is a stream download: the best video (the most
   pixels, then the most bits a second) and the best sound, joined into one MP4 like HLS (S13 and S14 choose among HLS qualities and sound tracks only, for now). Pieces are found three

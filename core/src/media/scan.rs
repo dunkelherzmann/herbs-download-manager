@@ -54,6 +54,35 @@ pub struct Scan {
 
 /// The longest page read.
 const PAGE_MAX: usize = 8 * 1024 * 1024;
+/// The most pages read for one scan: the page and the players and frames it embeds, two levels deep.
+const FRAMES_MAX: usize = 12;
+const FRAME_DEPTH: usize = 2;
+/// The most addresses taken from a player's setup (`"file":`, `"hls":`…) that name no file type.
+const MEDIA_VALUES_MAX: usize = 60;
+
+/// The User-Agent pages are read with when the browser didn't give its own: sites send other programs a bare page
+/// without its player, or none at all.
+#[cfg(target_os = "macos")]
+pub const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+#[cfg(target_os = "windows")]
+pub const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/// What the browser extension hands over with a scan: the page as the browser shows it (every frame, after its
+/// scripts ran), the addresses it already fetched, and the browser's User-Agent.
+#[derive(Clone, Debug, Default)]
+pub struct Given {
+    pub pages: Vec<GivenPage>,
+    pub resources: Vec<String>,
+    pub user_agent: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct GivenPage {
+    pub url: String,
+    pub html: String,
+}
 /// The most candidates checked on one page.
 const CHECK_MAX: usize = 400;
 /// Checked at once, and at once on one server.
@@ -70,9 +99,10 @@ const PIECE_EXT: &[&str] = &["ts", "m4s", "m4f", "cmfv", "cmfa"];
 
 fn kind_of_ext(ext: &str) -> Option<Kind> {
     Some(match ext {
-        "m3u8" => Kind::Stream,
-        "mp4" | "m4v" | "webm" | "mkv" | "mov" | "avi" | "wmv" | "flv" | "3gp" | "ogv" | "mpg" | "mpeg" => Kind::Video,
-        "mp3" | "m4a" | "aac" | "ogg" | "oga" | "opus" | "flac" | "wav" | "wma" | "aiff" => Kind::Audio,
+        "m3u8" | "mpd" => Kind::Stream,
+        "mp4" | "m4v" | "webm" | "mkv" | "mov" | "avi" | "wmv" | "flv" | "f4v" | "3gp" | "ogv" | "mpg" | "mpeg" | "m2ts" | "mts" | "vob"
+        | "rmvb" | "divx" => Kind::Video,
+        "mp3" | "m4a" | "m4b" | "aac" | "ogg" | "oga" | "opus" | "flac" | "wav" | "wma" | "aiff" | "mka" | "ac3" | "ape" => Kind::Audio,
         "jpg" | "jpeg" | "png" | "gif" | "webp" | "avif" | "heic" | "tif" | "tiff" | "bmp" => Kind::Image,
         "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "iso" | "dmg" | "img" => Kind::Archive,
         "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp" | "epub" | "rtf" | "csv" => Kind::Document,
@@ -84,7 +114,7 @@ fn kind_of_ext(ext: &str) -> Option<Kind> {
 fn kind_of_type(mime: &str) -> Option<Kind> {
     let m = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
     Some(match m.as_str() {
-        _ if m.contains("mpegurl") => Kind::Stream,
+        _ if m.contains("mpegurl") || m == "application/dash+xml" => Kind::Stream,
         _ if m.starts_with("video/") => Kind::Video,
         _ if m.starts_with("audio/") || m == "application/ogg" => Kind::Audio,
         "image/svg+xml" => return None,
@@ -98,6 +128,27 @@ fn kind_of_type(mime: &str) -> Option<Kind> {
         | "application/vnd.android.package-archive" | "application/x-bittorrent" => Kind::Program,
         "application/octet-stream" | "binary/octet-stream" | "application/x-download" | "application/force-download" => Kind::Other,
         _ => return None, // pages, scripts, styles, data
+    })
+}
+
+/// The usual extension of a file type, for names that have none.
+fn ext_of_type(mime: &str) -> Option<&'static str> {
+    Some(match mime.split(';').next().unwrap_or("").trim() {
+        "video/mp4" => "mp4",
+        "video/webm" => "webm",
+        "video/quicktime" => "mov",
+        "video/x-matroska" => "mkv",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" | "audio/x-m4a" => "m4a",
+        "audio/ogg" => "ogg",
+        "audio/flac" => "flac",
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "application/pdf" => "pdf",
+        "application/zip" => "zip",
+        _ => return None,
     })
 }
 
@@ -233,22 +284,76 @@ struct Answer {
     is_playlist: bool,
 }
 
-async fn check(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, referer: &str) -> Option<Answer> {
-    let rb = crate::transfer::signed(client.get(url.clone()), url, vault)
-        .header(reqwest::header::RANGE, "bytes=0-0")
-        .header(reqwest::header::ACCEPT_ENCODING, "identity")
-        .header(reqwest::header::REFERER, referer);
+/// How each request of a scan introduces itself: the browser's User-Agent, and the page the address was found on.
+#[derive(Clone)]
+struct Asking {
+    user_agent: String,
+}
+
+impl Asking {
+    fn get(&self, client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, referer: Option<&str>) -> reqwest::RequestBuilder {
+        let mut rb = crate::transfer::signed(client.get(url.clone()), url, vault).header(reqwest::header::USER_AGENT, &self.user_agent);
+        if let Some(r) = referer.filter(|r| !r.is_empty()) {
+            rb = rb.header(reqwest::header::REFERER, r);
+        }
+        rb
+    }
+}
+
+/// A playlist's text, read whole (playlists are small).
+async fn text_of(rb: reqwest::RequestBuilder) -> Option<String> {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let response = rb.send().await.ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        let bytes = response.bytes().await.ok()?;
+        (bytes.len() <= 4 * 1024 * 1024).then(|| String::from_utf8_lossy(&bytes).into_owned())
+    })
+    .await
+    .ok()?
+}
+
+/// Reads a stream's playlist or manifest to be sure it is one, to find the qualities a master lists, and to leave out
+/// a protected (DRM) one, which can't be saved.
+fn read_stream(answer: &mut Answer, text: &str, url: &Url) -> bool {
+    if text.trim_start().starts_with("#EXTM3U") {
+        match super::hls::parse(text, url) {
+            Ok(super::hls::Playlist::Master { variants, audio, .. }) => {
+                answer.variants = variants.iter().map(|v| v.url.to_string()).chain(audio.iter().filter_map(|a| a.url.as_ref().map(|u| u.to_string()))).collect();
+            }
+            Ok(super::hls::Playlist::Media { segments, .. }) if segments.iter().any(|s| matches!(s.key, super::hls::Key::Protected(_))) => return false,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    } else if text.contains("<MPD") {
+        match super::dash::parse(text, url) {
+            Ok(m) if !m.protected => {}
+            _ => return false,
+        }
+    } else {
+        return false;
+    }
+    answer.kind = Some(Kind::Stream);
+    answer.is_playlist = true;
+    true
+}
+
+async fn check(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, referer: &str, asking: &Asking) -> Option<Answer> {
+    let rb = asking.get(client, url, vault, Some(referer)).header(reqwest::header::RANGE, "bytes=0-0").header(reqwest::header::ACCEPT_ENCODING, "identity");
     let response = tokio::time::timeout(Duration::from_secs(15), rb.send()).await.ok()?.ok()?;
     if !response.status().is_success() {
         return None;
     }
     let headers = response.headers().clone();
-    let mime = headers.get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let mime = headers.get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_ascii_lowercase();
     let ranged = response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
     let size = if ranged { crate::http::content_range_total(&headers) } else { response.content_length() };
     let name = crate::http::file_name(&headers, response.url());
+    let final_url = response.url().clone();
+    drop(response);
     let attachment = headers.get(reqwest::header::CONTENT_DISPOSITION).and_then(|v| v.to_str().ok()).is_some_and(|v| v.to_ascii_lowercase().contains("attachment"));
-    let by_ext = kind_of_ext(&extension(response.url())).or_else(|| kind_of_ext(&extension(url)));
+    let by_ext = kind_of_ext(&extension(&final_url)).or_else(|| kind_of_ext(&extension(url)));
     let mut kind = kind_of_type(&mime);
     // A server that types everything as octet-stream: the address says better.
     if kind == Some(Kind::Other) && by_ext.is_some() {
@@ -257,66 +362,187 @@ async fn check(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault,
     if kind.is_none() && attachment {
         kind = by_ext.or(Some(Kind::Other));
     }
+    let texty = mime.is_empty() || mime.starts_with("text/") || mime.contains("json") || mime.contains("xml") || mime.contains("octet-stream");
+    let html = mime.contains("html");
+    // Something big that isn't text is a file even when its server names no type (as JDownloader takes it).
+    if kind.is_none() && !texty && size.is_some_and(|s| s > 2 * 1024 * 1024) {
+        kind = by_ext.or(Some(Kind::Other));
+    }
+    // A name its address gave without a type ("77"): the server's type adds it ("77.mp4").
+    let name = match ext_of_type(&mime) {
+        Some(ext) if !name.contains('.') => format!("{name}.{ext}"),
+        _ => name,
+    };
     let mut answer = Answer { kind, name, size, variants: Vec::new(), is_playlist: false };
-    if kind == Some(Kind::Stream) || by_ext == Some(Kind::Stream) {
-        // Read the playlist itself (it's small) to be sure, and to find what a master playlist lists.
-        let full = crate::transfer::signed(client.get(url.clone()), url, vault).header(reqwest::header::REFERER, referer);
-        let text = tokio::time::timeout(Duration::from_secs(15), async { full.send().await.ok()?.text().await.ok() }).await.ok()??;
-        match super::hls::parse(&text, url) {
-            Ok(super::hls::Playlist::Master { variants, audio, .. }) => {
-                answer.variants = variants.iter().map(|v| v.url.to_string()).chain(audio.iter().filter_map(|a| a.url.as_ref().map(|u| u.to_string()))).collect();
-            }
-            Ok(super::hls::Playlist::Media { segments, .. }) if segments.iter().any(|s| matches!(s.key, super::hls::Key::Protected(_))) => return None,
-            Ok(_) => {}
-            Err(_) => return None,
+    // A playlist or manifest, by its type or address, or text that may be one whatever its address says.
+    let maybe_stream = kind == Some(Kind::Stream) || by_ext == Some(Kind::Stream) || (!html && texty && size.is_none_or(|s| s < 4 * 1024 * 1024) && (kind.is_none() || kind == Some(Kind::Other)));
+    if maybe_stream {
+        let text = text_of(asking.get(client, url, vault, Some(referer))).await;
+        let is_stream = text.is_some_and(|t| read_stream(&mut answer, &t, url));
+        if !is_stream && (kind == Some(Kind::Stream) || by_ext == Some(Kind::Stream)) {
+            return None;
         }
-        answer.kind = Some(Kind::Stream);
-        answer.is_playlist = true;
+        if !is_stream && kind == Some(Kind::Other) && mime.starts_with("text/") {
+            return None;
+        }
     }
     Some(answer)
 }
 
-/// Reads the page at `url` and checks what it mentions; blocks until done (call it off the main thread).
-pub async fn scan(client: &reqwest::Client, url: &str, vault: Arc<crate::vault::Vault>) -> Result<Scan, String> {
-    let page = Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
-    let response = tokio::time::timeout(Duration::from_secs(20), crate::transfer::signed(client.get(page.clone()), &page, &vault).send())
+/// A page read for the scan: its address after redirects and its text.
+enum Read {
+    Page(Url, String),
+    /// Not a web page (a file or a stream): checked as one.
+    Other(Url),
+}
+
+async fn read_page(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, referer: Option<&str>, asking: &Asking, wait: u64) -> Result<Read, String> {
+    let rb = asking.get(client, url, vault, referer).header(reqwest::header::ACCEPT, "text/html,application/xhtml+xml,*/*;q=0.8");
+    let response = tokio::time::timeout(Duration::from_secs(wait), rb.send())
         .await
         .map_err(|_| "The server didn't answer".to_string())?
         .map_err(|e| crate::transfer::error_text(&e))?;
     if !response.status().is_success() {
         return Err(format!("{} {}", response.status().as_u16(), response.status().canonical_reason().unwrap_or("")).trim().to_string());
     }
-    let page = response.url().clone();
+    let at = response.url().clone();
     let mime = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_ascii_lowercase();
-    if !mime.contains("html") {
-        return Err("That link is a file, not a web page".into());
+    let unknown = mime.is_empty() || mime.starts_with("text/plain");
+    if !mime.contains("html") && !unknown {
+        return Ok(Read::Other(at));
     }
-    let bytes = response.bytes().await.map_err(|e| crate::transfer::error_text(&e))?;
-    let html = String::from_utf8_lossy(&bytes[..bytes.len().min(PAGE_MAX)]).into_owned();
-    let title = title_of(&html);
-    // Candidates: everything but pages, the site's own scripts and styles, and stream pieces.
-    let candidates: Vec<Url> = links_in(&html, &page)
-        .into_iter()
-        .filter(|u| {
-            let ext = extension(u);
-            !PAGE_EXT.contains(&ext.as_str()) && !SITE_EXT.contains(&ext.as_str()) && !PIECE_EXT.contains(&ext.as_str())
-        })
-        // Links without a file name that stay on the site are its other pages: only addresses with an extension
-        // the scan knows, or that leave the folder structure for a download path, are worth asking about.
-        .filter(|u| kind_of_ext(&extension(u)).is_some() || extension(u).is_empty() && looks_like_download(u))
-        .take(CHECK_MAX)
+    if response.content_length().is_some_and(|l| l as usize > PAGE_MAX) {
+        return Ok(Read::Other(at));
+    }
+    let bytes = tokio::time::timeout(Duration::from_secs(wait), response.bytes())
+        .await
+        .map_err(|_| "The page took too long".to_string())?
+        .map_err(|e| crate::transfer::error_text(&e))?;
+    let text = String::from_utf8_lossy(&bytes[..bytes.len().min(PAGE_MAX)]).into_owned();
+    // A server that names no type: it's a page if it reads like one.
+    if unknown && !text.trim_start().starts_with('<') {
+        return Ok(Read::Other(at));
+    }
+    Ok(Read::Page(at, text))
+}
+
+/// The address a page sends its visitor on to (`<meta http-equiv="refresh" content="0; url=…">`).
+fn refresh_target(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let at = lower.find("http-equiv=\"refresh\"").or_else(|| lower.find("http-equiv='refresh'")).or_else(|| lower.find("http-equiv=refresh"))?;
+    let start = lower[..at].rfind('<')?;
+    let end = start + lower[start..].find('>')?;
+    let tag = &lower[start..end];
+    let url_at = tag.find("url=")? + 4;
+    let raw = &html[start + url_at..end];
+    let value = raw.trim_start_matches(['\'', '"', ' ']).split(['\'', '"']).next()?.trim();
+    (!value.is_empty()).then(|| super::scan_text::decode_entities(value))
+}
+
+fn is_web(u: &Url) -> bool {
+    matches!(u.scheme(), "http" | "https")
+}
+
+/// Reads the page at `url` and checks what it mentions; blocks until done (call it off the main thread).
+pub async fn scan(client: &reqwest::Client, url: &str, vault: Arc<crate::vault::Vault>, given: Given) -> Result<Scan, String> {
+    let start = Url::parse(url.trim()).map_err(|_| "That isn't a web link".to_string())?;
+    let asking = Asking { user_agent: given.user_agent.clone().filter(|a| !a.trim().is_empty()).unwrap_or_else(|| BROWSER_UA.to_string()) };
+    // The pages to look through, with how deep in the page each one is embedded.
+    let mut pages: Vec<(Url, String, usize)> = given
+        .pages
+        .iter()
+        .filter_map(|p| Some((Url::parse(&p.url).ok().filter(is_web)?, p.html.chars().take(PAGE_MAX).collect::<String>(), 0)))
         .collect();
-    let referer = page.to_string();
+    if pages.is_empty() {
+        match read_page(client, &start, &vault, None, &asking, 20).await? {
+            Read::Page(at, html) => pages.push((at, html, 0)),
+            // A link to a file or a stream: it is what's found.
+            Read::Other(at) => {
+                let answer = check(client, &at, &vault, "", &asking).await;
+                return match answer.filter(|a| a.kind.is_some()) {
+                    Some(a) => {
+                        let kind = a.kind.unwrap_or(Kind::Other);
+                        let name = if kind == Kind::Stream { super::download::stream_name(at.as_str()) } else { a.name };
+                        Ok(Scan { title: name.clone(), found: vec![Found { url: at.to_string(), name, size: if kind == Kind::Stream { None } else { a.size }, kind }] })
+                    }
+                    None => Err("Nothing at that link can be downloaded".into()),
+                };
+            }
+        }
+    }
+    let title = pages.iter().map(|(_, html, _)| title_of(html)).find(|t| !t.is_empty()).unwrap_or_default();
+    // Embedded players and frames the browser didn't hand over (or the app read the page itself), and a page that
+    // only sends its visitor on: read too, with the page that embeds them as their referer.
+    let mut read: HashSet<String> = pages.iter().map(|(u, _, _)| u.as_str().to_string()).collect();
+    let mut i = 0;
+    while i < pages.len() && pages.len() < FRAMES_MAX {
+        let (base, html, depth) = pages[i].clone();
+        i += 1;
+        if depth >= FRAME_DEPTH {
+            continue;
+        }
+        let mut targets: Vec<Url> = super::scan_text::frame_sources(&html).into_iter().chain(refresh_target(&html)).filter_map(|f| base.join(&f).ok()).filter(is_web).collect();
+        targets.retain(|t| kind_of_ext(&extension(t)).is_none() && read.insert(t.as_str().to_string()));
+        targets.truncate(FRAMES_MAX - pages.len());
+        let mut tasks = tokio::task::JoinSet::new();
+        for t in targets {
+            let (client, vault, asking, referer) = (client.clone(), vault.clone(), asking.clone(), base.to_string());
+            tasks.spawn(async move { read_page(&client, &t, &vault, Some(&referer), &asking, 12).await });
+        }
+        while let Some(done) = tasks.join_next().await {
+            if let Ok(Ok(Read::Page(at, text))) = done {
+                read.insert(at.as_str().to_string());
+                pages.push((at, text, depth + 1));
+            }
+        }
+    }
+    // Candidates, each with the page it was found on: everything but pages, the site's own scripts and styles, and
+    // stream pieces. Links with no file type that stay on the site are its other pages, so only addresses with a type
+    // the scan knows, download paths, and what a player's setup names as its media are asked about.
+    let skipped = |u: &Url| {
+        let ext = extension(u);
+        PAGE_EXT.contains(&ext.as_str()) || SITE_EXT.contains(&ext.as_str()) || PIECE_EXT.contains(&ext.as_str())
+    };
+    let page_urls: HashSet<String> = pages.iter().map(|(u, _, _)| u.as_str().to_string()).collect();
+    let mut seen = HashSet::new();
+    let mut candidates: Vec<(Url, String)> = Vec::new();
+    let mut media_named = 0;
+    for (base, html, _) in &pages {
+        let text = super::scan_text::expand(html);
+        for u in links_in(&text, base) {
+            if !skipped(&u) && (kind_of_ext(&extension(&u)).is_some() || extension(&u).is_empty() && looks_like_download(&u)) && !page_urls.contains(u.as_str()) && seen.insert(u.to_string()) {
+                candidates.push((u, base.to_string()));
+            }
+        }
+        for v in super::scan_text::media_values(&super::scan_text::unescape_js(html)) {
+            let Ok(mut u) = base.join(&v) else { continue };
+            u.set_fragment(None);
+            if media_named < MEDIA_VALUES_MAX && !skipped(&u) && !page_urls.contains(u.as_str()) && seen.insert(u.to_string()) {
+                media_named += 1;
+                candidates.push((u, base.to_string()));
+            }
+        }
+    }
+    // What the page already fetched (from the browser): its media files and streams.
+    let referer = pages.first().map(|(u, _, _)| u.to_string()).unwrap_or_default();
+    for r in &given.resources {
+        let Ok(mut u) = Url::parse(r) else { continue };
+        u.set_fragment(None);
+        if is_web(&u) && !skipped(&u) && kind_of_ext(&extension(&u)).is_some() && seen.insert(u.to_string()) {
+            candidates.push((u, referer.clone()));
+        }
+    }
+    candidates.truncate(CHECK_MAX);
     let semaphore = Arc::new(tokio::sync::Semaphore::new(AT_ONCE));
     let hosts: Arc<std::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Semaphore>>>> = Arc::default();
     let mut tasks = tokio::task::JoinSet::new();
-    for (i, url) in candidates.into_iter().enumerate() {
-        let (client, vault, referer, semaphore, hosts) = (client.clone(), vault.clone(), referer.clone(), semaphore.clone(), hosts.clone());
+    for (i, (url, referer)) in candidates.into_iter().enumerate() {
+        let (client, vault, asking, semaphore, hosts) = (client.clone(), vault.clone(), asking.clone(), semaphore.clone(), hosts.clone());
         tasks.spawn(async move {
             let host = hosts.lock().unwrap().entry(url.host_str().unwrap_or("").to_string()).or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(PER_HOST))).clone();
             let _a = semaphore.acquire_owned().await;
             let _b = host.acquire_owned().await;
-            (i, url.clone(), check(&client, &url, &vault, &referer).await)
+            (i, url.clone(), check(&client, &url, &vault, &referer, &asking).await)
         });
     }
     let mut answers = Vec::new();
