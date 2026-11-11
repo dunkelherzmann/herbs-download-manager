@@ -237,10 +237,10 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Handle long and invalid file names, and keep some disk space free:** characters a file system refuses are replaced, a name or path too long for it is shortened (the extension kept), and a download pauses with a clear message before it would leave the disk nearly full. *Requested 2026-11-10, from studying JDownloader 2.*
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Handle long and invalid file names, and keep some disk space free:** characters a file system refuses are replaced, a name or path too long for it is shortened (the extension kept), and a download pauses with a clear message before it would leave the disk nearly full. *Requested 2026-11-10, from studying JDownloader 2.* Done in #120: every name is fitted in the core (all three platforms), and downloads and streams stop with 128 MB left, keeping what they have. Checked by a test that fills a pretended disk mid-download and resumes, and by name tests.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [ ] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.*
   - [ ] Mac
   - [ ] Linux

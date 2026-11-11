@@ -521,6 +521,8 @@ impl Manager {
             Some(section) => name.map(|n| crate::media::section_name(&n, section)),
             None => name,
         };
+        // A stream's name is fitted now: it's joined under it at the end (§5.6).
+        let name = if stream { name.map(|n| crate::names::fit(&new.folder, &n)) } else { name };
         let dest = name.as_ref().filter(|_| stream).map(|n| new.folder.join(n));
         let id = {
             let mut slots = self.inner.slots.lock().unwrap();

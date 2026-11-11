@@ -530,6 +530,8 @@ struct Job {
     changed: Notify,
     inbox: Arc<Mutex<Vec<Command>>>,
     last_reason: Mutex<Option<String>>,
+    /// When the disk's free space was last looked at (§9: a download never fills it).
+    space_checked: Mutex<Instant>,
     fatal: Mutex<Option<String>>,
     stop_tx: watch::Sender<u8>,
     stop: watch::Receiver<u8>,
@@ -1062,6 +1064,7 @@ impl Job {
             changed: Notify::new(),
             inbox: control.inbox.clone(),
             last_reason: Mutex::new(None),
+            space_checked: Mutex::new(Instant::now()),
             fatal: Mutex::new(None),
             stop,
             stop_tx,
@@ -1544,6 +1547,18 @@ impl Job {
 
     /// Runs every `tick`: handles commands, measures speeds, hands slow connections' ranges to faster sources.
     fn tick(self: &Arc<Self>) {
+        // Every few seconds: stop before the disk is full (its file grows as it's written: holes take no space).
+        {
+            let mut at = self.space_checked.lock().unwrap();
+            if at.elapsed() >= Duration::from_secs(5) {
+                *at = Instant::now();
+                drop(at);
+                if let Some(msg) = self.state.dest.parent().and_then(crate::disk::nearly_full) {
+                    self.fail(msg);
+                    return;
+                }
+            }
+        }
         let commands: Vec<Command> = std::mem::take(&mut *self.inbox.lock().unwrap());
         for command in commands {
             match command {
@@ -1921,6 +1936,8 @@ pub fn part_path(dest: &Path) -> PathBuf {
 /// same file starting together never pick the same name: one that loses the race takes the next number. Once its
 /// `.hdpart` exists no other download can claim the name, so checking the finished name after creating it is enough.
 fn claim_path(folder: &Path, name: &str) -> std::io::Result<(PathBuf, File)> {
+    // A name every system takes, short enough for this folder (§5.6).
+    let name = &crate::names::fit(folder, name);
     // On Windows a file that another download is deleting or renaming lingers "delete pending" for a moment, and
     // creating that name meanwhile fails with access denied rather than "already exists". That passes within
     // milliseconds; an access denied that lasts is a folder that can't be written, and is reported as such.

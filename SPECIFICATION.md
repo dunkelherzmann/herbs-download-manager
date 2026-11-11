@@ -222,6 +222,12 @@ every link they contain.
 
 ### 5.6 A name in use
 
+**Names every system takes.** Whatever names a file (its server, its page, the extension or the user), the name is
+fitted before the file is made: characters some system refuses (`/ \ : * ? " < > |` and control characters) become
+`_`, leading dots and trailing dots and spaces go, a Windows device name (`CON`, `NUL`, `COM1`…) gets `_` after it,
+and a name longer than 230 bytes (room for " (2)" and the part file's suffix within every system's 255) is
+shortened before its extension, which is kept. On Windows the whole path is also kept under 250 characters.
+
 Whenever a download is added (New Download, Add Links, Import, clipboard, drop, Batch), a **different** file with
 the same name — a download in the list (finished, or unfinished with another size) or a file in the folder — asks:
 
@@ -363,6 +369,11 @@ the file, that mirror becomes its link.
 - A download fails only when no source is left working, and says why ("All sources failed: 404 Not Found").
 
 ## 8. Connections and segments
+
+- **Disk space:** a download starts only when its file fits with 128 MB to spare, and while it runs the disk is looked
+  at every few seconds: when less than 128 MB is free, it stops ("The disk is nearly full (96 MB free): free some
+  space, then Resume"), keeping what it has, and Resume carries on. A stream is checked the same way before and
+  between its pieces.
 
 - **Dynamic segmentation**: a download starts with one connection over the whole file. When the size is known and
   ranges work, more connections open up to the limit; each new or freed connection takes the second half of the

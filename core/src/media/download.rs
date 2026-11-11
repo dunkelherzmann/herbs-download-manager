@@ -632,7 +632,24 @@ async fn fetch_all(
         });
     }
     let mut failure = None;
+    // Every few seconds, and before the first piece: stop before the disk is full; the pieces in are kept.
+    let mut checked: Option<std::time::Instant> = None;
+    let full = |checked: &mut Option<std::time::Instant>| {
+        if checked.is_some_and(|c| c.elapsed() < Duration::from_secs(5)) {
+            return None;
+        }
+        *checked = Some(std::time::Instant::now());
+        crate::disk::nearly_full(parts)
+    };
+    if let Some(msg) = full(&mut checked) {
+        tasks.abort_all();
+        return Err(Halt::Failed(msg));
+    }
     while let Some(result) = tasks.join_next().await {
+        if let Some(msg) = full(&mut checked) {
+            tasks.abort_all();
+            return Err(Halt::Failed(msg));
+        }
         match result {
             Ok(Fetch::Done) => {
                 // The size, estimated from the pieces so far (a live recording's keeps growing: none).

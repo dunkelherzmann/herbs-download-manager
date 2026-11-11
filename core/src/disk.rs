@@ -5,7 +5,8 @@
 use std::path::Path;
 
 /// Room left beyond the file itself, for the system and other programs.
-const MARGIN: u64 = 64 * 1024 * 1024;
+/// Space always left free on a disk, so the system and other apps aren't starved (as JDownloader keeps 128 MB).
+pub const MARGIN: u64 = 128 * 1024 * 1024;
 /// FAT32's largest file: 4 GiB − 1.
 pub const FAT32_LIMIT: u64 = (4 << 30) - 1;
 
@@ -30,7 +31,20 @@ pub fn volume_of(path: &Path) -> Option<Volume> {
     while !p.exists() {
         p = p.parent()?;
     }
-    probe(p)
+    let mut v = probe(p)?;
+    let pretend = FREE_FOR_TESTS.load(std::sync::atomic::Ordering::SeqCst);
+    if pretend != u64::MAX {
+        v.available = pretend;
+    }
+    Some(v)
+}
+
+static FREE_FOR_TESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Tests: pretend every disk has this much free space (None: the real amount).
+#[doc(hidden)]
+pub fn pretend_free_space(bytes: Option<u64>) {
+    FREE_FOR_TESTS.store(bytes.unwrap_or(u64::MAX), std::sync::atomic::Ordering::SeqCst);
 }
 
 /// Why a file of `size` bytes can't go into `folder`, or `None` when it fits (or the system can't tell).
@@ -51,6 +65,15 @@ pub fn space_problem(folder: &Path, size: u64) -> Option<String> {
         ));
     }
     None
+}
+
+/// While downloading: why to stop when the folder's disk is nearly full (less than MARGIN free), so a download never
+/// fills it. What's downloaded is kept, and Resume carries on once there's room.
+pub fn nearly_full(folder: &Path) -> Option<String> {
+    let v = volume_of(folder)?;
+    (v.available < MARGIN).then(|| {
+        format!("The disk is nearly full ({} free): free some space, then Resume", crate::format::bytes(v.available))
+    })
 }
 
 #[cfg(unix)]
