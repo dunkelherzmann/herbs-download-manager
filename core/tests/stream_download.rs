@@ -344,3 +344,30 @@ fn a_section_downloads_only_the_pieces_that_cover_it() {
     wait_for(&m, id, "failed", |s| matches!(s, Status::Failed(r) if r.contains("after the stream ends (0m06s long)")));
     assert!(m.quit(Duration::from_secs(5)));
 }
+
+/// A stream with a mirror (Herbert, 2026-11-11: a working mirror didn't help a failed stream): when the link's
+/// playlist fails, the mirror's stream is downloaded instead, and the mirror becomes the download's link.
+#[test]
+fn a_stream_whose_link_fails_comes_from_its_mirror() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let good = rt.block_on(MockServer::start()).unwrap();
+    let bad = rt.block_on(MockServer::start()).unwrap();
+    serve(&good, "h264-ts", None);
+    // The link's server refuses every piece (403), as a guarded stream does.
+    serve(&bad, "h264-ts", None);
+    for piece in ["s0.ts", "s1.ts", "s2.ts"] {
+        bad.update(&format!("/h264-ts/{piece}"), |f| f.requires = vec![("authorization".into(), "Basic nobody".into())]);
+    }
+    let dir = folder("stream-mirror");
+    let m = Manager::open(&dir).unwrap();
+    let (link, mirror) = (bad.url("/h264-ts/index.m3u8"), good.url("/h264-ts/index.m3u8"));
+    let id = m.add(NewDownload { url: link.clone(), mirrors: vec![mirror.clone()], folder: dir.join("files"), connections: 4, start: true, stream: true, ..NewDownload::default() });
+    wait_for(&m, id, "finished", |s| *s == Status::Finished);
+    assert_eq!(std::fs::read(dir.join("files/h264-ts.mp4")).unwrap(), joined_directly("h264-ts", &dir));
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row.url, mirror, "the mirror that served it is the link now");
+    // Make Main Link works for a stream too.
+    assert!(m.make_main(id, &link));
+    assert_eq!(m.rows().into_iter().find(|r| r.id == id).unwrap().url, link);
+    assert!(m.quit(Duration::from_secs(5)));
+}

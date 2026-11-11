@@ -20,6 +20,9 @@ use crate::transfer::{self, Control, Outcome, Progress};
 #[derive(Clone)]
 pub struct StreamRequest {
     pub url: String,
+    /// Other links to the same stream (§7): tried in turn when this one's playlist or pieces fail. A stream's pieces
+    /// come from one source at a time (each source cuts its own), so a mirror takes over the whole stream.
+    pub mirrors: Vec<String>,
     pub folder: PathBuf,
     /// The file's name ("video.mp4").
     pub name: String,
@@ -175,10 +178,48 @@ pub async fn download(client: &reqwest::Client, req: StreamRequest, progress: Ar
     *progress.name.lock().unwrap() = Some(req.name.clone());
     // Pausing keeps the pieces already in (a live recording is saved), so Pause never warns of starting over.
     progress.resumable.store(true, Ordering::SeqCst);
-    match run(client, &req, &progress, &stop).await {
-        Ok(outcome) => outcome,
-        Err(reason) => transfer::stop_outcome(&stop).unwrap_or(Outcome::Failed(reason)),
+    // The link first, then each mirror, until one gives the stream; the sources' states show in the Mirrors tab, and
+    // the one that served it becomes the download's link when it stops (as for files).
+    let mut sources: Vec<String> = vec![req.url.clone()];
+    for m in &req.mirrors {
+        if !sources.iter().any(|s| transfer::same_link(s, m)) {
+            sources.push(m.clone());
+        }
     }
+    let show = |states: &[transfer::SourceStatus]| {
+        *progress.sources.lock().unwrap() = sources
+            .iter()
+            .zip(states)
+            .map(|(url, status)| transfer::SourceInfo { url: url.clone(), status: status.clone(), enabled: true, active: 0, speed: 0, bytes: 0 })
+            .collect();
+    };
+    let mut states = vec![transfer::SourceStatus::Checking; sources.len()];
+    show(&states);
+    let mut first_failure = None;
+    for (i, url) in sources.iter().enumerate() {
+        let attempt = StreamRequest { url: url.clone(), ..req.clone() };
+        states[i] = transfer::SourceStatus::Working;
+        show(&states);
+        match run(client, &attempt, &progress, &stop).await {
+            Ok(outcome) => {
+                if let Some(s) = progress.sources.lock().unwrap().get_mut(i) {
+                    s.bytes = progress.downloaded.load(Ordering::SeqCst);
+                }
+                return outcome;
+            }
+            Err(reason) => {
+                if let Some(outcome) = transfer::stop_outcome(&stop) {
+                    return outcome;
+                }
+                states[i] = transfer::SourceStatus::Failed(reason.clone());
+                show(&states);
+                first_failure.get_or_insert(reason);
+                progress.downloaded.store(0, Ordering::SeqCst);
+            }
+        }
+    }
+    let reason = first_failure.unwrap_or_else(|| "No source to download from".into());
+    Outcome::Failed(if sources.len() > 1 { format!("All sources failed: {reason}") } else { reason })
 }
 
 async fn text(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault, dress: Option<&transfer::Dress>) -> Result<String, String> {

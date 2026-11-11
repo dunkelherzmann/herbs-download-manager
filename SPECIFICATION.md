@@ -741,6 +741,10 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   stream's start. DASH: WebVTT kept as one file per language (subtitles inside MP4 pieces aren't read yet). Cues
   lose WebVTT's markup and styling; overlapping ones show on separate lines. A language whose subtitles can't be read
   is left out without failing the video; live recordings and sound only keep none.
+- **A stream's mirrors:** a stream download tries its link first, then each mirror in turn, until one gives the
+  stream; its pieces all come from that one source (each source cuts its own), so a mirror takes over the whole
+  stream rather than sharing it. The Mirrors tab shows each one's state, the one that served it becomes the link
+  (as for files, §7.3), and Make Main Link works for streams too.
 - **A section of a long video:** the extension's **Download Section…** (under ▾, HLS streams) asks **From** and
   **To** (hours, minutes and seconds; To filled in with its length, From with 0:00:00) and downloads only the pieces
   that cover that part, joined into one MP4 as a whole stream is, never re-encoded: the file starts and ends on the

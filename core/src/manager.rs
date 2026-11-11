@@ -602,6 +602,7 @@ impl Manager {
             };
             let stream = e.stream.then(|| crate::media::download::StreamRequest {
                 url: e.url.clone(),
+                mirrors: e.mirrors.clone(),
                 folder: e.folder.clone(),
                 name: e.name.clone().unwrap_or_else(|| crate::media::download::stream_name(&e.url)),
                 connections: e.connections,
@@ -1667,7 +1668,7 @@ impl Manager {
         {
             let mut slots = self.inner.slots.lock().unwrap();
             let Some(slot) = slots.iter_mut().find(|s| s.entry.id == id) else { return false };
-            if slot.entry.stream || !slot.entry.mirrors.iter().any(|m| transfer::same_link(m, url)) {
+            if !slot.entry.mirrors.iter().any(|m| transfer::same_link(m, url)) {
                 return false;
             }
             let new = slot.entry.mirrors.iter().find(|m| transfer::same_link(m, url)).cloned().unwrap_or_default();

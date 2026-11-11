@@ -77,4 +77,8 @@ No bugs reported yet.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **A stream kept failing although a working mirror was added, and Make Main Link did nothing for it.** *Reported 2026-11-11.* Mac, Linux, Windows. Found: a stream download read only its link; its mirrors were listed but never tried, and Make Main Link refused streams. Now a stream tries its link, then each mirror, until one gives the stream (its pieces come from that one source), the one that served it becomes the link, and Make Main Link works for streams.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
 
