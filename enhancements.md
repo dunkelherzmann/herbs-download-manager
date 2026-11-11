@@ -233,7 +233,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.*
+- [ ] **Use the system's proxy, if there is one:** downloads, checks and mirrors go through the proxy the system is set to use (a fixed proxy or an automatic setup script), and go direct when there's none. *Requested 2026-11-10, from studying JDownloader 2.* Built in #119: Linux asks the desktop for each address (GNOME's settings and automatic setup scripts, through the portal); the Mac and Windows follow their fixed proxy settings. Not yet: automatic setup scripts (PAC) on the Mac and Windows. A core test proves requests go through the proxy named; no machine's real proxy settings were changed to try it.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows

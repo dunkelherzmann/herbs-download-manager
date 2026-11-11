@@ -95,6 +95,12 @@ fn main() -> gtk::glib::ExitCode {
             window.present();
             return;
         }
+        // §9: the system's proxy for each address, as the desktop sets it (GNOME's settings, automatic setup scripts,
+        // the environment), asked through GIO (the desktop's portal, in the Flatpak). Set before the Manager makes
+        // its client.
+        hd_core::http::set_proxy_resolver(std::sync::Arc::new(|url| {
+            gtk::gio::ProxyResolver::default().lookup(url.as_str(), gtk::gio::Cancellable::NONE).ok()?.first().map(|p| p.to_string())
+        }));
         match hd_core::manager::Manager::open(&data_folder()) {
             Ok(manager) => {
                 // A test copy never fills the desktop's Trash.

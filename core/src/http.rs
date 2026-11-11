@@ -12,10 +12,42 @@ pub fn client() -> reqwest::Client {
 
 fn builder() -> reqwest::ClientBuilder {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    reqwest::Client::builder()
+    let b = reqwest::Client::builder()
         .http1_only()
         .user_agent(concat!("HerbsDownloadManager/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(30));
+    // The app's own way to find the system's proxy for each address, when it set one (the Linux app asks the
+    // desktop, which knows GNOME's settings and automatic setup scripts); otherwise the client reads the system's
+    // fixed proxy settings itself (macOS, Windows) and the usual environment variables.
+    match proxy_resolver() {
+        Some(resolve) => b.proxy(reqwest::Proxy::custom(move |url| resolve(url).and_then(|p| reqwest::Url::parse(&p).ok()))),
+        None => b,
+    }
+}
+
+/// Finds the proxy for an address: its URL ("http://proxy:8080", "socks5://…"), or None to connect directly.
+pub type ProxyResolver = std::sync::Arc<dyn Fn(&reqwest::Url) -> Option<String> + Send + Sync>;
+
+fn resolver_cell() -> &'static std::sync::Mutex<Option<ProxyResolver>> {
+    static CELL: std::sync::OnceLock<std::sync::Mutex<Option<ProxyResolver>>> = std::sync::OnceLock::new();
+    CELL.get_or_init(Default::default)
+}
+
+fn proxy_resolver() -> Option<ProxyResolver> {
+    resolver_cell().lock().unwrap().clone()
+}
+
+/// Sets how the system's proxy is found for each address (§9): call it before opening the Manager, whose client is
+/// made once. "direct://" and empty answers connect directly.
+pub fn set_proxy_resolver(resolve: ProxyResolver) {
+    let wrapped: ProxyResolver = std::sync::Arc::new(move |url: &reqwest::Url| {
+        // A proxy is for the internet: this computer's own servers are always reached directly.
+        if url.host_str().is_some_and(|h| h == "localhost" || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())) {
+            return None;
+        }
+        resolve(url).filter(|p| !p.is_empty() && !p.starts_with("direct:"))
+    });
+    *resolver_cell().lock().unwrap() = Some(wrapped);
 }
 
 /// An internet address family: IPv4 or IPv6.

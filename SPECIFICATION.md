@@ -429,6 +429,14 @@ hand-written list alone until it's changed there.
   the new password blank removes it, after a confirmation, and stores them as plain text. On Linux the list is a
   group in Settings itself.
 
+### 9.2 The system's proxy
+
+Every request goes through the proxy the system is set to use, and directly when there is none; this computer's own
+servers are always reached directly. On Linux the app asks the desktop for each address (GIO, through the desktop's
+portal in the Flatpak), so GNOME's settings, automatic setup scripts and the usual environment variables all count.
+On the Mac and Windows the system's fixed proxy settings (and the environment variables) are followed; their
+automatic setup scripts (PAC) aren't read yet. HTTP and SOCKS proxies are both used.
+
 ## 10. Stop and resume
 
 - **Kept awake while downloading:** while any download runs, the computer doesn't go to sleep on its own (the
