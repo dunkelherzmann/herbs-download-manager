@@ -46,11 +46,11 @@ releases.
 - [x] **Download window**: segments bar, Info, Connections, Mirrors and Options tabs. (§6) #14
   The Options tab has the connections picker; the per-download speed limit and checksum come with **Settings**
   and **Checksum verification** below.
-- [x] **Queue**: Start Queue, Stop Queue, downloads at once. (§11) — PR #16
-- [x] **Settings**: the Settings window (⌘,), `settings.json`, speed limits for all downloads and for one. (§9, §6) — PR #23
+- [x] **Queue**: Start Queue, Stop Queue, downloads at once. (§11; PR #16)
+- [x] **Settings**: the Settings window (⌘,), `settings.json`, speed limits for all downloads and for one. (§9, §6; PR #23)
 - [x] **Checksum verification** and checksum-file lookup. (§6, §9 S8) #45
 - [x] **Hover text, accessibility labels and menu commands on every control.** (§3, §4) #47: `scripts/test.sh` runs an audit of every window (`--a11y-report`).
-- [x] **App icon** in the Mac, Linux and Windows formats. (§1) — PR #18 (the Linux and Windows apps use it when they are built)
+- [x] **App icon** in the Mac, Linux and Windows formats. (§1; PR #18; the Linux and Windows apps use it when they are built)
 - [x] **Feature tests** driving the app's own commands against the mock server, results per feature. (all) #49: `tests/features.scenario`, run by `macos/scripts/features.sh` (also in `scripts/test.sh`).
 - [x] **Free space check** before a download starts, and the FAT32 4 GB warning. (enhancements.md)
 - [x] **Checksums the server announces** (`Digest`, `Repr-Digest`, `Content-MD5`, `x-goog-hash`). (§6, enhancements.md)
