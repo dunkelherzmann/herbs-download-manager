@@ -1,4 +1,4 @@
-# Herb's Download Manager — Specification
+# Herb's Download Manager: specification
 
 Herb's Download Manager (Herb's DM for short, where space is tight, such as the macOS menu bar) is a download manager for macOS, Linux and Windows. It downloads one file over many connections
 at once, from one server or from several mirrors of the same file, and stops and resumes without losing what it has.
@@ -232,7 +232,7 @@ and a name longer than 230 bytes (room for " (2)" and the part file's suffix wit
 shortened before its extension, which is kept. On Windows the whole path is also kept under 250 characters.
 
 Whenever a download is added (New Download, Add Links, Import, clipboard, drop, Batch), a **different** file with
-the same name — a download in the list (finished, or unfinished with another size) or a file in the folder — asks:
+the same name, whether a download in the list (finished, or unfinished with another size) or a file in the folder, asks:
 
 > A different “report.pdf” is already in Downloads. Skip the new link, replace the existing file (it goes to the
 > Trash), or keep both, the new one as “report - kept.pdf”. The one there is 1.0 MB; the new one is 2.4 MB.
@@ -312,7 +312,7 @@ Mirrors can be added at every stage:
 | M3 | After | Add Mirror… on a paused, waiting, failed or finished download: the mirror is saved with the download and used when it resumes or restarts |
 
 | M4 | Any | links dropped on an unfinished download in the list (§2) |
-| M5 | Adding | a link added in any way (New Download, Add Links, clipboard, drop, Batch) that names the same file as an unfinished download — the same file name, and the same size when both are known — becomes that download's mirror instead of a second download; Download also resumes it |
+| M5 | Adding | a link added in any way (New Download, Add Links, clipboard, drop, Batch) that names the same file as an unfinished download (the same file name, and the same size when both are known) becomes that download's mirror instead of a second download; Download also resumes it |
 
 Add Mirror… takes one address per line. A mirror equal to an existing source is ignored. A mirror that turns out
 to be another file is checked and dropped as "Different file" (§7.2), so a wrong match never harms the download.
@@ -629,7 +629,7 @@ The design above comes from studying five download managers on 2026-11-08, and J
 **official site**, **source code** (open-source projects, read in their repositories), or **shipped app** (the
 installed app's resources, read without running it unless the section says it was run).
 
-### Progressive Downloader 10.0.1 (macOS) — main inspiration
+### Progressive Downloader 10.0.1 (macOS), the main inspiration
 
 Sources: shipped app (Info.plist, interface files, English strings); official site macpsd.net (Main Window, Task
 Properties, Link Box, Drag 'n' Drop, Active Hours, F.A.Q. guides).
@@ -656,7 +656,7 @@ Properties, Link Box, Drag 'n' Drop, Active Hours, F.A.Q. guides).
 - Also has torrents, video sites, FTP/SFTP/WebDAV browser and a phone companion (out of scope here).
 - A reputable secondary review (Softpedia) gives the default thread count as 3.
 
-### AB Download Manager 1.11.4 (Windows, macOS, Linux, Android) — UI model
+### AB Download Manager 1.11.4 (Windows, macOS, Linux, Android), the UI model
 
 Sources: source code (github.com/amir1376/ab-download-manager, Apache-2.0); official site abdownloadmanager.com.
 
@@ -679,7 +679,7 @@ Sources: source code (github.com/amir1376/ab-download-manager, Apache-2.0); offi
   overwrite, update the link of the existing item, or show the file. Batch download with `*` wildcards.
 - Queues: maximum concurrent downloads, stop when empty, scheduler (days, start and stop times), shut down when done.
 
-### XDM — Xtreme Download Manager (Windows, macOS, Linux)
+### XDM, Xtreme Download Manager (Windows, macOS, Linux)
 
 Sources: source code (github.com/subhra74/xdm, GPL-3.0; behaviour studied, nothing copied).
 

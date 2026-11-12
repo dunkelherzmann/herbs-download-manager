@@ -279,3 +279,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Plain wording in the explanatory docs:** a pass with the humanizer skill over `README.md`, `HELP.md`, `SPECIFICATION.md` and `scripts/release-notes.md`. *Requested 2026-11-12.* In #132: the spec's title, two sentences and three reference-app headings lost their long dashes. The rest already read plainly.
