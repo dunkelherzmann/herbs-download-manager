@@ -1,6 +1,6 @@
 #!/bin/sh
 # Makes a release of Herb's Download Manager from the commit origin/main is at (Herbert, 2026-11-10: "Create
-# releases for HDM"). Run on the Mac; Linux and Windows build over ssh on linux and windows.
+# releases for HDM"). Run on the Mac; Linux and Windows build over ssh on the Linux and Windows machines.
 #   scripts/release.sh             builds the four files into dist/release-<version>/ and checks each one
 #   scripts/release.sh --publish   then tags v<version> on GitHub and creates the release with them, marked Latest
 # Files: Herbs-Download-Manager-<version>-macOS.zip (the .app, ad-hoc signed, not notarized),
@@ -11,6 +11,13 @@
 # HDM_RELEASE_REF=origin/BRANCH builds a pushed branch instead, to try the files before merging (never with --publish).
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The Linux and Windows machines, by the names ssh knows them under: from the environment, or from an untracked
+# scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or in the main one.
+for hosts in "$ROOT/scripts/hosts.env" "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../scripts/hosts.env"; do
+    if [ -f "$hosts" ]; then . "$hosts"; break; fi
+done
+LINUX_HOST="${HDM_LINUX_HOST:-linux}"
+WINDOWS_HOST="${HDM_WINDOWS_HOST:-windows}"
 PUBLISH=0
 [ "${1:-}" = "--publish" ] && PUBLISH=1
 REF="${HDM_RELEASE_REF:-origin/main}"
@@ -33,10 +40,10 @@ EXTZIP="Herbs-DM-extension-$EXT.zip"
 echo "Release $VERSION from $(git -C "$ROOT" log -1 --format='%h %s' "$COMMIT")"
 
 # Linux and Windows build at the same time as the Mac.
-ssh linux "set -e; cd ~/Projects/herbs-download-manager && git fetch -q origin && rm -rf ~/Projects/wt-hdm-release && git worktree prune && git worktree add -q --detach ~/Projects/wt-hdm-release $COMMIT && cd ~/Projects/wt-hdm-release && sh linux/scripts/build.sh --bundle ~/$LIN && cd ~/Projects/herbs-download-manager && git worktree remove --force ~/Projects/wt-hdm-release" >"$LOGS/linux.log" 2>&1 &
+ssh "$LINUX_HOST" "set -e; cd ~/Projects/herbs-download-manager && git fetch -q origin && rm -rf ~/Projects/wt-hdm-release && git worktree prune && git worktree add -q --detach ~/Projects/wt-hdm-release $COMMIT && cd ~/Projects/wt-hdm-release && sh linux/scripts/build.sh --bundle ~/$LIN && cd ~/Projects/herbs-download-manager && git worktree remove --force ~/Projects/wt-hdm-release" >"$LOGS/linux.log" 2>&1 &
 LINUX=$!
-scp -q "$WT/windows/scripts/release.ps1" windows:hdm-release.ps1
-ssh windows "powershell -NoProfile -ExecutionPolicy Bypass -File hdm-release.ps1 -Commit $COMMIT -Zip $WIN" >"$LOGS/windows.log" 2>&1 &
+scp -q "$WT/windows/scripts/release.ps1" "$WINDOWS_HOST:hdm-release.ps1"
+ssh "$WINDOWS_HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File hdm-release.ps1 -Commit $COMMIT -Zip $WIN" >"$LOGS/windows.log" 2>&1 &
 WINDOWS=$!
 
 failed=0
@@ -52,12 +59,12 @@ if "$WT/macos/scripts/build.sh" --zip >"$LOGS/mac.log" 2>&1; then
 else
     echo "mac: build failed (see $LOGS/mac.log)"; failed=1
 fi
-if wait $LINUX && scp -q "linux:$LIN" "$OUT/"; then
+if wait $LINUX && scp -q "$LINUX_HOST:$LIN" "$OUT/"; then
     echo "linux: $LIN"
 else
     echo "linux: build failed (see $LOGS/linux.log)"; failed=1
 fi
-if wait $WINDOWS && scp -q "windows:$WIN" "$OUT/"; then
+if wait $WINDOWS && scp -q "$WINDOWS_HOST:$WIN" "$OUT/"; then
     echo "windows: $WIN"
 else
     echo "windows: build failed (see $LOGS/windows.log)"; failed=1

@@ -11,7 +11,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   its output.
 
 - GitHub Actions checks every pull request again (free since the repo went public, 2026-11-10;
-  `.github/workflows/build.yml`). Before merging, also check a pushed branch with `scripts/check.sh`, which runs the Mac build and tests here and `cargo test --workspace` on linux and windows, then merge.
+  `.github/workflows/build.yml`). Before merging, also check a pushed branch with `scripts/check.sh`, which runs the Mac build and tests here and `cargo test --workspace` on the Linux and Windows machines (their ssh names come from the untracked `scripts/hosts.env`; see `scripts/hosts.env.example`), then merge.
   Merge only on its exit status 0 and an `ok` line for every machine: never judge it through `| tail`, which
   returns tail's status (#89 merged with Linux and Windows failing, 2026-11-10).
   Merge only when `gh pr checks` shows that every GitHub Actions job passed too: a failing Actions job was missed
@@ -45,7 +45,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   (`~/Projects/wt-hdm-linux-<topic>`, `%USERPROFILE%\Projects\wt-hdm-windows-<topic>`), then remove it. Name it
   after your task: sessions sharing one folder removed it under each other's builds (2026-11-10).
 - Linux: `sh linux/scripts/build.sh [--install]` runs flatpak-builder as the Flathub app `org.flatpak.Builder` (there
-  is no `flatpak-builder` command on linux); Rust comes from the `rust-stable//25.08` SDK extension. For fast
+  is no `flatpak-builder` command on the Linux machine); Rust comes from the `rust-stable//25.08` SDK extension. For fast
   compile loops, run cargo inside the SDK with a kept target folder: `flatpak run --filesystem=home --share=network
   --command=sh org.gnome.Sdk//49 -c "export PATH=/usr/lib/sdk/rust-stable/bin:\$PATH
   CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). See the
@@ -69,7 +69,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   it, and its locked `dist\` .exe leaves the worktree half-deleted. Stop it with master-control's `exec` (`taskkill
   /PID n`) too. `--capture` over ssh leaves combo boxes blank (even S7's): check their values with master-control's
   `screenshot` of the window instead (#76).
-- Windows: `powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). Scripts are blocked on windows, so every `.ps1` runs with `-ExecutionPolicy Bypass`, which lifts the block for that one run without changing the system setting. `--capture
+- Windows: `powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1` (copies the .exe to `dist\` and the Desktop). Scripts are blocked on the Windows machine, so every `.ps1` runs with `-ExecutionPolicy Bypass`, which lifts the block for that one run without changing the system setting. `--capture
   FILE.bmp` draws the window with WM_PRINT, which works over ssh (session 0) where PrintWindow is black; the frame
   comes out black there. Win32 constants missing from the enabled `windows` crate features can be used by value.
   `IsWindowVisible` on a child is false until its top-level window first shows: keep layout state (such as whether
@@ -77,7 +77,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   Win32 controls notify synchronously (setting a ListView checkbox sends LVN_ITEMCHANGED before the call returns),
   so per-window state in a `RefCell` must be borrowed with `try_borrow_mut` in notification handlers; a second
   `borrow_mut` panics, and a `windows_subsystem` app then just vanishes with no message.
-  Paths with "Herb's" in them don't survive `ssh windows '…'`: the apostrophe ends the shell's quoting and
+  Paths with "Herb's" in them don't survive `ssh WINDOWS '…'`: the apostrophe ends the shell's quoting and
   vanishes, so a command made a new "Herbs Download Manager" folder. Put such steps in a `.ps1` (`Join-Path
   $env:LOCALAPPDATA "Herb's Download Manager"`), copy it over with scp and run that.
   A control whose state follows another's text (enabled when the link is a stream) must also be set where the form
@@ -106,7 +106,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   not with curl or `hdm scan` (2026-11-11). The hand-over can be several MB: `hdm`'s native-message limit and the
   control line's `MAX_LINE` must stay above the extension's `SCAN_TEXT_MAX`.
 - **Right after merging a change to `extension/`, run `sh scripts/extension-everywhere.sh`**: it copies the merged
-  version from origin/main into the Downloads folder of the Mac, linux and windows. Merges don't install,
+  version from origin/main into the Downloads folder of the Mac, the Linux machine and the Windows machine. Merges don't install,
   so 1.5–1.10 never reached the Mac's Downloads until he asked where they were (bugs.md, 2026-11-10).
 
 ## Feature tests
