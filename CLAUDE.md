@@ -7,7 +7,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 - The repository is public (since 2026-11-10). Releases: `scripts/release.sh` builds and checks the four files from
   origin/main (HDM_RELEASE_REF=origin/BRANCH to try a branch), and `scripts/release.sh --publish` tags v<version> and
-  publishes the pre-release. On Linux, `flatpak-builder --run` exits 1 even for `true`: judge a check run there by
+  publishes the release, marked Latest (a repo with only pre-releases shows none on its front page). On Linux, `flatpak-builder --run` exits 1 even for `true`: judge a check run there by
   its output.
 
 - GitHub Actions checks every pull request again (free since the repo went public, 2026-11-10;

@@ -2,7 +2,7 @@
 # Makes a release of Herb's Download Manager from the commit origin/main is at (Herbert, 2026-11-10: "Create
 # releases for HDM"). Run on the Mac; Linux and Windows build over ssh on linux and windows.
 #   scripts/release.sh             builds the four files into dist/release-<version>/ and checks each one
-#   scripts/release.sh --publish   then tags v<version> on GitHub and creates the pre-release with them
+#   scripts/release.sh --publish   then tags v<version> on GitHub and creates the release with them, marked Latest
 # Files: Herbs-Download-Manager-<version>-macOS.zip (the .app, ad-hoc signed, not notarized),
 # …-Linux.flatpak (a bundle that installs the GNOME runtime from Flathub), …-Windows.zip (the app and hdm.exe, which
 # must stay side by side: hdm is the browser's native host), and Herbs-DM-extension-<extension version>.zip.
@@ -69,7 +69,7 @@ sed -e "s/VERSION/$VERSION/g" -e "s/EXTENSION/$EXT/g" "$WT/scripts/release-notes
 (cd "$OUT" && shasum -a 256 "$MAC" "$LIN" "$WIN" "$EXTZIP" >SHA256SUMS.txt)
 
 if [ "$PUBLISH" = 1 ]; then
-    gh release create "v$VERSION" --repo dunkelherzmann/herbs-download-manager --target "$COMMIT" --prerelease \
+    gh release create "v$VERSION" --repo dunkelherzmann/herbs-download-manager --target "$COMMIT" --latest \
         --title "Herb's Download Manager $VERSION" --notes-file "$OUT/notes.md" \
         "$OUT/$MAC" "$OUT/$LIN" "$OUT/$WIN" "$OUT/$EXTZIP" "$OUT/SHA256SUMS.txt"
 fi

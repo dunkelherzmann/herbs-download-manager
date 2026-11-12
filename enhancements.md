@@ -280,3 +280,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Plain wording in the explanatory docs:** a pass with the humanizer skill over `README.md`, `HELP.md`, `SPECIFICATION.md` and `scripts/release-notes.md`. *Requested 2026-11-12.* In #132: the spec's title, two sentences and three reference-app headings lost their long dashes. The rest already read plainly.
+- [x] **Releases are full releases, marked Latest,** not pre-releases, so the repository's front page shows them. *Requested 2026-11-12.* `scripts/release.sh --publish` now publishes them that way, and 0.1.132 was changed by hand.
