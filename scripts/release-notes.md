@@ -2,27 +2,23 @@ A download manager for macOS, Linux and Windows. It downloads a file over many c
 
 This is a testing app in early development (0.x), shared as is: no support is promised or given. What's reported and what's done is tracked in [bugs.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/bugs.md) and [enhancements.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/enhancements.md).
 
-## What's new since 0.1.98
+## What's new since 0.1.113
 
-- **One good mirror replaces a bad link.** Every source is asked at once, a server that never answers is given up
-  after 30 seconds, and a link that sends a web page instead of the file is set aside. A mirror that served the file
-  becomes the download's main link, and **Make Main Link** in the Mirrors tab does it by hand.
-- **Links tied to IPv4 or IPv6.** A stream whose links only work over one address family (as some sites tie them to
-  the browser's network) is fetched over that family.
-- **Pages scanned more deeply.** The scan opens embedded players, decodes hidden addresses (script escapes, entities,
-  percent-encoding, base64, packed scripts), lists DASH streams, and reads pages as a browser would. The extension
-  looks through the page as soon as its list opens, with every frame as the browser shows it.
-- **A new look for the extension's list:** each item as a card with its picture and length, a Download button with
-  more choices beside it, and a bar of tools at the bottom with the extension's version. Its toolbar icon is now as
-  big as other extensions' icons.
-- **Download a section of a long video:** Download Section… in the extension (and `hdm add --from --to`) downloads
-  only the part between two times of an HLS stream.
-- **Streams played by embedded players:** the extension hands the app the player's own Referer, so their servers
-  no longer refuse the pieces.
-- **The keyboard in alerts and menus:** on the Mac, the arrow keys and Tab move between an alert's buttons, Return
-  presses the highlighted one and Esc cancels; the extension's ▾ menu answers the arrow keys, Tab, Return and Esc.
-- **Help** opens a guide to the app (⌘?, F1), and **About** shows a link to the project.
-- **Export Links** writes downloads and their mirrors to a file.
+- **Proxies:** the app follows the system's proxy settings, automatic setup scripts (PAC) on the Mac and Windows
+  included. On Linux it asks the desktop for each address. SOCKS proxies work too.
+- **Streams that refused the app:** a stream's pieces are asked for with the same headers the page's player sent, so
+  servers that check them no longer refuse. A stream whose link fails tries its mirrors, and **Make Main Link** works
+  for streams.
+- **Watch the clipboard for links** (Settings, off by default): a copied link opens Add Links.
+- **Keep the computer awake** while downloads run.
+- **File names every system takes:** characters and names that macOS, Linux or Windows refuse are replaced before the
+  file is made. A download stops when less than 128 MB of disk space is left.
+- **Add Links** marks a link that fails as Offline or Needs a sign-in, and leaves it unchecked.
+- **Mirrors:** **Copy Link** in the Mirrors tab. On Linux and Windows, links dropped on a download become its
+  mirrors, and Windows takes links dragged from a browser.
+- **The extension** opens the app in the background when its right-click menu or its Download button is used while
+  the app is closed.
+- **About** shows the app's version on every platform.
 
 ## Install
 
