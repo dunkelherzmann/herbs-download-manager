@@ -281,3 +281,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Windows
 - [x] **Plain wording in the explanatory docs:** a pass with the humanizer skill over `README.md`, `HELP.md`, `SPECIFICATION.md` and `scripts/release-notes.md`. *Requested 2026-11-12.* In #132: the spec's title, two sentences and three reference-app headings lost their long dashes. The rest already read plainly.
 - [x] **Releases are full releases, marked Latest,** not pre-releases, so the repository's front page shows them. *Requested 2026-11-12.* `scripts/release.sh --publish` now publishes them that way, and 0.1.132 was changed by hand.
+- [x] **Release 0.1.132 on GitHub,** with the latest build for each system. *Requested 2026-11-12.* Published as `v0.1.132` from #133's commit with `scripts/release.sh --publish`: the Mac zip, the Linux Flatpak, the Windows zip, extension 1.24 and checksums. Installed on the Mac, Linux and Windows.

@@ -20,8 +20,9 @@ How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
 
 ## Status
 
-A testing app in active development, working on macOS, Linux and Windows. There are no signed releases yet, so you
-build it yourself (below). What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
+A testing app in active development, working on macOS, Linux and Windows. Prebuilt files for all three systems are on the
+[Releases](https://github.com/dunkelherzmann/herbs-download-manager/releases) page; they aren't signed or notarized, and the notes there say how to open
+each. Or build it yourself (below). What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
 [windows/pending.md](windows/pending.md).
 
 ## Command line and MCP server
