@@ -107,6 +107,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   drive the worker and pages over the DevTools protocol (Node's `WebSocket`). Its native-messaging host is still the
   user's real `hdm`, so anything that adds (a Download, the page's button) reaches his running app: check up to the
   click, and test adding with the Node harness or a stand-in page (2026-11-14).
+- Content scripts that wait on `requestAnimationFrame` (the page's download button) never run in the app's built-in
+  browser pane while it's hidden: a page test there timed out. Test them in the headless Edge test copy, moving the
+  pointer with `Input.dispatchMouseEvent` (2026-11-14).
 - Facebook answers a signed-out read with 400 and Instagram sends a page with no video in it, even with a browser's
   User-Agent: try page scans of such sites through the extension (which hands over the signed-in page, every frame),
   not with curl or `hdm scan` (2026-11-11). The hand-over can be several MB: `hdm`'s native-message limit and the
