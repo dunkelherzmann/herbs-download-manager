@@ -593,7 +593,8 @@ downloads to the app. The browser keeps a download the app doesn't take.
   the button's badge says "off"), the media the tab played (§15) and the files found on the page, each as a card,
   and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.25") on the left;
   **Select All**, **Delete All**, **Reload**, **Find Files on This Page** (🔍), the list's **order** and **Open in
-  the side panel** on the right.
+  the side panel** on the right. The list looks like the app (its colors, system blue, monochrome line icons, light
+  and dark), laid out as Video DownloadHelper's.
   - **Select All** (⌘A, Ctrl+A outside a text field) ticks every item's checkbox (each card has one over its
     picture's corner) and then reads **Select None**. While any are ticked, a bar above the tools says how many
     ("3 selected") with **Add to Queue** and **Download**, which add each ticked item as its own Download would (its
@@ -603,18 +604,21 @@ downloads to the app. The browser keeps a download the app doesn't take.
     another page.
   - **Reload** (⌘R, Ctrl+R in the list) loads the tab again, starting the list afresh (deleted items come back), and
     once the page has loaded, looks through it again (Find Files on This Page).
-- **The page's own download button.** On every page and frame, a small button with the app's icon shows in the bottom
-  right corner of the sound, picture or video under the pointer (pictures from 48 × 48 pixels; players' layers over
-  a video don't hide it), and goes 0.8 s after the pointer leaves. Its hover text says "Download this video (sound,
-  picture) with Herb's Download Manager". A click downloads that element's own file at once, opening the app in the
-  background when it isn't running, as the right-click menu does; the page doesn't see the click. A file played from
-  its own address is handed over as it is (a picture keeps its own name; a video or sound follows its site's naming
-  rule). A video played through a `blob:` address is matched against what the tab fetched, as §15 says; with nothing
-  to match the button turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for
-  2 seconds when the app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed
-  shadow root, so the page's styles can't change it. The list
-  looks like the app (its colors, system blue, monochrome line icons, light and dark), laid out as Video
-  DownloadHelper's.
+- **The page's own download button.** On every page and frame, a small button with the app's icon shows in the top
+  right corner of the file under the pointer, and goes 0.8 s after the pointer leaves. Files are: a link to a file
+  (its address ends in a file type the page scan knows, §15, such as `.zip`, `.pdf`, `.dmg`, `.mp4` or `.m3u8`, or
+  the link has `download`), a picture (from 48 × 48 pixels), a picture drawn as an element's background (not the
+  page's own), a video or sound (players' layers over a video don't hide it), and an embedded document (`<embed>`,
+  `<object>`). A link to a file wins over what it holds, so a thumbnail that links to its full picture gives that
+  picture; the button sits in the corner of the bigger of the two, and beside a link too small to hold it. Its hover
+  text says "Download this file (video, sound, picture) with Herb's Download Manager". A click downloads that file at
+  once, opening the app in the background when it isn't running, as the right-click menu does; the page doesn't see
+  the click. A file with its own address is handed over as it is (a picture or another file keeps its own name; a
+  video or sound follows its site's naming rule, which applies to videos, sounds and streams only). A video played
+  through a `blob:` address is matched against what the tab fetched, as §15 says; with nothing to match the button
+  turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for 2 seconds when the
+  app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed shadow root, so the
+  page's styles can't change it.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
   the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none,
   and the rest of its lines (Accept, Accept-Language, Sec-Fetch-*, Sec-Ch-Ua*, its own tokens; not its cookies,

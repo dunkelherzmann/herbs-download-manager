@@ -104,8 +104,8 @@ Open the app once before using it, so it can register itself with your browsers.
   Download or Add to Queue for the ticked items), **Delete All** (clears the list), **Reload** (loads the page again
   and looks through it again), **Find Files on This Page**, the list's order and the side panel. **At least** beside
   "Files on this page" hides files smaller than the size you pick.
-- A small button with the app's icon shows in the corner of a sound, picture or video when you point at it: click it
-  to download that file.
+- A small button with the app's icon shows at the top right of a sound, picture, video or link to a file when you
+  point at it: click it to download that file.
 - Right-click a link, picture, video or page for **Download Now with Herb's Download Manager** and **Add to Queue**.
   When the app isn't open, it opens minimized in the background and takes the link.
 
