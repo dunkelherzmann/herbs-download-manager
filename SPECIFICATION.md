@@ -914,8 +914,8 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   typed JSON or JavaScript under 20 MB (from a copy), that mentions "MPD", and passes the manifests on; the extension
   keeps the newest 30 (4 MB at most) for the tab while it stays on the same site (Instagram's stories change the
   address for each story, and the next ones arrive before they show). The page sees no difference. Manifests are
-  read from the JSON (a reply may start with `for (;;);` or hold one per line), with `<` written `<` or
-  `<`, and each keeps the ids of the post or story holding it and of the objects around it (`pk`, `id`, `code`).
+  read from the JSON (a reply may start with `for (;;);` or hold one per line), with `<` written `\u003C` or
+  `\u003c`, and each keeps the ids of the post or story holding it and of the objects around it (`pk`, `id`, `code`).
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and

@@ -9,7 +9,7 @@
 
   // The manifests in a reply's text, each with the ids of the post or story that holds it (its `pk`, `id` and `code`,
   // and those of the objects around it): from its JSON (Instagram's replies may start with `for (;;);` or hold
-  // several, a line each), else JSON strings holding `<MPD` (written `<` or `<`), else as it is.
+  // several, a line each), else JSON strings holding `<MPD` (written `\u003C` or `\u003c`), else as it is.
   function manifestsIn(text) {
     const found = [];
     if (typeof text !== "string" || !text.includes("MPD")) return found;

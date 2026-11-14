@@ -684,7 +684,7 @@ function manifestsInPage() {
       walk(JSON.parse(t), 0);
       continue;
     } catch {}
-    // In a script's text: a string holding the manifest, its < written as < (or <).
+    // In a script's text: a string holding the manifest, its < written as \u003C (or \u003c).
     for (const m of t.matchAll(/"((?:[^"\\]|\\.)*?(?:\\u003[cC]|<)MPD(?:[^"\\]|\\.)*?)"/g)) {
       try { keep(JSON.parse(`"${m[1]}"`)); } catch {}
     }
