@@ -416,10 +416,7 @@ test("manifests a feed receives in its data replies are listed, and the page's b
   assert.equal(answer.ok, true);
   const add = b.sent.find((m) => m.command === "add");
   assert.equal(add.manifest, manifests[1], "the closest in length");
-  // Another page in the tab forgets them.
-  await Promise.all(b.chrome.tabs.onUpdated.fire(1, { url: "https://www.instagram.com/explore/" }));
-  await b.get("noting");
-  assert.deepEqual(plain(await b.get("keptManifests")(1)), []);
+
 });
 
 test("the page's hook passes on manifests in JSON replies and leaves other replies alone", () => {
@@ -439,5 +436,32 @@ test("the page's hook passes on manifests in JSON replies and leaves other repli
   reply(`for (;;);${JSON.stringify({ data: { items: [{ video_dash_manifest: feedManifest(10, "a").replace(/</g, "\\u003C") }] } })}`.replace(/\\\\u003C/g, "\\u003C"));
   reply(JSON.stringify({ data: { text: "nothing here" } }));
   assert.equal(posted.length, 1);
-  assert.match(posted[0].herbsDmManifests[0], /^<\?xml/);
+  assert.match(posted[0].herbsDmManifests[0].xml, /^<\?xml/);
+  // Instagram's stories: `<` written as a lowercase <, each item with its pk and id, in the user's reel.
+  const story = (pk, seconds) => ({ pk, id: `${pk}_42`, video_dash_manifest: feedManifest(seconds, pk) });
+  const text = JSON.stringify({ data: { reels_media: [{ id: "42", items: [story("4029997378001864916", 13.003), story("4030015634607606450", 13.003)] }] } })
+    .replace(/</g, "\\u003c");
+  reply(text);
+  const [first, second] = posted[1].herbsDmManifests;
+  assert.equal(posted[1].herbsDmManifests.length, 2);
+  assert.ok(first.ids.includes("4029997378001864916") && first.ids.includes("42"), "its own ids and its reel's");
+  assert.ok(second.ids.includes("4030015634607606450"));
+});
+
+test("the page's button tells apart stories of the same length by the id the page's address names", async () => {
+  const STORY = { id: 1, active: true, title: "Stories • Instagram", url: "https://www.instagram.com/stories/someone/4030015634607606450/" };
+  const b = load({ tabs: [STORY] });
+  const a = { xml: feedManifest(13.003, "a"), ids: ["4029997378001864916"] };
+  const c = { xml: feedManifest(13.003, "c"), ids: ["4030015634607606450"] };
+  await b.ask({ type: "page-manifests", manifests: [a, c] }, { tab: STORY });
+  const hints = ["stories", "someone", "4030015634607606450"];
+  await b.ask({ type: "page-button", player: { src: "blob:https://www.instagram.com/9", kind: "video", seconds: 13.0, hints } }, { tab: STORY });
+  assert.equal(b.sent.find((m) => m.command === "add").manifest, c.xml);
+  // Moving to the next story (another address on the same site) keeps them; another site forgets them.
+  await Promise.all(b.chrome.tabs.onUpdated.fire(1, { url: "https://www.instagram.com/stories/someone/4031/" }));
+  await b.get("keeping");
+  assert.equal((await b.get("keptManifests")(1)).length, 2);
+  await Promise.all(b.chrome.tabs.onUpdated.fire(1, { url: "https://www.example.com/" }));
+  await b.get("keeping");
+  assert.equal((await b.get("keptManifests")(1)).length, 0);
 });

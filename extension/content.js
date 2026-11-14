@@ -34,7 +34,9 @@
   // Manifests the page received in its data replies (content-main.js), handed to background.js.
   addEventListener("message", (e) => {
     if (e.source !== window || !e.data || !Array.isArray(e.data.herbsDmManifests)) return;
-    api.runtime.sendMessage({ type: "page-manifests", manifests: e.data.herbsDmManifests.filter((m) => typeof m === "string") }).catch(() => {});
+    const manifests = e.data.herbsDmManifests.filter((m) => m && typeof m.xml === "string")
+      .map((m) => ({ xml: m.xml, ids: (Array.isArray(m.ids) ? m.ids : []).map(String).slice(0, 20) }));
+    if (manifests.length) api.runtime.sendMessage({ type: "page-manifests", manifests }).catch(() => {});
   });
 
   let target = null;
@@ -181,6 +183,22 @@
   addEventListener("resize", () => target && place(), { passive: true });
   document.addEventListener("mouseleave", () => target && hide(false));
 
+  // What the page names around a video, for telling apart videos of the same length: the parts of its address
+  // (`/stories/<user>/<id>/`) and of the links to posts near the video (`/p/<code>/`, `/reel/<code>/`).
+  function hintsFor(el) {
+    const parts = (path) => path.split("/").filter((p) => /^[\w-]{6,}$/.test(p));
+    const hints = new Set(parts(location.pathname));
+    let box = el;
+    for (let up = 0; box && up < 12; up++, box = box.parentElement) {
+      const links = box.querySelectorAll ? box.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/reels/"], a[href*="/videos/"]') : [];
+      if (links.length) {
+        for (const a of [...links].slice(0, 10)) for (const p of parts(new URL(a.href, location.href).pathname)) hints.add(p);
+        break;
+      }
+    }
+    return [...hints].slice(0, 30);
+  }
+
   // Swallowed before the page sees it, so a click doesn't also play, pause or open what's under it.
   for (const type of ["mousedown", "mouseup", "pointerdown", "pointerup", "dblclick"]) {
     button.addEventListener(type, (e) => e.stopPropagation());
@@ -197,6 +215,7 @@
       seconds: el instanceof HTMLMediaElement && Number.isFinite(el.duration) ? el.duration : 0,
       width: el instanceof HTMLVideoElement ? el.videoWidth : 0,
       height: el instanceof HTMLVideoElement ? el.videoHeight : 0,
+      hints: hintsFor(el),
     };
     clearTimeout(resetTimer);
     button.className = "shown busy";
