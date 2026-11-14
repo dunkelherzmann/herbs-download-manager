@@ -591,7 +591,7 @@ downloads to the app. The browser keeps a download the app doesn't take.
 - The toolbar button (its icon drawn without the app icon's margin, so it's as big as other extensions' buttons)
   opens the extension's list: **Take downloads** at the top (a switch: when off, the browser keeps its downloads and
   the button's badge says "off"), the media the tab played (§15) and the files found on the page, each as a card,
-  and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.25") on the left;
+  and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.28") on the left;
   **Select All**, **Delete All**, **Reload**, **Find Files on This Page** (🔍), the list's **order** and **Open in
   the side panel** on the right. The list looks like the app (its colors, system blue, monochrome line icons, light
   and dark), laid out as Video DownloadHelper's.
