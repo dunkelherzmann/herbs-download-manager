@@ -564,8 +564,13 @@ async function itemForPlayer(tab, player) {
   const file = same.sort((a, b) => off(a) - off(b) || (b.seen || 0) - (a.seen || 0))[0];
   if (file) return file;
   const streams = items.filter((i) => STREAMED.includes(i.kind));
-  // A video in the page's data with this length (within 1.5 s), else the stream the list shows first.
   const near = (i) => Math.abs((i.seconds || 0) - player.seconds);
+  // A video in the page's data whose post or story the page names (its address, or the links around the video):
+  // that one (the closest in length when the post holds several).
+  const hints = (player.hints || []).map(String);
+  const named = streams.filter((i) => i.kind === "page-dash" && (i.ids || []).some((id) => hints.includes(id)));
+  if (named.length) return named.sort((a, b) => (player.seconds ? near(a) - near(b) : 0))[0];
+  // Else one with this length (within 1.5 s), else the stream the list shows first.
   const dashed = player.seconds ? streams.filter((i) => i.kind === "page-dash" && near(i) < 1.5).sort((a, b) => near(a) - near(b)) : [];
   return dashed[0] || streams.find((i) => i.kind !== "page-dash" || !player.seconds) || null;
 }
@@ -625,14 +630,21 @@ if (api.webRequest && api.webRequest.onResponseStarted) {
 }
 api.tabs.onRemoved.addListener((id) => {
   probes.delete(id);
-  api.storage.session.remove([`media-${id}`, `removed-${id}`, `manifests-${id}`]).catch(() => {});
+  api.storage.session.remove([`media-${id}`, `removed-${id}`, `manifests-${id}`, `manifests-site-${id}`]).catch(() => {});
 });
-// Another page in the tab: what the last one played goes.
+// Another page in the tab: what the last one played goes. Manifests from the page's data replies stay while the tab
+// stays on the same site: a site that changes its address as you move on (Instagram's stories, one address each)
+// received the next ones' before they show.
 api.tabs.onUpdated.addListener((id, change) => {
   if (change.url) {
     probes.delete(id);
     noting = noting.then(() => setItems(id, [])).catch(() => {});
-    api.storage.session.remove([`removed-${id}`, `manifests-${id}`]).catch(() => {});
+    api.storage.session.remove(`removed-${id}`).catch(() => {});
+    keeping = keeping.then(async () => {
+      const key = `manifests-site-${id}`;
+      const site = (await api.storage.session.get({ [key]: "" }))[key];
+      if (site !== siteOf(change.url)) await api.storage.session.remove([`manifests-${id}`, key]);
+    }).catch(() => {});
   }
 });
 api.tabs.onActivated.addListener(({ tabId }) => {
@@ -641,31 +653,50 @@ api.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 // DASH manifests a page carries in its data instead of loading them (Facebook's reels: "dash_manifest" in the page's
-// JSON): read from the tab's scripts when the list opens, each listed once as a video with its sound.
+// JSON; Instagram's first stories): read from the tab's scripts when the list opens, each listed once as a video with
+// its sound. Each comes with the ids of the post or story that holds it (its `pk`, `id` and `code`), which the page's
+// address or links name, so the page's button can tell apart videos of the same length.
 function manifestsInPage() {
   const found = [];
   const seen = new Set();
-  const keep = (xml) => {
+  const keep = (xml, ids = []) => {
     const text = xml.trim();
     if (!text.includes("<MPD") || text.length > 2 * 1024 * 1024) return;
     const key = text.replace(/\s+/g, "").slice(0, 4000);
     if (seen.has(key)) return;
     seen.add(key);
-    found.push(text);
+    found.push({ xml: text, ids });
+  };
+  const idsOf = (o) => [o.pk, o.id, o.code].filter((v) => typeof v === "string" || typeof v === "number").flatMap((v) => [String(v), String(v).split("_")[0]]);
+  // Every object holding a manifest, with its own ids and those of the objects around it (a carousel's post).
+  const walk = (o, depth, around = []) => {
+    if (!o || typeof o !== "object" || depth > 80 || found.length >= 30) return;
+    const ids = Array.isArray(o) ? around : [...idsOf(o), ...around];
+    for (const v of Array.isArray(o) ? o : Object.values(o)) {
+      if (typeof v === "string" && v.includes("<MPD")) keep(v, ids);
+      else if (v && typeof v === "object") walk(v, depth + 1, ids);
+    }
   };
   for (const script of document.scripts) {
     const t = script.textContent || "";
     if (!t.includes("MPD")) continue;
-    // In JSON: a string holding the manifest, its < written as \u003C.
-    for (const m of t.matchAll(/"((?:[^"\\]|\\.)*?(?:\\u003C|<)MPD(?:[^"\\]|\\.)*?)"/g)) {
+    try {
+      walk(JSON.parse(t), 0);
+      continue;
+    } catch {}
+    // In a script's text: a string holding the manifest, its < written as \u003C (or \u003c).
+    for (const m of t.matchAll(/"((?:[^"\\]|\\.)*?(?:\\u003[cC]|<)MPD(?:[^"\\]|\\.)*?)"/g)) {
       try { keep(JSON.parse(`"${m[1]}"`)); } catch {}
     }
     // As it is.
     for (const m of t.matchAll(/<\?xml[^>]*>\s*<MPD[\s\S]*?<\/MPD>|<MPD[\s\S]*?<\/MPD>/g)) keep(m[0]);
-    if (found.length >= 20) break;
+    if (found.length >= 30) break;
   }
   return found;
 }
+
+// A manifest as kept: its text and the ids of what holds it (a bare text has none).
+const entryOf = (m) => (typeof m === "string" ? { xml: m, ids: [] } : m && typeof m.xml === "string" ? { xml: m.xml, ids: (m.ids || []).map(String) } : null);
 
 // What a manifest says about the video: its length and best picture.
 function describeManifest(xml) {
@@ -677,24 +708,29 @@ function describeManifest(xml) {
   return { seconds, quality: best ? `${best}p` : "", sound: /contentType="audio"|mimeType="audio\//.test(xml), protected: /<ContentProtection/.test(xml) };
 }
 
-// Manifests a page received in its data replies (a feed's reels), kept for the tab until it shows another page: the
-// newest 30, at most 4 MB in all.
+// Manifests a page received in its data replies (a feed's reels, the next stories), kept for the tab until it shows
+// another site: the newest 30, at most 4 MB in all.
 async function keptManifests(tabId) {
   const key = `manifests-${tabId}`;
-  return (await api.storage.session.get({ [key]: [] }))[key];
+  return (await api.storage.session.get({ [key]: [] }))[key].map(entryOf).filter(Boolean);
 }
 let keeping = Promise.resolve();
-function keepManifests(tabId, manifests) {
+function keepManifests(tabId, manifests, url = "") {
   keeping = keeping.then(async () => {
+    const siteKey = `manifests-site-${tabId}`;
+    const site = siteOf(url);
+    if ((await api.storage.session.get({ [siteKey]: "" }))[siteKey] !== site) {
+      await api.storage.session.set({ [`manifests-${tabId}`]: [], [siteKey]: site });
+    }
     const kept = await keptManifests(tabId);
-    const keys = new Set(kept.map(manifestKey));
-    for (const m of manifests) {
-      if (typeof m !== "string" || !m.includes("<MPD") || m.length > 2 * 1024 * 1024 || keys.has(manifestKey(m))) continue;
-      keys.add(manifestKey(m));
-      kept.push(m);
+    const keys = new Set(kept.map((e) => manifestKey(e.xml)));
+    for (const e of manifests.map(entryOf)) {
+      if (!e || !e.xml.includes("<MPD") || e.xml.length > 2 * 1024 * 1024 || keys.has(manifestKey(e.xml))) continue;
+      keys.add(manifestKey(e.xml));
+      kept.push(e);
     }
     let list = kept.slice(-30);
-    while (list.length > 1 && list.reduce((n, m) => n + m.length, 0) > 4 * 1024 * 1024) list = list.slice(1);
+    while (list.length > 1 && list.reduce((n, e) => n + e.xml.length, 0) > 4 * 1024 * 1024) list = list.slice(1);
     await api.storage.session.set({ [`manifests-${tabId}`]: list });
     await countFor(tabId).catch(() => {});
   }).catch(() => {});
@@ -704,7 +740,7 @@ function keepManifests(tabId, manifests) {
 async function pageManifests(tabId) {
   try {
     const [result] = await api.scripting.executeScript({ target: { tabId }, func: manifestsInPage });
-    return (result && result.result) || [];
+    return ((result && result.result) || []).map(entryOf).filter(Boolean);
   } catch {
     return []; // a page the extension may not read (the browser's own pages)
   }
@@ -764,7 +800,7 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       reply({ ok: true });
     } else if (message.type === "page-manifests") {
       // Manifests the page received in its data replies (content-main.js): kept for the tab, as its own videos.
-      if (sender.tab) await keepManifests(sender.tab.id, message.manifests || []);
+      if (sender.tab) await keepManifests(sender.tab.id, message.manifests || [], sender.tab.url);
       reply({ ok: true });
     } else if (message.type === "page-button") {
       // The button on a page's sound, picture or video (content.js): that element's file, downloaded now.
@@ -960,7 +996,7 @@ async function remove(tabId, item) {
 // the videos in the page's own data too.
 async function removeAll(tabId, urls, every = false) {
   const gone = await removedOf(tabId);
-  if (every) for (const manifest of await pageManifests(tabId)) gone.push(manifestKey(manifest));
+  if (every) for (const e of await pageManifests(tabId)) gone.push(manifestKey(e.xml));
   for (const url of urls) if (url && !gone.includes(url)) gone.push(url);
   await api.storage.session.set({ [`removed-${tabId}`]: gone.slice(-400) });
   await (noting = noting.then(async () => {
@@ -977,12 +1013,12 @@ async function listed(tabId, tab, order, page = true) {
   const items = (await itemsOf(tabId)).filter((i) => !i.hidden && !i.removed);
   const gone = await removedOf(tabId);
   const seenKeys = new Set();
-  for (const manifest of [...(page ? await pageManifests(tabId) : []), ...(await keptManifests(tabId))]) {
+  for (const { xml: manifest, ids } of [...(page ? await pageManifests(tabId) : []), ...(await keptManifests(tabId))]) {
     const key = manifestKey(manifest);
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
     const about = describeManifest(manifest);
-    if (!about.protected && !gone.includes(key)) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
+    if (!about.protected && !gone.includes(key)) items.unshift({ kind: "page-dash", manifest, ids, url: "", size: 0, seen: 0, ...about });
   }
   const found = (i) => i.seen || 0;
   if (order === "oldest") return items.sort((a, b) => found(a) - found(b));

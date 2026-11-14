@@ -897,7 +897,9 @@ tab starts a fresh list.
 the next videos before they're shown and play them through one, as TikTok and reels do) by its length (within half a
 second; the closest wins) and picture size, against each file the tab fetched, read from its index in its first
 512 KB with the page's cookies; then the video in the page's data closest to it in length (within 1.5 s); then the
-tab's stream that the list shows first. A file whose link has no file's name in it is listed under its page's title, as the app
+tab's stream that the list shows first. Before length, a video in the page's data whose post or story the page names
+wins: the button hands over the parts of the page's address (`/stories/<user>/<id>/`) and of the links to posts
+around the video (`/p/<code>/`, `/reel/<code>/`), so stories of the same length (many are 15 s) are told apart. A file whose link has no file's name in it is listed under its page's title, as the app
 names it.
 **Download** starts an item at once and says "Downloading"; **Add to Queue** (under ▾) lets it wait its turn. **Sound
 Only** (under ▾, streams) adds just its sound (see Sound only above). A stream is named after
@@ -910,7 +912,10 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   Facebook's feeds load each reel's `video_dash_manifest` through GraphQL as you scroll) are listed the same way: a
   small script in the page's own world (`content-main.js`) reads each XMLHttpRequest text reply, and each fetch reply
   typed JSON or JavaScript under 20 MB (from a copy), that mentions "MPD", and passes the manifests on; the extension
-  keeps the newest 30 (4 MB at most) for the tab until it shows another page. The page sees no difference.
+  keeps the newest 30 (4 MB at most) for the tab while it stays on the same site (Instagram's stories change the
+  address for each story, and the next ones arrive before they show). The page sees no difference. Manifests are
+  read from the JSON (a reply may start with `for (;;);` or hold one per line), with `<` written `\u003C` or
+  `\u003c`, and each keeps the ids of the post or story holding it and of the objects around it (`pk`, `id`, `code`).
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and

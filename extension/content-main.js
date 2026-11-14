@@ -7,19 +7,42 @@
   if (globalThis.__herbsDmManifests) return;
   globalThis.__herbsDmManifests = true;
 
-  // The manifests in a reply's text: JSON strings holding `<MPD` (written `<`), or a manifest as it is.
+  // The manifests in a reply's text, each with the ids of the post or story that holds it (its `pk`, `id` and `code`,
+  // and those of the objects around it): from its JSON (Instagram's replies may start with `for (;;);` or hold
+  // several, a line each), else JSON strings holding `<MPD` (written `\u003C` or `\u003c`), else as it is.
   function manifestsIn(text) {
     const found = [];
     if (typeof text !== "string" || !text.includes("MPD")) return found;
-    for (const m of text.matchAll(/"((?:[^"\\]|\\.)*?(?:\\u003C|<)MPD(?:[^"\\]|\\.)*?)"/g)) {
+    const seen = new Set();
+    const keep = (xml, ids = []) => {
+      const t = xml.trim();
+      const key = `${t.length}:${t.slice(-300)}`;
+      if (!t.includes("<MPD") || t.length > 2 * 1024 * 1024 || seen.has(key) || found.length >= 30) return;
+      seen.add(key);
+      found.push({ xml: t, ids });
+    };
+    const idsOf = (o) => [o.pk, o.id, o.code].filter((v) => typeof v === "string" || typeof v === "number").flatMap((v) => [String(v), String(v).split("_")[0]]);
+    const walk = (o, depth, around) => {
+      if (!o || typeof o !== "object" || depth > 80 || found.length >= 30) return;
+      const ids = Array.isArray(o) ? around : [...idsOf(o), ...around];
+      for (const v of Array.isArray(o) ? o : Object.values(o)) {
+        if (typeof v === "string" && v.includes("<MPD")) keep(v, ids);
+        else if (v && typeof v === "object") walk(v, depth + 1, ids);
+      }
+    };
+    for (const part of text.replace(/^\s*for \(;;\);/, "").split(/\r?\n(?=\s*[{[])/)) {
       try {
-        const xml = JSON.parse(`"${m[1]}"`).trim();
-        if (xml.includes("<MPD") && xml.length <= 2 * 1024 * 1024) found.push(xml);
+        walk(JSON.parse(part), 0, []);
       } catch {}
-      if (found.length >= 20) break;
     }
-    if (!found.length) for (const m of text.matchAll(/<MPD[\s\S]*?<\/MPD>/g)) found.push(m[0]);
-    return found.slice(0, 20);
+    if (found.length) return found;
+    for (const m of text.matchAll(/"((?:[^"\\]|\\.)*?(?:\\u003[cC]|<)MPD(?:[^"\\]|\\.)*?)"/g)) {
+      try {
+        keep(JSON.parse(`"${m[1]}"`));
+      } catch {}
+    }
+    if (!found.length) for (const m of text.matchAll(/<MPD[\s\S]*?<\/MPD>/g)) keep(m[0]);
+    return found;
   }
 
   function pass(text) {
