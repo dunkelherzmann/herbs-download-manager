@@ -74,7 +74,11 @@
     const a = el.closest && el.closest("a[href]");
     if (!a || !web(a.href)) return null;
     const kind = kindOfUrl(a.href) || (a.hasAttribute("download") ? "file" : "");
-    return kind ? { el: a, src: a.href, kind, link: true } : null;
+    if (!kind) return null;
+    // Placed by the bigger of the link and what's under the pointer inside it (an inline link around a picture
+    // is only a line of text tall).
+    const area = (e) => { const r = e.getBoundingClientRect(); return r.width * r.height; };
+    return { el: el !== a && area(el) > area(a) ? el : a, src: a.href, kind, link: true };
   }
 
   // A picture drawn as an element's background (not the page's own, nor a gradient).
