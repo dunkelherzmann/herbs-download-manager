@@ -593,7 +593,8 @@ downloads to the app. The browser keeps a download the app doesn't take.
   the button's badge says "off"), the media the tab played (§15) and the files found on the page, each as a card,
   and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.25") on the left;
   **Select All**, **Delete All**, **Reload**, **Find Files on This Page** (🔍), the list's **order** and **Open in
-  the side panel** on the right.
+  the side panel** on the right. The list looks like the app (its colors, system blue, monochrome line icons, light
+  and dark), laid out as Video DownloadHelper's.
   - **Select All** (⌘A, Ctrl+A outside a text field) ticks every item's checkbox (each card has one over its
     picture's corner) and then reads **Select None**. While any are ticked, a bar above the tools says how many
     ("3 selected") with **Add to Queue** and **Download**, which add each ticked item as its own Download would (its
@@ -617,9 +618,7 @@ downloads to the app. The browser keeps a download the app doesn't take.
   through a `blob:` address is matched against what the tab fetched, as §15 says; with nothing to match the button
   turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for 2 seconds when the
   app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed shadow root, so the
-  page's styles can't change it. The list
-  looks like the app (its colors, system blue, monochrome line icons, light and dark), laid out as Video
-  DownloadHelper's.
+  page's styles can't change it.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
   the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none,
   and the rest of its lines (Accept, Accept-Language, Sec-Fetch-*, Sec-Ch-Ua*, its own tokens; not its cookies,
