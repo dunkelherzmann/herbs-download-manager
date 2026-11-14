@@ -69,6 +69,26 @@ ul.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .thumb.sound { display: grid; place-items: center; color: var(--dim); }
 .thumb.sound svg { width: 26px; height: 26px; }
 
+/* Its checkbox, over the picture's top left corner. */
+.card .pick { position: absolute; top: calc(var(--m) + 4px); left: calc(var(--m) + 4px); z-index: 1; width: 18px; height: 18px;
+  border-radius: 4px; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; cursor: pointer; }
+.card .pick input { width: 13px; height: 13px; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.card:has(.pick input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* What's selected, above the tools bar: how many, Add to Queue and Download. */
+.selection { display: flex; align-items: center; gap: var(--s); padding: var(--m) var(--l); border-top: 1px solid var(--line);
+  background: var(--card); font-size: 12px; color: var(--dim); }
+.selection .spacer { flex: 1; }
+.text-button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.text-button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
+.text-button:disabled { opacity: 0.5; cursor: default; }
+
+/* The files found on the page: their heading, and the smallest size shown. */
+.heading { display: flex; align-items: center; gap: var(--m); margin: var(--l) var(--s) var(--m); }
+.heading h2 { flex: 1; margin: 0; }
+.min-size { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--dim); }
+.min-size select.chip { height: 22px; color: var(--fg); }
+
 /* Its controls, at the bottom right. */
 .tools { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s); }
 .chip, .tool { height: 24px; padding: 0 var(--m); border: 1px solid var(--line); border-radius: var(--m); background: var(--control);
@@ -117,7 +137,7 @@ select.chip { max-width: 150px; appearance: none; padding-right: 18px; text-over
 /* The tools bar. */
 footer { display: flex; align-items: center; gap: var(--s); padding: var(--m) var(--m); border-top: 1px solid var(--line); background: var(--bg); }
 footer .spacer { flex: 1; }
-/* The extension's version, in the same type as the "No video?" button. */
+/* The extension's version, in the same type as the footer's text buttons. */
 .version { padding: 0 var(--s); font-size: 12px; color: var(--fg); white-space: nowrap; }
 .icon { position: relative; width: 28px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: var(--m); background: var(--control);
   color: var(--fg); cursor: pointer; display: grid; place-items: center; }

@@ -100,9 +100,12 @@ Open the app once before using it, so it can register itself with your browsers.
 - **Take downloads** (the switch at the top of its list) sends files the browser would download to the app.
 - Its list shows each video, stream, sound and file the page has, with a picture and its length. **Download** starts
   it in the app; **▾** offers Add to Queue, Sound Only, Download Section… and Copy Address; **✏** names it first.
-- The bar at the bottom has **Naming Rules** (how each site's videos are named and saved), **No video?** (loads the
-  page again so its player fetches the video again), **Refresh** (the video playing now), **Find Files on This Page**,
-  the list's order and the side panel.
+- The bar at the bottom has **Naming Rules** (how each site's videos are named and saved), **Select All** (then
+  Download or Add to Queue for the ticked items), **Delete All** (clears the list), **Reload** (loads the page again
+  and looks through it again), **Find Files on This Page**, the list's order and the side panel. **At least** beside
+  "Files on this page" hides files smaller than the size you pick.
+- A small button with the app's icon shows in the corner of a sound, picture or video when you point at it: click it
+  to download that file.
 - Right-click a link, picture, video or page for **Download Now with Herb's Download Manager** and **Add to Queue**.
   When the app isn't open, it opens minimized in the background and takes the link.
 

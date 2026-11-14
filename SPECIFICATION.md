@@ -554,6 +554,13 @@ downloads to the app. The browser keeps a download the app doesn't take.
   shows "!" with the reason in its hover text for 15 seconds: the app isn't running, isn't set up for this browser,
   or the server refused it.
 - Private (incognito) windows' downloads stay in the browser.
+- **Straight to the app.** In Chrome and Edge, the browser's own downloads panel stays hidden while Take downloads
+  is on (`downloads.setUiOptions`), so a download the app takes never opens it. It shows again while the browser
+  keeps a download (the app isn't running, a private window, a page's own `blob:` or `data:` file) until that
+  download ends, and whenever Take downloads is off. Firefox has no such setting and still shows its panel briefly.
+- **Take downloads** is changed only by its switch: the switch sends its own state (on or off), never "the other
+  one", and the setting is kept in the browser's storage, so reloading a tab, the list or the browser never changes
+  it.
 - Right-clicking a link, picture, video or sound offers **Download Now with Herb's Download Manager** (started at
   once) and **Add to Queue in Herb's Download Manager**. Right-clicking a page whose tab played media also offers
   **Herb's Download Manager: media on this page**, listing them (up to 20, in the list's order, as "name · kind ·
@@ -584,8 +591,28 @@ downloads to the app. The browser keeps a download the app doesn't take.
 - The toolbar button (its icon drawn without the app icon's margin, so it's as big as other extensions' buttons)
   opens the extension's list: **Take downloads** at the top (a switch: when off, the browser keeps its downloads and
   the button's badge says "off"), the media the tab played (§15) and the files found on the page, each as a card,
-  and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.17") on the left; **No video?** (Look Again), **Refresh**,
-  **Find Files on This Page** (🔍), the list's **order** and **Open in the side panel** on the right. The list
+  and a bar of tools at the bottom: **Naming Rules** (⚙) and the extension's version ("Version 1.25") on the left;
+  **Select All**, **Delete All**, **Reload**, **Find Files on This Page** (🔍), the list's **order** and **Open in
+  the side panel** on the right.
+  - **Select All** (⌘A, Ctrl+A outside a text field) ticks every item's checkbox (each card has one over its
+    picture's corner) and then reads **Select None**. While any are ticked, a bar above the tools says how many
+    ("3 selected") with **Add to Queue** and **Download**, which add each ticked item as its own Download would (its
+    site's rule still names it; one that asks for a name or copies its address is downloaded as it is).
+  - **Delete All** takes every item off the list: what the tab played, the videos in the page's data and the files
+    found on the page. They stay off while the tab shows the page (a scan doesn't list them again) until Reload or
+    another page.
+  - **Reload** (⌘R, Ctrl+R in the list) loads the tab again, starting the list afresh (deleted items come back), and
+    once the page has loaded, looks through it again (Find Files on This Page).
+- **The page's own download button.** On every page and frame, a small button with the app's icon shows in the bottom
+  right corner of the sound, picture or video under the pointer (pictures from 48 × 48 pixels; players' layers over
+  a video don't hide it), and goes 0.8 s after the pointer leaves. Its hover text says "Download this video (sound,
+  picture) with Herb's Download Manager". A click downloads that element's own file at once, opening the app in the
+  background when it isn't running, as the right-click menu does; the page doesn't see the click. A file played from
+  its own address is handed over as it is (a picture keeps its own name; a video or sound follows its site's naming
+  rule). A video played through a `blob:` address is matched against what the tab fetched, as §15 says; with nothing
+  to match the button turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for
+  2 seconds when the app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed
+  shadow root, so the page's styles can't change it. The list
   looks like the app (its colors, system blue, monochrome line icons, light and dark), laid out as Video
   DownloadHelper's.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
@@ -824,8 +851,8 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   one (a playlist with no end), then media from the page's own site (the last two parts of its host, so
   video.example.com counts for www.example.com) before other sites', then in the order found. **Oldest first** and
   **Newest first** go by when each was found. With nothing found yet, the list says "Start the video (and skip any
-  ads), and it shows here" and offers **Look Again**, which loads the page again so its player fetches its media
-  again; whatever the tab finds while the list is open joins it.
+  ads), and it shows here, or press Reload" (Reload, §13, loads the page again so its player fetches its media
+  again); whatever the tab finds while the list is open joins it.
 - **The browser extension's list:** the extension notes what each tab loads that can be downloaded, in the order
   seen: stream playlists (HLS by an `.m3u8` address or an `mpegurl` type; DASH by `.mpd` or `dash+xml`) and whole
   video and sound files (by a `video/` or `audio/` type, or a media file's extension with no type). Left out:
@@ -862,14 +889,12 @@ file with no index, a protected or broken stream) keeps an empty box; sounds hav
 Each item has a **×** in its corner that removes it from the list. It stays out while the tab shows that page, even
 when the page fetches it again; a video read from the page's own data is noted by its manifest. Another page in the
 tab starts a fresh list.
-**Refresh** (in the bar at the bottom) finds what the page plays now, for sites that change videos as you scroll
-and fetch the next ones before they're shown (TikTok, reels): it asks the page's video and sound players what they
-play, and the one playing (the biggest on screen) goes first, marked "Playing now". A player playing a file's own
-address is matched by it (and added if the list didn't have it); one playing through a `blob:` address by its length
-(within half a second; the closest wins) and picture size, against each file's own, read from its index in its
-first 512 KB with the page's cookies. Files no player on the page holds any more leave the list, but only when a
-player was matched: with no match nothing is lost. A file whose link has no file's name in it is listed under its
-page's title, as the app names it.
+**The page's own download button** (§13) finds the file a video plays through a `blob:` address (sites that fetch
+the next videos before they're shown and play them through one, as TikTok and reels do) by its length (within half a
+second; the closest wins) and picture size, against each file the tab fetched, read from its index in its first
+512 KB with the page's cookies; then a video in the page's data by its length (within 1.5 s); then the tab's stream
+that the list shows first. A file whose link has no file's name in it is listed under its page's title, as the app
+names it.
 **Download** starts an item at once and says "Downloading"; **Add to Queue** (under ▾) lets it wait its turn. **Sound
 Only** (under ▾, streams) adds just its sound (see Sound only above). A stream is named after
   its page ("<title>.mp4"), whatever its address; a file after its link, or its page when the link's name has no
@@ -887,6 +912,11 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   address names no type) is listed as that one item.
   - **From the browser:** the extension's list looks through the page as soon as it opens (and in the side panel,
     whenever its tab shows another page), so nothing has to be played first; **Find Files on This Page** looks again.
+    Every kind of file it can download is listed (videos, streams, sounds, pictures, archives, documents,
+    programs, and anything else a server sends as a file). The results' heading, "Files on this page", has **At
+    least**, the smallest file to show: Any size (the default), 100 KB, 1 MB, 10 MB, 50 MB, 100 MB, 500 MB or 1 GB,
+    kept for next time; files of that size or bigger show, a file of unknown size always shows, and with all left
+    out the list says "No files of 1 MB or more on this page."
     It hands the app the page as the browser shows it, after its scripts ran: every frame (embedded players
     included), each with the browser's cookies for it, the addresses the frames already fetched, and the browser's
     User-Agent. The app checks what they name with those cookies, the browser's User-Agent and the frame as referer.

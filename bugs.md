@@ -91,3 +91,5 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **"Take downloads" sometimes turned itself off when the tab was reloaded by hand.** *Reported 2026-11-14.* Browser extension (all three systems). It must stay on until it's turned off by hand, through tab reloads. Found: the switch sent "toggle", which flipped the stored setting whatever the switch showed, so a repeated message or one from a list showing an old state turned it off. Not reproduced by hand. Extension 1.25 (#2) sends the switch's own state, so nothing but the switch can change it.
+- [x] **A download the app takes still opened the browser's own downloads panel.** *Reported 2026-11-14, with a picture of Edge's Downloads.* Browser extension (Chrome and Edge, all three systems). With "Take downloads" on, downloads should go straight to Herb's DM. Extension 1.25 (#2) keeps the browser's downloads panel hidden while Take downloads is on (`downloads.setUiOptions`, Chrome and Edge), and shows it while the browser keeps a download (the app closed, a private window, a page's own file). Firefox has no such setting. Edge accepts the call; whether its panel stays shut needs your try.

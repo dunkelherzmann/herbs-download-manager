@@ -1,5 +1,6 @@
-// The toolbar button's list (SPECIFICATION.md §13, §15): whether the browser's downloads go to the app, and the
-// videos and sounds this tab played, each added to the app's queue with a click. background.js does the work.
+// The toolbar button's list (SPECIFICATION.md §13, §15): whether the browser's downloads go to the app, the videos
+// and sounds this tab played and the files found on the page, each added to the app with a click, or several at once
+// by selecting them. background.js does the work.
 
 const api = globalThis.browser ?? chrome;
 const $ = (id) => document.getElementById(id);
@@ -55,17 +56,6 @@ function busy(button, on) {
   button.classList.toggle("busy", on);
 }
 
-// A short word in a button's hover text (and for screen readers), back to its own after 3 s.
-function flash(button, words) {
-  const own = button.title;
-  button.title = words;
-  button.setAttribute("aria-description", words);
-  setTimeout(() => {
-    button.title = own;
-    button.removeAttribute("aria-description");
-  }, 3000);
-}
-
 // Small monochrome icons, drawn for this list (16 × 16, a line in the text's color).
 const ICON = {
   pencil: '<path d="M10.8 2.7l2.5 2.5-7.6 7.6-3.2.7.7-3.2z"/><path d="M9.4 4.1l2.5 2.5"/>',
@@ -98,10 +88,21 @@ let siteAction = "download";
 async function show() {
   const tab = await currentTab();
   if (!tab) return;
-  const state = await ask({ type: "state", tabId: tab.id });
-  $("on").checked = state.on;
+  const state = await ask({ type: "state", tabId: tab.id }).catch(() => null);
+  if (!state) return;
+  // The switch sets "Take downloads" to its own state (never flips it), and isn't redrawn while that's under way.
+  if (!switching) $("on").checked = state.on;
   $("on").onchange = async () => {
-    $("on").checked = (await ask({ type: "toggle", tabId: tab.id })).on;
+    switching = true;
+    const answer = await ask({ type: "set-on", on: $("on").checked, tabId: tab.id }).catch(() => null);
+    switching = false;
+    if (answer) $("on").checked = answer.on;
+  };
+  gone = state.gone || [];
+  $("min-size").value = String(state.minSize || 0);
+  $("min-size").onchange = async () => {
+    await ask({ type: "set-min-size", minSize: Number($("min-size").value) });
+    showFound(tab);
   };
   siteAction = state.action || "download";
   $("rules").onclick = () => ask({ type: "rules", site: state.site }).then(() => window.close());
@@ -116,28 +117,42 @@ async function show() {
   $("panel").onchange = async () => {
     await ask({ type: "set-panel", on: $("panel").checked });
   };
-  // Refresh: what the page plays now goes first, marked "Playing now".
-  $("refresh").onclick = async () => {
-    busy($("refresh"), true);
-    const answer = await ask({ type: "refresh", tabId: tab.id }).catch(() => null);
-    busy($("refresh"), false);
-    if (answer && answer.ok && !answer.playing) flash($("refresh"), "Nothing playing now");
+  // Reload: the tab loads again (the list starts afresh), and once it has, the page is looked through again.
+  $("reload").onclick = async () => {
+    const b = $("reload");
+    b.disabled = true;
+    b.textContent = "Reloading…";
+    $("found").replaceChildren();
+    $("found-heading").hidden = true;
+    $("scan-note").hidden = true;
+    lastFound = [];
+    const loaded = loadedAgain(tab.id);
+    await ask({ type: "look-again", tabId: tab.id });
+    await loaded;
+    b.disabled = false;
+    b.textContent = "Reload";
     shownKey = "";
+    scannedUrl = "";
     show();
   };
-  // Look Again (and "No video?"): the page loads again, so its player fetches its video again.
-  const lookAgain = async (b, label) => {
-    b.disabled = true;
-    b.textContent = "Loading the page again…";
-    await ask({ type: "look-again", tabId: tab.id });
-    setTimeout(() => {
-      b.disabled = false;
-      b.textContent = label;
-    }, 3000);
+  // Select All (Select None once all are), and Delete All: every item off the list.
+  $("select-all").onclick = () => {
+    const boxes = [...document.querySelectorAll(".card .pick input")];
+    const all = boxes.length > 0 && boxes.every((b) => b.checked);
+    for (const b of boxes) b.checked = !all;
+    selectionChanged();
   };
-  $("again").onclick = () => lookAgain($("again"), "Look Again");
-  $("no-video").onclick = () => lookAgain($("no-video"), "No video?");
-  const key = `${tab.id}|${state.order}|${siteAction}|${state.items.map((i) => `${i.playing ? "*" : ""}${i.url || i.manifest.length}`).join("|")}`;
+  $("delete-all").onclick = async () => {
+    const urls = lastFound.map((f) => f.url);
+    $("items").replaceChildren();
+    $("found").replaceChildren();
+    $("found-heading").hidden = true;
+    $("scan-note").hidden = true;
+    $("empty").hidden = false;
+    selectionChanged();
+    await ask({ type: "remove-all", tabId: tab.id, urls });
+  };
+  const key = `${tab.id}|${state.order}|${siteAction}|${state.items.map((i) => i.url || i.manifest.length).join("|")}`;
   if (key === shownKey) return;
   shownKey = key;
   const list = $("items");
@@ -148,9 +163,9 @@ async function show() {
     const facts = item.kind === "page-dash"
       ? [item.sound ? "Video with sound" : "Video", item.quality, length(item.seconds)]
       : [KIND[item.kind], size(item.size)];
-    if (item.playing) facts.unshift("Playing now");
     list.append(row(tab, item, streamed ? tab.title || title(item, tab) : title(item, tab), facts));
   }
+  selectionChanged();
   $("scan").onclick = async () => {
     busy($("scan"), true);
     const note = $("scan-note");
@@ -185,17 +200,8 @@ async function show() {
       note.hidden = false;
       return;
     }
-    const files = answer.found || [];
-    if (!files.length) {
-      note.className = "note";
-      note.textContent = "No files or media found on this page.";
-      note.hidden = false;
-    }
-    $("found-heading").hidden = !files.length;
-    for (const f of files) {
-      const item = { url: f.url, name: f.name, size: f.size || 0, kind: f.stream ? "stream" : "file", stream: f.stream, found: f.kind };
-      found.append(row(tab, item, f.name, [f.kind, size(f.size)]));
-    }
+    lastFound = answer.found || [];
+    showFound(tab);
   };
   // The page is looked through as soon as the list opens (and in the side panel, whenever its tab shows another
   // page), so its files and media are found without playing anything first.
@@ -205,6 +211,82 @@ async function show() {
   }
 }
 let scannedUrl = "";
+// The files the page's last scan found, what was deleted from the list, and whether the switch is being set.
+let lastFound = [];
+let gone = [];
+let switching = false;
+
+// The files found on the page (the search results), without those deleted from the list or smaller than the size
+// chosen beside their heading (a file of unknown size always shows).
+function showFound(tab) {
+  const found = $("found");
+  const note = $("scan-note");
+  found.replaceChildren();
+  const min = Number($("min-size").value) || 0;
+  const files = lastFound.filter((f) => !gone.includes(f.url));
+  const shown = files.filter((f) => !min || !f.size || f.size >= min);
+  $("found-heading").hidden = !files.length;
+  note.hidden = shown.length > 0;
+  note.className = "note";
+  note.textContent = files.length ? `No files of ${$("min-size").selectedOptions[0].text} or more on this page.` : "No files or media found on this page.";
+  for (const f of shown) {
+    const item = { url: f.url, name: f.name, size: f.size || 0, kind: f.stream ? "stream" : "file", stream: f.stream, found: f.kind };
+    found.append(row(tab, item, f.name, [f.kind, size(f.size)]));
+  }
+  selectionChanged();
+}
+
+// Resolves once the tab has loaded again (at most 30 s).
+function loadedAgain(tabId) {
+  return new Promise((done) => {
+    let started = false;
+    const finish = () => {
+      api.tabs.onUpdated.removeListener(watch);
+      clearTimeout(timer);
+      done();
+    };
+    const watch = (id, change) => {
+      if (id !== tabId) return;
+      if (change.status === "loading") started = true;
+      if (change.status === "complete" && started) finish();
+    };
+    const timer = setTimeout(finish, 30000);
+    api.tabs.onUpdated.addListener(watch);
+  });
+}
+
+// The bar of what's selected: how many, Add to Queue and Download; Select All says Select None once all are.
+function selectionChanged() {
+  const boxes = [...document.querySelectorAll(".card .pick input")];
+  const picked = boxes.filter((b) => b.checked);
+  $("selection").hidden = !picked.length;
+  $("selected-count").textContent = `${picked.length} selected`;
+  const all = boxes.length > 0 && picked.length === boxes.length;
+  $("select-all").textContent = all ? "Select None" : "Select All";
+  $("select-all").title = all ? "Select None: untick every item in the list (⌘A, Ctrl+A)" : "Select All: tick every item in the list (⌘A, Ctrl+A)";
+  $("select-all").disabled = !boxes.length;
+  $("delete-all").disabled = !document.querySelector(".card");
+}
+const pickedCards = () => [...document.querySelectorAll(".card")].filter((c) => c.querySelector(".pick input").checked);
+$("download-selected").onclick = () => {
+  for (const card of pickedCards()) card.addNow({ start: true });
+};
+$("queue-selected").onclick = () => {
+  for (const card of pickedCards()) card.addNow({});
+};
+// ⌘A / Ctrl+A selects all (outside a text field), ⌘R / Ctrl+R reloads the tab rather than the list.
+document.addEventListener("keydown", (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+  const typing = /^(INPUT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== "checkbox";
+  const k = e.key.toLowerCase();
+  if (k === "a" && !typing) {
+    e.preventDefault();
+    $("select-all").click();
+  } else if (k === "r") {
+    e.preventDefault();
+    if (!$("reload").disabled) $("reload").click();
+  }
+});
 
 // A stream's quality and sound pickers, when it offers a choice: "As in Settings" first, then each quality (picture
 // lines and bit rate) and each sound language. `chosen()` gives what to send with the stream.
@@ -322,7 +404,16 @@ function row(tab, item, label, facts) {
   const tools = document.createElement("div");
   tools.className = "tools";
   body.append(name, detail, tools);
-  li.append(thumb, body);
+  // Its checkbox, over the picture's corner, for Select All and the selection's Download.
+  const tick = document.createElement("label");
+  tick.className = "pick";
+  tick.title = "Select this item";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.setAttribute("aria-label", `Select ${label}`);
+  box.onchange = selectionChanged;
+  tick.append(box);
+  li.append(tick, thumb, body);
   // Everything that adds it, disabled while it is being added.
   const controls = [];
   const enable = (on) => controls.forEach((c) => { c.disabled = !on; });
@@ -359,6 +450,10 @@ function row(tab, item, label, facts) {
       detail.textContent = (answer && answer.error) || "Herb's Download Manager didn't answer.";
       enable(true);
     }
+  };
+  // The selection's Download and Add to Queue: added as it is (its site's rule still names it).
+  li.addNow = (extra) => {
+    if (!main.disabled) add(extra);
   };
   // A name first: the one it would get, to change, then Download or Add.
   const nameFirst = async (start) => {
@@ -565,9 +660,10 @@ function row(tab, item, label, facts) {
   remove.setAttribute("aria-label", `Remove ${label} from this list`);
   remove.onclick = async () => {
     li.remove();
-    if (item.found) return;
+    selectionChanged();
+    if (item.found) gone.push(item.url);
     await ask({ type: "remove", tabId: tab.id, item: { kind: item.kind, url: item.url, manifest: item.manifest } });
-    if (!document.querySelector("#items li")) $("empty").hidden = false;
+    if (!item.found && !document.querySelector("#items li")) $("empty").hidden = false;
   };
   li.append(remove);
   return li;

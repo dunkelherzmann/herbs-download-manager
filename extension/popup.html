@@ -17,23 +17,42 @@
   <main>
     <ul id="items" class="cards" aria-label="Videos and sounds played on this page"></ul>
     <div id="empty" class="empty" hidden>
-      <p>Nothing played yet. Start the video (and skip any ads), and it shows here.</p>
-      <button id="again" class="text-button" title="Load the page again, so its player fetches its video again">Look Again</button>
+      <p>Nothing played yet. Start the video (and skip any ads), and it shows here, or press Reload.</p>
     </div>
-    <h2 id="found-heading" hidden>Files on this page</h2>
+    <div id="found-heading" class="heading" hidden>
+      <h2>Files on this page</h2>
+      <label class="min-size" title="Smallest file to show in the files found on this page: smaller ones are left out (files of unknown size always show)">
+        <span>At least</span>
+        <select id="min-size" class="chip" aria-label="Smallest file to show">
+          <option value="0">Any size</option>
+          <option value="102400">100 KB</option>
+          <option value="1000000">1 MB</option>
+          <option value="10000000">10 MB</option>
+          <option value="50000000">50 MB</option>
+          <option value="100000000">100 MB</option>
+          <option value="500000000">500 MB</option>
+          <option value="1000000000">1 GB</option>
+        </select>
+      </label>
+    </div>
     <ul id="found" class="cards" aria-label="Files and media found on this page"></ul>
     <p id="scan-note" class="note" hidden></p>
   </main>
+  <div id="selection" class="selection" hidden>
+    <span id="selected-count"></span>
+    <span class="spacer"></span>
+    <button id="queue-selected" class="text-button" title="Add the selected items to the queue, to download in their turn">Add to Queue</button>
+    <button id="download-selected" class="text-button primary" title="Download the selected items now">Download</button>
+  </div>
   <footer>
     <button id="rules" class="icon" title="Naming Rules: how this site's videos are named and saved, and what Download does" aria-label="Naming Rules">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1"/><circle cx="8" cy="8" r="4.6"/></svg>
     </button>
     <span id="version" class="version" title="The extension's version"></span>
     <span class="spacer"></span>
-    <button id="no-video" class="text-button" title="No video? Load the page again, so its player fetches its video again">No video?</button>
-    <button id="refresh" class="icon" title="Refresh: find the video playing now (for sites that change videos as you scroll)" aria-label="Refresh">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M11.8 1.8v2.8H9"/></svg>
-    </button>
+    <button id="select-all" class="text-button" title="Select All: tick every item in the list (⌘A, Ctrl+A)">Select All</button>
+    <button id="delete-all" class="text-button" title="Delete All: take every item off this list (they stay off until Reload or another page)">Delete All</button>
+    <button id="reload" class="text-button" title="Reload: load this tab again and look through it again (⌘R, Ctrl+R)">Reload</button>
     <button id="scan" class="icon" title="Find Files on This Page: look through the page for files and media" aria-label="Find Files on This Page">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.8 3.8"/></svg>
     </button>
