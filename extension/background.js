@@ -564,8 +564,9 @@ async function itemForPlayer(tab, player) {
   if (file) return file;
   const streams = items.filter((i) => STREAMED.includes(i.kind));
   // A video in the page's data with this length (within 1.5 s), else the stream the list shows first.
-  return streams.find((i) => i.kind === "page-dash" && player.seconds && Math.abs((i.seconds || 0) - player.seconds) < 1.5)
-    || streams.find((i) => i.kind !== "page-dash" || !player.seconds) || null;
+  const near = (i) => Math.abs((i.seconds || 0) - player.seconds);
+  const dashed = player.seconds ? streams.filter((i) => i.kind === "page-dash" && near(i) < 1.5).sort((a, b) => near(a) - near(b)) : [];
+  return dashed[0] || streams.find((i) => i.kind !== "page-dash" || !player.seconds) || null;
 }
 
 // How many addresses each tab had read to see whether they're streams (MAYBE_STREAM), at most 20.
@@ -623,14 +624,14 @@ if (api.webRequest && api.webRequest.onResponseStarted) {
 }
 api.tabs.onRemoved.addListener((id) => {
   probes.delete(id);
-  api.storage.session.remove([`media-${id}`, `removed-${id}`]).catch(() => {});
+  api.storage.session.remove([`media-${id}`, `removed-${id}`, `manifests-${id}`]).catch(() => {});
 });
 // Another page in the tab: what the last one played goes.
 api.tabs.onUpdated.addListener((id, change) => {
   if (change.url) {
     probes.delete(id);
     noting = noting.then(() => setItems(id, [])).catch(() => {});
-    api.storage.session.remove(`removed-${id}`).catch(() => {});
+    api.storage.session.remove([`removed-${id}`, `manifests-${id}`]).catch(() => {});
   }
 });
 api.tabs.onActivated.addListener(({ tabId }) => {
@@ -673,6 +674,30 @@ function describeManifest(xml) {
   const widths = [...xml.matchAll(/<Representation[^>]*\swidth="(\d+)"/g)].map((m) => Number(m[1]));
   const best = heights.length ? Math.max(...heights.map((h, i) => Math.min(h, widths[i] || h))) : 0;
   return { seconds, quality: best ? `${best}p` : "", sound: /contentType="audio"|mimeType="audio\//.test(xml), protected: /<ContentProtection/.test(xml) };
+}
+
+// Manifests a page received in its data replies (a feed's reels), kept for the tab until it shows another page: the
+// newest 30, at most 4 MB in all.
+async function keptManifests(tabId) {
+  const key = `manifests-${tabId}`;
+  return (await api.storage.session.get({ [key]: [] }))[key];
+}
+let keeping = Promise.resolve();
+function keepManifests(tabId, manifests) {
+  keeping = keeping.then(async () => {
+    const kept = await keptManifests(tabId);
+    const keys = new Set(kept.map(manifestKey));
+    for (const m of manifests) {
+      if (typeof m !== "string" || !m.includes("<MPD") || m.length > 2 * 1024 * 1024 || keys.has(manifestKey(m))) continue;
+      keys.add(manifestKey(m));
+      kept.push(m);
+    }
+    let list = kept.slice(-30);
+    while (list.length > 1 && list.reduce((n, m) => n + m.length, 0) > 4 * 1024 * 1024) list = list.slice(1);
+    await api.storage.session.set({ [`manifests-${tabId}`]: list });
+    await countFor(tabId).catch(() => {});
+  }).catch(() => {});
+  return keeping;
 }
 
 async function pageManifests(tabId) {
@@ -735,6 +760,10 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       reply({ ok: true });
     } else if (message.type === "set-min-size") {
       await api.storage.local.set({ minSize: Math.max(0, Number(message.minSize) || 0) });
+      reply({ ok: true });
+    } else if (message.type === "page-manifests") {
+      // Manifests the page received in its data replies (content-main.js): kept for the tab, as its own videos.
+      if (sender.tab) await keepManifests(sender.tab.id, message.manifests || []);
       reply({ ok: true });
     } else if (message.type === "page-button") {
       // The button on a page's sound, picture or video (content.js): that element's file, downloaded now.
@@ -944,10 +973,14 @@ async function removeAll(tabId, urls, every = false) {
 // Oldest and Newest go by when each was found.
 async function listed(tabId, tab, order, page = true) {
   const items = (await itemsOf(tabId)).filter((i) => !i.hidden && !i.removed);
-  const gone = page ? await removedOf(tabId) : [];
-  for (const manifest of page ? await pageManifests(tabId) : []) {
+  const gone = await removedOf(tabId);
+  const seenKeys = new Set();
+  for (const manifest of [...(page ? await pageManifests(tabId) : []), ...(await keptManifests(tabId))]) {
+    const key = manifestKey(manifest);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
     const about = describeManifest(manifest);
-    if (!about.protected && !gone.includes(manifestKey(manifest))) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
+    if (!about.protected && !gone.includes(key)) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
   }
   const found = (i) => i.seen || 0;
   if (order === "oldest") return items.sort((a, b) => found(a) - found(b));

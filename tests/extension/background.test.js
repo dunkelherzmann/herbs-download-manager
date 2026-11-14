@@ -396,3 +396,44 @@ test("a player's playlist named by a path part (/m3u8/<id>) goes with the player
   assert.equal(plain(b.sent.at(-1)).referer, "https://player.example.org/e/8");
 });
 
+
+// A DASH manifest as Instagram's feed sends one in its GraphQL replies: its length and best picture.
+const feedManifest = (seconds, id) => `<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT${seconds}S"><Period><AdaptationSet contentType="video"><Representation id="${id}" width="720" height="1280"><BaseURL>https://scontent.cdninstagram.com/${id}.mp4</BaseURL></Representation></AdaptationSet><AdaptationSet contentType="audio"><Representation id="${id}a"><BaseURL>https://scontent.cdninstagram.com/${id}a.mp4</BaseURL></Representation></AdaptationSet></Period></MPD>`;
+const FEED = { id: 1, active: true, title: "Instagram", url: "https://www.instagram.com/" };
+
+test("manifests a feed receives in its data replies are listed, and the page's button picks the one as long as the video", async () => {
+  const b = load({ tabs: [FEED] });
+  const manifests = [feedManifest(44.2, "r1"), feedManifest(44.666, "r2"), feedManifest(15, "r3")];
+  await b.ask({ type: "page-manifests", manifests }, { tab: FEED });
+  await b.ask({ type: "page-manifests", manifests: [manifests[0], "not a manifest"] }, { tab: FEED });
+  const list = await b.get("listed")(1, FEED, "smart", false);
+  assert.deepEqual(plain(list.map((i) => [i.kind, i.seconds]).sort((x, y) => x[1] - y[1])), [["page-dash", 15], ["page-dash", 44.2], ["page-dash", 44.666]], "each once");
+  const answer = await b.ask({ type: "page-button", player: { src: "blob:https://www.instagram.com/1", kind: "video", seconds: 44.6666, width: 720, height: 1280 } }, { tab: FEED });
+  assert.equal(answer.ok, true);
+  const add = b.sent.find((m) => m.command === "add");
+  assert.equal(add.manifest, manifests[1], "the closest in length");
+  // Another page in the tab forgets them.
+  await Promise.all(b.chrome.tabs.onUpdated.fire(1, { url: "https://www.instagram.com/explore/" }));
+  await b.get("noting");
+  assert.deepEqual(plain(await b.get("keptManifests")(1)), []);
+});
+
+test("the page's hook passes on manifests in JSON replies and leaves other replies alone", () => {
+  const fs = require("node:fs");
+  const vm = require("node:vm");
+  const posted = [];
+  class XHR {
+    constructor() { this.listeners = []; this.responseType = ""; }
+    addEventListener(type, f) { this.listeners.push(f); }
+  }
+  XHR.prototype.send = function () { this.listeners.forEach((f) => f()); };
+  const window = { postMessage: (m) => posted.push(m) };
+  const context = vm.createContext({ XMLHttpRequest: XHR, window, location: { origin: "https://www.instagram.com" }, JSON });
+  context.globalThis = context;
+  vm.runInContext(fs.readFileSync(require("node:path").join(__dirname, "../../extension/content-main.js"), "utf8"), context);
+  const reply = (text) => { const x = new XHR(); x.responseText = text; x.send(); };
+  reply(`for (;;);${JSON.stringify({ data: { items: [{ video_dash_manifest: feedManifest(10, "a").replace(/</g, "\\u003C") }] } })}`.replace(/\\\\u003C/g, "\\u003C"));
+  reply(JSON.stringify({ data: { text: "nothing here" } }));
+  assert.equal(posted.length, 1);
+  assert.match(posted[0].herbsDmManifests[0], /^<\?xml/);
+});

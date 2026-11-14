@@ -30,6 +30,12 @@
   const button = root.querySelector("button");
   root.querySelector("img").src = api.runtime.getURL("icons/icon-32.png");
 
+  // Manifests the page received in its data replies (content-main.js), handed to background.js.
+  addEventListener("message", (e) => {
+    if (e.source !== window || !e.data || !Array.isArray(e.data.herbsDmManifests)) return;
+    api.runtime.sendMessage({ type: "page-manifests", manifests: e.data.herbsDmManifests.filter((m) => typeof m === "string") }).catch(() => {});
+  });
+
   let target = null;
   let hideTimer = 0;
   let resetTimer = 0;

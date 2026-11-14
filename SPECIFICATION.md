@@ -892,8 +892,8 @@ tab starts a fresh list.
 **The page's own download button** (§13) finds the file a video plays through a `blob:` address (sites that fetch
 the next videos before they're shown and play them through one, as TikTok and reels do) by its length (within half a
 second; the closest wins) and picture size, against each file the tab fetched, read from its index in its first
-512 KB with the page's cookies; then a video in the page's data by its length (within 1.5 s); then the tab's stream
-that the list shows first. A file whose link has no file's name in it is listed under its page's title, as the app
+512 KB with the page's cookies; then the video in the page's data closest to it in length (within 1.5 s); then the
+tab's stream that the list shows first. A file whose link has no file's name in it is listed under its page's title, as the app
 names it.
 **Download** starts an item at once and says "Downloading"; **Add to Queue** (under ▾) lets it wait its turn. **Sound
 Only** (under ▾, streams) adds just its sound (see Sound only above). A stream is named after
@@ -902,7 +902,11 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   `range`) is never listed (one such piece was a reel's fragments without its beginning or sound). When the list
   opens, the extension also reads the page's scripts for DASH manifests in its data (JSON strings holding `<MPD`,
   as Facebook's reels) and lists each once, first, as "Video with sound · 720p · 2:07" under the page's title; a
-  click hands the manifest to the app.
+  click hands the manifest to the app. Manifests a page receives later in its data replies (Instagram's and
+  Facebook's feeds load each reel's `video_dash_manifest` through GraphQL as you scroll) are listed the same way: a
+  small script in the page's own world (`content-main.js`) reads each XMLHttpRequest text reply, and each fetch reply
+  typed JSON or JavaScript under 20 MB (from a copy), that mentions "MPD", and passes the manifests on; the extension
+  keeps the newest 30 (4 MB at most) for the tab until it shows another page. The page sees no difference.
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
