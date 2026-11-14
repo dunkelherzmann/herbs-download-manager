@@ -19,6 +19,43 @@ async function showState() {
   const on = await isOn();
   await api.action.setBadgeText({ text: on ? "" : "off" });
   await api.action.setTitle({ title: on ? NAME : `${NAME}: the browser keeps its downloads` });
+  await showBrowserDownloads();
+}
+
+// "Take downloads" is changed only by its switch: set to the switch's own state, never flipped, so a message that
+// arrives twice (or from a list that showed an old state) can't turn it off.
+async function setOn(on) {
+  await api.storage.local.set({ on: on !== false });
+  await showState();
+}
+
+// The browser's own downloads panel (Chrome, Edge: `downloads.setUiOptions`) stays hidden while the app takes the
+// downloads, so a download it takes goes straight to it; it shows again while the browser keeps one (the app closed,
+// a private window, a page's own blob: file) until that one ends. Kept in session storage, as the background script
+// can be put to sleep while a download runs.
+const keptKey = "kept-downloads";
+async function keptDownloads() {
+  return (await api.storage.session.get({ [keptKey]: [] }))[keptKey];
+}
+async function showBrowserDownloads() {
+  if (!api.downloads.setUiOptions) return;
+  const shown = !(await isOn()) || (await keptDownloads()).length > 0;
+  await api.downloads.setUiOptions({ enabled: shown }).catch(() => {});
+}
+async function browserKeeps(id) {
+  const kept = await keptDownloads();
+  if (!kept.includes(id)) await api.storage.session.set({ [keptKey]: [...kept, id].slice(-50) });
+  await showBrowserDownloads();
+}
+if (api.downloads.onChanged) {
+  api.downloads.onChanged.addListener(async (delta) => {
+    const state = delta.state && delta.state.current;
+    if (state !== "complete" && state !== "interrupted") return;
+    const kept = await keptDownloads();
+    if (!kept.includes(delta.id)) return;
+    await api.storage.session.set({ [keptKey]: kept.filter((k) => k !== delta.id) });
+    await showBrowserDownloads();
+  });
 }
 
 // A short sign on the button when the app didn't take a download, with the reason in its hover text.
@@ -109,20 +146,30 @@ async function send(url, referer, extra = {}, tabId = -1) {
 
 api.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url;
-  if (!(await isOn()) || item.incognito || item.state !== "in_progress" || !web(url)) return;
+  if (!(await isOn())) return;
+  if (item.incognito || item.state !== "in_progress" || !web(url)) {
+    if (item.state === "in_progress") await browserKeeps(item.id);
+    return;
+  }
   // Paused while the app looks at the link, so neither side downloads it twice. One that finished before it could
   // pause (a small file on a fast line) stays with the browser.
   await api.downloads.pause(item.id).catch(() => {});
   const [paused] = await api.downloads.search({ id: item.id });
   // (Firefox reports a paused download as "interrupted".)
-  if (!paused || paused.state === "complete") return;
+  if (!paused || paused.state === "complete") {
+    await showBrowserDownloads();
+    return;
+  }
   const answer = await send(url, item.referrer);
   const [now] = await api.downloads.search({ id: item.id });
   if (answer && answer.ok) {
     await api.downloads.cancel(item.id).catch(() => {});
     await api.downloads.erase({ id: item.id }).catch(() => {});
   } else {
-    if (now && now.state !== "complete") await api.downloads.resume(item.id).catch(() => {});
+    if (now && now.state !== "complete") {
+      await browserKeeps(item.id);
+      await api.downloads.resume(item.id).catch(() => {});
+    }
     await tell((answer && answer.error) || `${NAME} didn't answer.`);
   }
 });
@@ -136,6 +183,8 @@ async function makeMenu() {
 }
 api.runtime.onInstalled.addListener(() => { makeMenu(); showState(); applyPanel(); });
 api.runtime.onStartup.addListener(() => { makeMenu(); showState(); applyPanel(); });
+// Each time the background script starts (after sleeping too): the browser's downloads panel as the switch says.
+showBrowserDownloads().catch(() => {});
 
 api.contextMenus.onClicked.addListener(async (info) => {
   // A listed item's Download Now (…-now) or Add to Queue (…-queue).
@@ -370,29 +419,13 @@ async function fetchAsPage(url, signal) {
   }
 }
 
-// ---- Refresh: what the page plays now (§15) --------------------------------------------------------------------
+// ---- The button on a page's sounds, pictures and videos (§15) ----------------------------------------------------
 //
-// Sites that change videos as you scroll (TikTok, reels) fetch the next ones before they're shown, and play them
-// through a blob: address, so the list fills with videos that aren't on screen. Refresh asks the page's players
-// what they play: a file's own address, or for a blob: player its length and picture size, matched against the
-// files the tab fetched (their length read from their index, the first bytes). The one playing goes first, marked
-// "Playing now", and files no player on the page holds any more leave the list; with no match nothing is lost.
-
-// Runs in the page: each video and sound element, what it plays and whether it's playing and on screen.
-function playersOnPage() {
-  return [...document.querySelectorAll("video, audio")].map((m) => {
-    const r = m.getBoundingClientRect();
-    const seen = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
-    return {
-      src: m.currentSrc || m.src || "",
-      playing: !m.paused && !m.ended && m.readyState > 2,
-      seconds: Number.isFinite(m.duration) ? m.duration : 0,
-      width: m.videoWidth || 0,
-      height: m.videoHeight || 0,
-      seen,
-    };
-  }).filter((p) => p.src || p.seconds > 0);
-}
+// content.js puts a small Herb's DM button in the corner of a sound, picture or video under the pointer; a click
+// downloads that element's own file. A file it plays from its own address is added as it is. A video played through
+// a blob: address (a stream, or a file fetched by a script, as TikTok's) is matched against what the tab fetched: a
+// file by its length (within half a second; the closest wins) and picture size, read from its index in its first
+// 512 KB with the page's cookies; a video in the page's own data by its length; else the tab's stream.
 
 // Fetches `url` as its page would (the site's cookies and the page as Referer, set by a browser rule for this one
 // address, as a server like TikTok's refuses a file to anyone without its cookie).
@@ -502,60 +535,37 @@ function mp4Facts(b) {
 // Files' lengths and picture sizes (`mp4Facts`), by address; null when unknown.
 const factsOf = new Map();
 
-async function refresh(tabId) {
-  const tab = await api.tabs.get(tabId).catch(() => null);
-  if (!tab) return { ok: false };
-  let players = [];
-  try {
-    const results = await api.scripting.executeScript({ target: { tabId, allFrames: true }, func: playersOnPage });
-    players = results.flatMap((r) => (r && r.result) || []);
-  } catch {
-    return { ok: false, error: "This page can't be read." };
+const STREAMED = ["stream", "dash", "page-dash"];
+
+// The listed item an element of the page plays (`player`: {src, kind, seconds, width, height}), or null.
+async function itemForPlayer(tab, player) {
+  const src = player.src || "";
+  if (web(src)) {
+    // Its own address: a file as it is (a picture, a sound, a video), named by its link.
+    const known = (await itemsOf(tab.id)).find((i) => i.url === src);
+    return known || { url: src, kind: player.kind, size: 0, seen: Date.now(), hidden: false };
   }
+  if (player.kind === "image") return null;
   const page = web(tab.url) ? tab.url : "";
-  // Each file's length and size, read once (in parallel) and kept.
-  const unknown = (await itemsOf(tabId)).filter((i) => (i.kind === "video" || i.kind === "audio") && i.url && !factsOf.has(i.url));
+  const items = await listed(tab.id, tab, await orderSetting());
+  const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url);
+  const unknown = files.filter((f) => !factsOf.has(f.url));
   await Promise.all(unknown.map(async (f) => factsOf.set(f.url, await fileFacts(f.url, page))));
-  if (factsOf.size > 200) factsOf.delete(factsOf.keys().next().value);
-  let playing = null;
-  // Written in turn with what the tab fetches meanwhile.
-  await (noting = noting.then(async () => {
-    const items = await itemsOf(tabId);
-    // A playing file the list doesn't hold yet (fetched before the list started looking): added.
-    for (const p of players) {
-      if (web(p.src) && !items.some((i) => i.url === p.src)) {
-        items.push({ url: p.src, kind: p.width ? "video" : "audio", size: 0, seen: Date.now(), hidden: false });
-      }
-    }
-    const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url && !i.hidden && !i.removed);
-    const close = (a, b) => a > 0 && b > 0 && Math.abs(a - b) < 0.5;
-    // The file a player plays: its own address, else the one as long and as big.
-    const fileOf = (p) => {
-      if (web(p.src)) return files.find((f) => f.url === p.src) || null;
-      const same = files.filter((f) => {
-        const facts = factsOf.get(f.url);
-        return facts && close(facts.seconds, p.seconds)
-          && (!p.width || !facts.width || (facts.width === p.width && facts.height === p.height));
-      });
-      // The closest in length (a player's own length runs a little over its file's: 10.20 s for 10.08), then the newest.
-      const off = (f) => Math.abs(factsOf.get(f.url).seconds - p.seconds);
-      return same.sort((a, b) => off(a) - off(b) || (b.seen || 0) - (a.seen || 0))[0] || null;
-    };
-    // The one playing (the biggest on screen), else the biggest on screen.
-    const ranked = [...players].sort((a, b) => Number(b.playing) - Number(a.playing) || b.seen - a.seen);
-    const held = new Set();
-    for (const p of ranked) {
-      const f = fileOf(p);
-      if (!f) continue;
-      held.add(f);
-      if (!playing && (p.playing || p.seen > 0)) playing = f;
-    }
-    for (const i of items) i.playing = i === playing;
-    // Files no player holds any more go, once the page's players were matched at all.
-    const kept = held.size ? items.filter((i) => !(i.kind === "video" || i.kind === "audio") || held.has(i)) : items;
-    await setItems(tabId, kept);
-  }).catch(() => {}));
-  return { ok: true, playing: !!playing, players: players.length };
+  while (factsOf.size > 200) factsOf.delete(factsOf.keys().next().value);
+  const close = (a, b) => a > 0 && b > 0 && Math.abs(a - b) < 0.5;
+  const same = files.filter((f) => {
+    const facts = factsOf.get(f.url);
+    return facts && close(facts.seconds, player.seconds)
+      && (!player.width || !facts.width || (facts.width === player.width && facts.height === player.height));
+  });
+  // The closest in length (a player's own length runs a little over its file's: 10.20 s for 10.08), then the newest.
+  const off = (f) => Math.abs(factsOf.get(f.url).seconds - player.seconds);
+  const file = same.sort((a, b) => off(a) - off(b) || (b.seen || 0) - (a.seen || 0))[0];
+  if (file) return file;
+  const streams = items.filter((i) => STREAMED.includes(i.kind));
+  // A video in the page's data with this length (within 1.5 s), else the stream the list shows first.
+  return streams.find((i) => i.kind === "page-dash" && player.seconds && Math.abs((i.seconds || 0) - player.seconds) < 1.5)
+    || streams.find((i) => i.kind !== "page-dash" || !player.seconds) || null;
 }
 
 // How many addresses each tab had read to see whether they're streams (MAYBE_STREAM), at most 20.
@@ -679,6 +689,8 @@ async function pageManifests(tabId) {
 function nameFor(item, title) {
   const page = (title || "").trim() || "Video";
   if (["stream", "dash", "page-dash"].includes(item.kind)) return `${page}.mp4`;
+  // A picture or another file: the app names it from its link (and the server's own name).
+  if (item.kind !== "video" && item.kind !== "audio") return null;
   const last = decodeURIComponent(pathOf(item.url).split("/").pop() || "");
   if (MEDIA_EXT.test(last)) return null; // the app names it from the link
   const ext = /webm/.test(item.mime) ? "webm" : item.kind === "audio" ? (/mpeg/.test(item.mime) ? "mp3" : "m4a") : "mp4";
@@ -693,6 +705,7 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
       const order = await orderSetting();
       const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
       reply({ on: await isOn(), items: await listed(message.tabId, tab, order), order, panel: await panelSetting(), panelOffered: !!api.sidePanel,
+              minSize: await minSizeSetting(), gone: (await removedOf(message.tabId)).filter((k) => /^https?:/.test(k)),
               action: (rule && rule.action) || "download", site: tab && web(tab.url) ? new URL(tab.url).hostname.replace(/^www\./, "") : "" });
     } else if (message.type === "name") {
       // The name an item would get, for "Ask for a name first".
@@ -717,15 +730,34 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
     } else if (message.type === "remove") {
       await remove(message.tabId, message.item);
       reply({ ok: true });
-    } else if (message.type === "refresh") {
-      reply(await refresh(message.tabId));
+    } else if (message.type === "remove-all") {
+      await removeAll(message.tabId, message.urls || [], true);
+      reply({ ok: true });
+    } else if (message.type === "set-min-size") {
+      await api.storage.local.set({ minSize: Math.max(0, Number(message.minSize) || 0) });
+      reply({ ok: true });
+    } else if (message.type === "page-button") {
+      // The button on a page's sound, picture or video (content.js): that element's file, downloaded now.
+      const tab = sender.tab;
+      if (!tab) {
+        reply({ ok: false });
+        return;
+      }
+      const item = await itemForPlayer(tab, message.player || {});
+      if (!item) {
+        reply({ ok: false, error: "Nothing to download yet: play it first." });
+        return;
+      }
+      reply(await addItem(tab, item, { start: true, open: true }));
     } else if (message.type === "media-access") {
       // A file's own preview in the list: the browser asks for it as the page would (§15).
       await mediaAccess(message.url, message.page);
       reply({ ok: true });
     } else if (message.type === "look-again") {
-      // The page loads again, so its player fetches its media again and the list fills as it does.
+      // Reload: the page loads again, so its player fetches its media again and the list fills as it does; what was
+      // deleted from the list comes back.
       await setItems(message.tabId, []);
+      await api.storage.session.remove(`removed-${message.tabId}`).catch(() => {});
       await api.tabs.reload(message.tabId).catch(() => {});
       reply({ ok: true });
     } else if (message.type === "preview") {
@@ -753,9 +785,8 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
         if (previews.size > 60) previews.delete(previews.keys().next().value);
       }
       reply(answer || { ok: false });
-    } else if (message.type === "toggle") {
-      await api.storage.local.set({ on: !(await isOn()) });
-      await showState();
+    } else if (message.type === "set-on") {
+      await setOn(message.on);
       await countFor(message.tabId);
       reply({ on: await isOn() });
     } else if (message.type === "scan") {
@@ -792,7 +823,8 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
 async function addItem(tab, item, message) {
   // A file the app found on the page comes with its name; what the tab played is named here, by the site's rule when
   // it has one, or as asked in the list.
-  const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
+  // Naming rules are for a site's videos and sounds: a picture keeps its own name.
+  const rule = tab && item.kind !== "image" ? ruleFor(await rulesSetting(), tab.url) : null;
   // A site's rule wins over the server's own name (Content-Disposition) or the one a page scan found.
   const name = message.name ? cleanName(message.name) : rule ? await ruleName(rule, item, tab) : item.name || nameFor(item, tab && tab.title);
   // Added to the queue; right after opening the app ("Open and Download"), started at once.
@@ -857,6 +889,8 @@ async function ruleName(rule, item, tab) {
 // ---- the list's order, the right-click menu and the side panel (§13, §15) -------------------------------------
 
 const orderSetting = async () => (await api.storage.local.get({ order: "smart" })).order;
+// The smallest file the list shows, in bytes (0: every file); files of unknown size and streams always show.
+const minSizeSetting = async () => (await api.storage.local.get({ minSize: 0 })).minSize;
 const panelSetting = async () => !!api.sidePanel && (await api.storage.local.get({ panel: false })).panel;
 
 // A site's name without its subdomains: the last two labels of the host (www.youtube.com → youtube.com).
@@ -884,12 +918,23 @@ async function remove(tabId, item) {
   if (item.kind === "page-dash" && item.manifest) {
     const gone = await removedOf(tabId);
     gone.push(manifestKey(item.manifest));
-    await api.storage.session.set({ [`removed-${tabId}`]: gone.slice(-40) });
+    await api.storage.session.set({ [`removed-${tabId}`]: gone.slice(-400) });
     return;
   }
+  await removeAll(tabId, [item.url]);
+}
+
+// Delete All (`every`) and × on one: the items go, and a file a scan found (`urls`) stays out of its results while
+// the tab shows the page (its address noted with the removed manifests). Delete All takes every item the tab has,
+// the videos in the page's own data too.
+async function removeAll(tabId, urls, every = false) {
+  const gone = await removedOf(tabId);
+  if (every) for (const manifest of await pageManifests(tabId)) gone.push(manifestKey(manifest));
+  for (const url of urls) if (url && !gone.includes(url)) gone.push(url);
+  await api.storage.session.set({ [`removed-${tabId}`]: gone.slice(-400) });
   await (noting = noting.then(async () => {
     const items = await itemsOf(tabId);
-    for (const i of items) if (i.url === item.url) i.removed = true;
+    for (const i of items) if (every || urls.includes(i.url)) i.removed = true;
     await setItems(tabId, items);
   }).catch(() => {}));
 }
@@ -905,10 +950,8 @@ async function listed(tabId, tab, order, page = true) {
     if (!about.protected && !gone.includes(manifestKey(manifest))) items.unshift({ kind: "page-dash", manifest, url: "", size: 0, seen: 0, ...about });
   }
   const found = (i) => i.seen || 0;
-  // What a Refresh found playing comes first, whatever the order.
-  const first = (sorted) => sorted.sort((a, b) => Number(!!b.playing) - Number(!!a.playing));
-  if (order === "oldest") return first(items.sort((a, b) => found(a) - found(b)));
-  if (order === "newest") return first(items.sort((a, b) => found(b) - found(a)));
+  if (order === "oldest") return items.sort((a, b) => found(a) - found(b));
+  if (order === "newest") return items.sort((a, b) => found(b) - found(a));
   const site = tab ? siteOf(tab.url) : "";
   const rank = (i) => [
     { "page-dash": 0, dash: 0, stream: 1, video: 2, file: 2, audio: 3 }[i.kind] ?? 2,
@@ -916,11 +959,11 @@ async function listed(tabId, tab, order, page = true) {
     i.url && siteOf(i.url) === site ? 0 : i.kind === "page-dash" ? 0 : 1,
     found(i),
   ];
-  return first(items.sort((a, b) => {
+  return items.sort((a, b) => {
     const [x, y] = [rank(a), rank(b)];
     for (let k = 0; k < x.length; k++) if (x[k] !== y[k]) return x[k] - y[k];
     return 0;
-  }));
+  });
 }
 
 // The right-click menu's list of the active tab's media, in the list's order (its first 20; videos a page carries in

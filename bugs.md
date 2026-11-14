@@ -91,3 +91,5 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [ ] **"Take downloads" sometimes turned itself off when the tab was reloaded by hand.** *Reported 2026-11-14.* Browser extension (all three systems). It must stay on until it's turned off by hand, through tab reloads.
+- [ ] **A download the app takes still opened the browser's own downloads panel.** *Reported 2026-11-14, with a picture of Edge's Downloads.* Browser extension (Chrome and Edge, all three systems). With "Take downloads" on, downloads should go straight to Herb's DM.

@@ -37,6 +37,8 @@ function area() {
 
 function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "", cookies = [] } = {}) {
   const sent = [];
+  // Each setUiOptions call's `enabled`: whether the browser's own downloads panel shows.
+  const ui = [];
   const fetches = [];
   const rules = { added: [], removed: [] };
   const menus = new Map();
@@ -53,7 +55,8 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
       onClicked: event(),
     },
     cookies: { getAll: async () => cookies },
-    downloads: { onCreated: event(), pause: async () => {}, resume: async () => {}, cancel: async () => {}, erase: async () => {}, search: async () => [] },
+    downloads: { onCreated: event(), onChanged: event(), pause: async () => {}, resume: async () => {}, cancel: async () => {}, erase: async () => {},
+                 search: async () => [], setUiOptions: async (o) => { ui.push(o.enabled); } },
     runtime: {
       lastError: undefined,
       onInstalled: event(),
@@ -104,14 +107,14 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
   // The background script's own names (functions and top-level constants), by name.
   const get = (name) => vm.runInContext(name, context);
   // A message from the list, as the popup sends it, and the background's answer.
-  const ask = (message) => new Promise((reply) => chrome.runtime.onMessage.fire(message, {}, reply));
+  const ask = (message, sender = {}) => new Promise((reply) => chrome.runtime.onMessage.fire(message, sender, reply));
   // A response the browser saw a tab get, then the background's notes about it settled.
   const respond = async (d) => {
     chrome.webRequest.onResponseStarted.fire({ tabId: 1, statusCode: 200, type: "xmlhttprequest", responseHeaders: [], ...d });
     await get("noting");
   };
   const items = async (tabId = 1) => (await chrome.storage.session.get({ [`media-${tabId}`]: [] }))[`media-${tabId}`];
-  return { chrome, context, get, ask, respond, items, sent, fetches, rules, menus };
+  return { chrome, context, get, ask, respond, items, sent, fetches, rules, menus, ui };
 }
 
 // Response headers as the browser gives them.

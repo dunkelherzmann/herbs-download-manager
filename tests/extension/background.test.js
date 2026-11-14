@@ -230,23 +230,19 @@ test("an MP4's length and picture size are read from its index", () => {
   assert.equal(b.get("mp4Facts")(new Uint8Array(64)), null, "no index: unknown");
 });
 
-test("Refresh puts the video playing now first and drops what the page no longer holds", async () => {
+test("the page's button downloads the element's own file, or matches a blob: video by its length", async () => {
   const lengths = { a: 10, b: 12.5, c: 30 };
   const b = load({
     tabs: [TIKTOK],
     cookies: [{ name: "tt_chain_token", value: "secret" }],
     fetch: (url) => ({ status: 206, body: mp4(lengths[url.split("/")[5]]) }),
-    // A blob: player playing the 12.5-second video, and the next one waiting below it.
-    script: () => [
-      { src: "blob:https://www.tiktok.com/1", playing: true, seconds: 12.52, width: 720, height: 1280, seen: 300000 },
-      { src: "blob:https://www.tiktok.com/2", playing: false, seconds: 30, width: 720, height: 1280, seen: 0 },
-    ],
   });
   await b.chrome.storage.session.set({ "media-1": ["a", "b", "c"].map((n, i) => ({ url: clip(n), kind: "video", size: 33e6, seen: i + 1, hidden: false })) });
-  const answer = await b.ask({ type: "refresh", tabId: 1 });
-  assert.deepEqual(plain(answer), { ok: true, playing: true, players: 2 });
-  const list = await b.get("listed")(1, TIKTOK, "smart", false);
-  assert.deepEqual(list.map((i) => [i.url.split("/")[5], !!i.playing]), [["b", true], ["c", false]], "the 10-second one is no longer on the page");
+  // A blob: player playing the 12.5-second video: that file, started at once and the app opened if need be.
+  const answer = await b.ask({ type: "page-button", player: { src: "blob:https://www.tiktok.com/1", kind: "video", seconds: 12.52, width: 720, height: 1280 } }, { tab: TIKTOK });
+  assert.equal(answer.ok, true);
+  const add = b.sent.find((m) => m.command === "add");
+  assert.deepEqual([add.urls[0], add.queue, add.open], [clip("b"), false, true]);
   // Each file's start was read as its page would ask: the site's cookie and the page as Referer.
   const rule = b.rules.added.find((r) => r.condition.urlFilter === `|${clip("a")}|`);
   assert.deepEqual(plain(rule.action.requestHeaders), [
@@ -256,20 +252,73 @@ test("Refresh puts the video playing now first and drops what the page no longer
   assert.equal(b.fetches.find((f) => f.url === clip("a")).options.headers.Range, "bytes=0-524287");
 });
 
-test("Refresh keeps the list when nothing on the page matches, and adds a file a player plays by its address", async () => {
-  const b = load({
-    tabs: [PAGE],
-    fetch: () => ({ status: 403, body: "" }),
-    script: () => [{ src: "blob:https://www.example.com/1", playing: true, seconds: 8, width: 640, height: 360, seen: 1000 }],
-  });
-  await b.chrome.storage.session.set({ "media-1": [{ url: "https://cdn.example.com/a.mp4", kind: "video", size: 5e6, seen: 1, hidden: false }] });
-  assert.equal((await b.ask({ type: "refresh", tabId: 1 })).playing, false);
-  assert.equal((await b.items()).length, 1, "nothing matched: nothing dropped");
+test("the page's button on a picture or sound hands over its own address, named by its link", async () => {
+  const b = load({ tabs: [PAGE], native: () => ({ ok: true }) });
+  await b.chrome.storage.local.set({ rules: [{ site: "example.com", pattern: "%title", action: "download" }] });
+  await b.ask({ type: "page-button", player: { src: "https://img.example.com/p/harbour.jpg", kind: "image" } }, { tab: PAGE });
+  await b.ask({ type: "page-button", player: { src: "https://cdn.example.com/talk.mp3", kind: "audio", seconds: 60 } }, { tab: PAGE });
+  const [picture, sound] = b.sent.filter((m) => m.command === "add");
+  assert.deepEqual([picture.urls[0], picture.name, picture.stream], ["https://img.example.com/p/harbour.jpg", null, false], "a picture keeps its own name");
+  assert.equal(sound.urls[0], "https://cdn.example.com/talk.mp3");
+  assert.match(sound.name, /^Song.*Band\.mp3$/, "a sound follows the site's rule");
+  // A blob: picture or a video with nothing listed: nothing to hand over.
+  const none = await b.ask({ type: "page-button", player: { src: "blob:https://www.example.com/2", kind: "video", seconds: 8 } }, { tab: PAGE });
+  assert.deepEqual([none.ok, /play it first/.test(none.error)], [false, true]);
+});
 
-  const direct = load({ tabs: [PAGE], script: () => [{ src: "https://cdn.example.com/now.mp4", playing: true, seconds: 8, width: 640, height: 360, seen: 1000 }] });
-  assert.equal((await direct.ask({ type: "refresh", tabId: 1 })).playing, true);
-  const [now] = await direct.items();
-  assert.deepEqual([now.url, now.kind, now.playing], ["https://cdn.example.com/now.mp4", "video", true]);
+test("the page's button on a streamed video takes the tab's stream", async () => {
+  const b = load({ tabs: [PAGE], fetch: () => ({ body: VOD }) });
+  await b.respond({ url: "https://cdn.example.com/v/index.m3u8" });
+  await b.ask({ type: "page-button", player: { src: "blob:https://www.example.com/3", kind: "video", seconds: 95 } }, { tab: PAGE });
+  const add = b.sent.find((m) => m.command === "add");
+  assert.deepEqual([add.urls[0], add.stream], ["https://cdn.example.com/v/index.m3u8", true]);
+});
+
+test("Take downloads is set to the switch's state, never flipped", async () => {
+  const b = load({ tabs: [PAGE] });
+  assert.equal((await b.ask({ type: "set-on", on: true, tabId: 1 })).on, true);
+  assert.equal((await b.ask({ type: "set-on", on: true, tabId: 1 })).on, true, "the same message twice leaves it on");
+  assert.equal((await b.ask({ type: "set-on", on: false, tabId: 1 })).on, false);
+  assert.equal((await b.ask({ type: "state", tabId: 1 })).on, false);
+  assert.equal((await b.ask({ type: "set-on", on: true, tabId: 1 })).on, true);
+});
+
+test("the browser's downloads panel stays hidden while the app takes downloads, and shows for one the browser keeps", async () => {
+  let running = true;
+  const b = load({ tabs: [PAGE], native: () => (running ? { ok: true } : { ok: false, error: "Herb's Download Manager isn't running." }) });
+  b.chrome.downloads.search = async ({ id }) => [{ id, state: "in_progress" }];
+  await b.get("showBrowserDownloads")();
+  assert.equal(b.ui.at(-1), false, "on: hidden");
+  await Promise.all(b.chrome.downloads.onCreated.fire({ id: 1, url: "https://a.com/f.zip", state: "in_progress" }));
+  assert.equal(b.ui.at(-1), false, "taken by the app: still hidden");
+  running = false;
+  await Promise.all(b.chrome.downloads.onCreated.fire({ id: 2, url: "https://a.com/g.zip", state: "in_progress" }));
+  assert.equal(b.ui.at(-1), true, "kept by the browser: shown");
+  await Promise.all(b.chrome.downloads.onChanged.fire({ id: 2, state: { current: "complete" } }));
+  assert.equal(b.ui.at(-1), false, "once it's done: hidden again");
+  await Promise.all(b.chrome.downloads.onCreated.fire({ id: 3, url: "blob:https://a.com/x", state: "in_progress" }));
+  assert.equal(b.ui.at(-1), true, "a page's own blob: file stays with the browser, shown");
+  await b.ask({ type: "set-on", on: false, tabId: 1 });
+  assert.equal(b.ui.at(-1), true, "off: shown");
+});
+
+test("Delete All takes every item off the list and keeps found files out until Reload", async () => {
+  const b = load({ tabs: [PAGE], fetch: () => ({ body: VOD }) });
+  await b.respond({ url: "https://cdn.example.com/v/index.m3u8" });
+  await b.respond({ url: "https://cdn.example.com/film.mp4", type: "media", responseHeaders: headers({ "content-type": "video/mp4", "content-length": "9000000" }) });
+  assert.equal((await b.ask({ type: "state", tabId: 1 })).items.length, 2);
+  await b.ask({ type: "remove-all", tabId: 1, urls: ["https://example.com/files/guide.pdf"] });
+  const state = await b.ask({ type: "state", tabId: 1 });
+  assert.deepEqual([state.items.length, plain(state.gone)], [0, ["https://example.com/files/guide.pdf"]]);
+  await b.ask({ type: "look-again", tabId: 1 });
+  assert.deepEqual(plain((await b.ask({ type: "state", tabId: 1 })).gone), [], "Reload brings them back");
+});
+
+test("the smallest size to show is kept", async () => {
+  const b = load({ tabs: [PAGE] });
+  assert.equal((await b.ask({ type: "state", tabId: 1 })).minSize, 0);
+  await b.ask({ type: "set-min-size", minSize: 1000000 });
+  assert.equal((await b.ask({ type: "state", tabId: 1 })).minSize, 1000000);
 });
 
 test("a file's preview in the list is asked for with the page's cookies and address", async () => {
