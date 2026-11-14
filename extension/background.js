@@ -421,8 +421,8 @@ async function fetchAsPage(url, signal) {
 
 // ---- The button on a page's sounds, pictures and videos (§15) ----------------------------------------------------
 //
-// content.js puts a small Herb's DM button in the corner of a sound, picture or video under the pointer; a click
-// downloads that element's own file. A file it plays from its own address is added as it is. A video played through
+// content.js puts a small Herb's DM button in the corner of the file under the pointer (a sound, picture, video,
+// embedded document or link to a file); a click downloads that file. A file it plays from its own address is added as it is. A video played through
 // a blob: address (a stream, or a file fetched by a script, as TikTok's) is matched against what the tab fetched: a
 // file by its length (within half a second; the closest wins) and picture size, read from its index in its first
 // 512 KB with the page's cookies; a video in the page's own data by its length; else the tab's stream.
@@ -545,7 +545,8 @@ async function itemForPlayer(tab, player) {
     const known = (await itemsOf(tab.id)).find((i) => i.url === src);
     return known || { url: src, kind: player.kind, size: 0, seen: Date.now(), hidden: false };
   }
-  if (player.kind === "image") return null;
+  // Only a video or sound plays from a blob: address it got from the tab's fetches.
+  if (player.kind !== "video" && player.kind !== "audio") return null;
   const page = web(tab.url) ? tab.url : "";
   const items = await listed(tab.id, tab, await orderSetting());
   const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url);
@@ -852,8 +853,9 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
 async function addItem(tab, item, message) {
   // A file the app found on the page comes with its name; what the tab played is named here, by the site's rule when
   // it has one, or as asked in the list.
-  // Naming rules are for a site's videos and sounds: a picture keeps its own name.
-  const rule = tab && item.kind !== "image" ? ruleFor(await rulesSetting(), tab.url) : null;
+  // Naming rules are for a site's videos and sounds: a picture or another file keeps its own name.
+  const named = ["stream", "dash", "page-dash", "video", "audio"].includes(item.kind) || item.stream === true;
+  const rule = tab && named ? ruleFor(await rulesSetting(), tab.url) : null;
   // A site's rule wins over the server's own name (Content-Disposition) or the one a page scan found.
   const name = message.name ? cleanName(message.name) : rule ? await ruleName(rule, item, tab) : item.name || nameFor(item, tab && tab.title);
   // Added to the queue; right after opening the app ("Open and Download"), started at once.

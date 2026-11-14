@@ -261,6 +261,10 @@ test("the page's button on a picture or sound hands over its own address, named 
   assert.deepEqual([picture.urls[0], picture.name, picture.stream], ["https://img.example.com/p/harbour.jpg", null, false], "a picture keeps its own name");
   assert.equal(sound.urls[0], "https://cdn.example.com/talk.mp3");
   assert.match(sound.name, /^Song.*Band\.mp3$/, "a sound follows the site's rule");
+  // A link to a file: its own address and name, whatever the site's rule.
+  await b.ask({ type: "page-button", player: { src: "https://dl.example.com/setup.zip", kind: "file" } }, { tab: PAGE });
+  const zip = b.sent.filter((m) => m.command === "add")[2];
+  assert.deepEqual([zip.urls[0], zip.name, zip.stream], ["https://dl.example.com/setup.zip", null, false]);
   // A blob: picture or a video with nothing listed: nothing to hand over.
   const none = await b.ask({ type: "page-button", player: { src: "blob:https://www.example.com/2", kind: "video", seconds: 8 } }, { tab: PAGE });
   assert.deepEqual([none.ok, /play it first/.test(none.error)], [false, true]);

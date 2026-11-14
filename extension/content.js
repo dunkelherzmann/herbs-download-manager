@@ -1,6 +1,7 @@
-// The Herb's DM button on a page's sounds, pictures and videos (SPECIFICATION.md §15): while the pointer is over one,
-// a small button with the app's icon shows in its bottom right corner; a click downloads that element's own file
-// with Herb's Download Manager (background.js finds it and hands it over). Runs in every page and frame.
+// The Herb's DM button on the files a page shows (SPECIFICATION.md §13, §15): while the pointer is over a sound, a
+// picture (a background picture too), a video, an embedded document or a link to a file, a small button with the
+// app's icon shows in its top right corner (beside a link too small to hold it); a click downloads that file with
+// Herb's Download Manager (background.js finds it and hands it over). Runs in every page and frame.
 
 (() => {
   if (globalThis.__herbsDmButton) return;
@@ -40,42 +41,107 @@
   let hideTimer = 0;
   let resetTimer = 0;
 
-  const kindOf = (el) => (el instanceof HTMLVideoElement ? "video" : el instanceof HTMLAudioElement ? "audio" : "image");
-  const label = (el) => `Download this ${{ video: "video", audio: "sound", image: "picture" }[kindOf(el)]} with Herb's Download Manager`;
+  // What a link's or a file's address is, by its extension (as the app's page scan sorts files), or "" for none.
+  const EXT = {
+    video: "mp4 m4v webm mkv mov avi wmv flv f4v 3gp ogv mpg mpeg m2ts mts vob rmvb divx",
+    audio: "mp3 m4a m4b aac ogg oga opus flac wav wma aiff mka ac3 ape",
+    image: "jpg jpeg png gif webp avif heic tif tiff bmp",
+    stream: "m3u8 mpd",
+    file: "zip rar 7z tar gz tgz bz2 xz zst iso dmg img pdf doc docx xls xlsx ppt pptx odt ods odp epub rtf csv exe msi pkg deb rpm appimage apk flatpakref torrent",
+  };
+  const KIND_OF_EXT = new Map(Object.entries(EXT).flatMap(([kind, list]) => list.split(" ").map((e) => [e, kind])));
+  const web = (url) => /^https?:/i.test(url || "");
+  function kindOfUrl(url) {
+    try {
+      const last = new URL(url).pathname.split("/").pop();
+      const ext = (/\.([a-z0-9]{2,9})$/i.exec(last) || [])[1];
+      return (ext && KIND_OF_EXT.get(ext.toLowerCase())) || "";
+    } catch {
+      return "";
+    }
+  }
+  const WORD = { video: "video", audio: "sound", image: "picture", stream: "video", file: "file" };
+  const label = (t) => `Download this ${WORD[t.kind] || "file"} with Herb's Download Manager`;
 
-  // A sound, picture or video under the point, big enough to carry the button.
-  function mediaAt(x, y) {
-    for (const el of document.elementsFromPoint(x, y)) {
-      if (el === host) continue;
-      if (!(el instanceof HTMLVideoElement || el instanceof HTMLAudioElement || el instanceof HTMLImageElement)) continue;
+  function sourceOf(el) {
+    if (el.currentSrc || el.src) return el.currentSrc || el.src;
+    const source = el.querySelector && el.querySelector("source[src]");
+    return source ? source.src : "";
+  }
+
+  // A link to a file: its address names a file type, or the link says it downloads.
+  function fileLink(el) {
+    const a = el.closest && el.closest("a[href]");
+    if (!a || !web(a.href)) return null;
+    const kind = kindOfUrl(a.href) || (a.hasAttribute("download") ? "file" : "");
+    return kind ? { el: a, src: a.href, kind, link: true } : null;
+  }
+
+  // A picture drawn as an element's background (not the page's own, nor a gradient).
+  function backgroundOf(el) {
+    if (el === document.body || el === document.documentElement) return null;
+    const url = /url\(["']?([^"')]+)["']?\)/.exec(getComputedStyle(el).backgroundImage || "");
+    if (!url) return null;
+    const src = new URL(url[1], location.href).href;
+    return web(src) ? { el, src, kind: "image" } : null;
+  }
+
+  // The file under the point: a link to a file first (a thumbnail that opens its full picture gives that picture),
+  // then a sound, picture or video, an embedded document, then a background picture.
+  function fileAt(x, y) {
+    const els = document.elementsFromPoint(x, y).filter((el) => el !== host);
+    const big = (el, min) => {
       const r = el.getBoundingClientRect();
-      if (r.width < SIZE + 8 || r.height < SIZE + 4) continue;
-      if (el instanceof HTMLImageElement && (r.width < PICTURE_MIN || r.height < PICTURE_MIN || !(el.currentSrc || el.src))) continue;
-      return el;
+      return r.width >= min && r.height >= min;
+    };
+    for (const el of els) {
+      const link = fileLink(el);
+      if (link) return link;
+      if (el instanceof HTMLVideoElement || el instanceof HTMLAudioElement) {
+        if (big(el, SIZE + 8)) return { el, src: sourceOf(el), kind: el instanceof HTMLVideoElement ? "video" : "audio" };
+      } else if (el instanceof HTMLImageElement) {
+        if (big(el, PICTURE_MIN) && web(el.currentSrc || el.src)) return { el, src: el.currentSrc || el.src, kind: "image" };
+      } else if (el instanceof HTMLEmbedElement || el instanceof HTMLObjectElement) {
+        const src = el.src || el.data || "";
+        if (big(el, PICTURE_MIN) && web(src)) return { el, src, kind: kindOfUrl(src) || "file" };
+      }
+    }
+    for (const el of els) {
+      if (!big(el, PICTURE_MIN)) continue;
+      const bg = backgroundOf(el);
+      if (bg) return bg;
     }
     return null;
   }
 
-  // In the element's bottom right corner (inside what's on screen of it).
+  // In the element's top right corner (inside what's on screen of it); beside a link too small to hold it.
   function place() {
-    if (!target || !target.isConnected) return hide(true);
-    const r = target.getBoundingClientRect();
-    const right = Math.min(r.right, innerWidth) - 6;
-    const bottom = Math.min(r.bottom, innerHeight) - 6;
-    if (right - SIZE < Math.max(r.left, 0) || bottom - SIZE < Math.max(r.top, 0)) return hide(true);
-    button.style.left = `${right - SIZE}px`;
-    button.style.top = `${bottom - SIZE}px`;
+    if (!target || !target.el.isConnected) return hide(true);
+    const r = target.el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return hide(true);
+    let left;
+    let top;
+    if (r.height < SIZE + 12 || r.width < SIZE + 12) {
+      left = r.right + 4;
+      top = r.top + (r.height - SIZE) / 2;
+    } else {
+      left = Math.min(r.right, innerWidth) - 6 - SIZE;
+      top = Math.max(r.top, 0) + 6;
+    }
+    button.style.left = `${Math.max(0, Math.min(left, innerWidth - SIZE))}px`;
+    button.style.top = `${Math.max(0, Math.min(top, innerHeight - SIZE))}px`;
   }
 
-  function show(el) {
+  function show(found) {
     clearTimeout(hideTimer);
+    const same = target && target.el === found.el && target.src === found.src;
     // While a click is being handed over, the button stays with its element.
-    if (el !== target && button.classList.contains("busy")) return;
-    if (el !== target) {
-      target = el;
+    if (!same && button.classList.contains("busy")) return;
+    if (!same) {
+      target = found;
       button.className = "";
-      button.title = label(el);
-      button.setAttribute("aria-label", label(el));
+      button.title = label(found);
+      button.setAttribute("aria-label", label(found));
     }
     if (!host.isConnected) (document.body || document.documentElement).append(host);
     button.classList.add("shown");
@@ -102,20 +168,14 @@
     requestAnimationFrame(() => {
       pending = false;
       if (e.composedPath().includes(host)) return;
-      const el = mediaAt(e.clientX, e.clientY);
-      if (el) show(el);
+      const found = fileAt(e.clientX, e.clientY);
+      if (found) show(found);
       else if (target) hide(false);
     });
   }, { passive: true, capture: true });
   addEventListener("scroll", () => target && place(), { passive: true, capture: true });
   addEventListener("resize", () => target && place(), { passive: true });
   document.addEventListener("mouseleave", () => target && hide(false));
-
-  function sourceOf(el) {
-    if (el.currentSrc || el.src) return el.currentSrc || el.src;
-    const source = el.querySelector && el.querySelector("source[src]");
-    return source ? source.src : "";
-  }
 
   // Swallowed before the page sees it, so a click doesn't also play, pause or open what's under it.
   for (const type of ["mousedown", "mouseup", "pointerdown", "pointerup", "dblclick"]) {
@@ -125,10 +185,11 @@
     e.preventDefault();
     e.stopPropagation();
     if (!target || button.classList.contains("busy")) return;
-    const el = target;
+    const { el, src, kind } = target;
     const player = {
-      src: sourceOf(el),
-      kind: kindOf(el),
+      // A video's or sound's address as it plays now (it may have changed since the pointer came).
+      src: el instanceof HTMLMediaElement ? sourceOf(el) : src,
+      kind,
       seconds: el instanceof HTMLMediaElement && Number.isFinite(el.duration) ? el.duration : 0,
       width: el instanceof HTMLVideoElement ? el.videoWidth : 0,
       height: el instanceof HTMLVideoElement ? el.videoHeight : 0,
