@@ -241,7 +241,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [x] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); Windows checked 2026-11-11 in a test copy (a link copied in another app opened Add 1 Link; the clipboard was put back after). The Mac waits for a try (its clipboard isn't overwritten in a test).
+- [ ] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); Windows checked 2026-11-11 in a test copy (a link copied in another app opened Add 1 Link; the clipboard was put back after). The Mac waits for a try (its clipboard isn't overwritten in a test).
   - [ ] Mac
   - [x] Linux
   - [x] Windows
