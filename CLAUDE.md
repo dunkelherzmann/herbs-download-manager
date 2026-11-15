@@ -121,6 +121,12 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   opened there is no tab, so the extension can't see it. Edge keeps an extension's service worker script cached by
   version: after editing the extension without raising its version, delete the test profile's `Default/Service
   Worker` folder (2026-11-15).
+- **A signed-in test with Herbert's Edge profile** needs a copy of it (Edge refuses DevTools on its default profile
+  folder): copy `~/.config/microsoft-edge` whole, `Default/Service Worker` included. A copy without `ScriptCache`
+  (an rsync excluding `*Cache*`) never starts the extension's worker ("Receiving end does not exist"). Point the
+  copy's unpacked extension at a test folder by editing `extensions.settings.<id>.path` in its `Preferences`, and its
+  host through a `NativeMessagingHosts` folder in the copy. Edge kept running a stale cached `background.js` in his
+  profile after an update (bugs.md, 2026-11-16): in the worker, `typeof SCRIPT_VERSION` tells which script runs.
 - Content scripts that wait on `requestAnimationFrame` (the page's download button) never run in the app's built-in
   browser pane while it's hidden: a page test there timed out. Test them in the headless Edge test copy, moving the
   pointer with `Input.dispatchMouseEvent` (2026-11-14).
@@ -142,6 +148,8 @@ its steps there; each feature downloads into its own folder, and waits for its d
 file another unfinished download fetches becomes its mirror. A host step refreshes the list before selecting rows: the list is
 refreshed only twice a second, and a command acts on the rows as the list last saw them (Resume once skipped a row it
 still thought was running).
+On Linux, "the app wrote no report" with nothing in the session log but KWin's lines means another copy of the app is
+running in the session (one a test Edge's `hdm` opened): the new one hands over to it and quits. Stop that test copy first.
 On Linux, "the app wrote no report" with "unable to lock lockfile …/hdm-features.lock" in
 `~/.cache/hdm-features/session.log` means another session's feature run holds the test compositor: wait for it, then
 reinstall your build (theirs may have replaced it) and run again.
