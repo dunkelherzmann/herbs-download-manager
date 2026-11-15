@@ -92,6 +92,18 @@ pub struct Request {
     pub pages: Vec<ScanPage>,
     /// scan, from the browser extension: the addresses the page already fetched.
     pub resources: Vec<String>,
+    /// add and feed, from the browser extension: a stream it fetches itself in the page and hands over piece by
+    /// piece (YouTube's, §15), by the id it chose.
+    pub feed: Option<String>,
+    /// add, a fed stream: the bytes it will bring, for the progress.
+    pub size: Option<u64>,
+    /// feed: the piece's track (0 the picture, 1 the sound), whether it's the track's start section, and its bytes
+    /// (base64); or `end`, with `failed` when the browser couldn't finish it.
+    pub track: usize,
+    pub init: bool,
+    pub data: Option<String>,
+    pub end: bool,
+    pub failed: Option<String>,
 }
 
 /// One frame of a page the browser extension hands over for a scan.
@@ -367,6 +379,23 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
     };
     let count = |n: usize| if n == 1 { "1 download".to_string() } else { format!("{n} downloads") };
     match r.command.as_str() {
+        // A piece of a stream the browser fetches itself, or its end (§15).
+        "feed" => {
+            let Some(id) = r.feed.as_deref() else { return Answer::error("Say which fed download the piece is for.") };
+            let result = if r.end {
+                crate::media::feed::end(id, r.failed.clone())
+            } else {
+                use base64::Engine;
+                match base64::engine::general_purpose::STANDARD.decode(r.data.as_deref().unwrap_or("")) {
+                    Ok(bytes) => crate::media::feed::put(id, r.track, r.init, &bytes),
+                    Err(_) => Err("The piece wasn't readable".into()),
+                }
+            };
+            match result {
+                Ok(()) => Answer { ok: true, ..Default::default() },
+                Err(e) => Answer::error(e),
+            }
+        }
         "scan" => {
             let [url] = r.urls.as_slice() else { return Answer::error("Give the address of one web page to scan.") };
             // From the browser extension: the page is read with the browser's cookies, and each frame it hands over
@@ -419,6 +448,12 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
         "add" => {
             // A manifest from a page: kept in the data folder, and its file is the download's link.
             let mut r = r.clone();
+            // A stream the browser fetches itself: its link names it, and there's nothing to check.
+            if let Some(id) = r.feed.take() {
+                r.urls = vec![crate::media::feed::link(&id, r.size)];
+                r.stream = true;
+                r.check = false;
+            }
             if let Some(text) = r.manifest.take() {
                 match save_manifest(manager, &text) {
                     Ok(link) => {
@@ -433,7 +468,8 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                 return Answer::error("Give at least one link to download.");
             }
             let saved = |u: &reqwest::Url| u.scheme() == "file" && u.path().contains("/manifests/");
-            if let Some(bad) = r.urls.iter().find(|u| !reqwest::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https") || saved(&u))) {
+            let fed = |u: &str| crate::media::feed::is_feed_link(u);
+            if let Some(bad) = r.urls.iter().find(|u| !fed(u) && !reqwest::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https") || saved(&u))) {
                 return Answer::error(format!("“{bad}” isn't an http or https link."));
             }
             let folder = match &r.folder {

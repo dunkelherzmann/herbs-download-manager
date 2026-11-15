@@ -106,6 +106,9 @@ Open the app once before using it, so it can register itself with your browsers.
   "Files on this page" hides files smaller than the size you pick.
 - A small button with the app's icon shows at the top right of a sound, picture, video or link to a file when you
   point at it: click it to download that file.
+- **YouTube**: on a video's page, the list shows the video with a quality picker; Download (or the button on the
+  player) downloads it with its sound. Let the video play for a moment first (after any advert), and keep the tab
+  open until the download is done.
 - Right-click a link, picture, video or page for **Download Now with Herb's Download Manager** and **Add to Queue**.
   When the app isn't open, it opens minimized in the background and takes the link.
 

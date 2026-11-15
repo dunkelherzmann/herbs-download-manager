@@ -465,3 +465,55 @@ test("the page's button tells apart stories of the same length by the id the pag
   await b.get("keeping");
   assert.equal((await b.get("keptManifests")(1)).length, 0);
 });
+
+// YouTube (§15): the page streams the video itself (youtube.js) and hands it over piece by piece.
+const WATCH = { id: 7, active: true, title: "(3) A Talk - YouTube", url: "https://www.youtube.com/watch?v=abc123XYZ_0" };
+const DESCRIBED = { id: "abc123XYZ_0", title: "A Talk", author: "Someone", seconds: 740, live: false, ready: true, sound: 12e6,
+  qualities: [{ lines: 1080, codec: "avc1", size: 200e6 }, { lines: 720, codec: "avc1", size: 100e6 }, { lines: 360, codec: "avc1", size: 21e6 }] };
+const youtube = (extra = {}) => load({ tabs: [WATCH], tabMessage: (id, m) => (m.type === "yt-describe" ? DESCRIBED : { ok: true }), ...extra });
+
+test("a YouTube page's video is listed first, with its qualities, from its page", async () => {
+  const b = youtube();
+  const [item] = await b.get("listed")(7, WATCH, "smart");
+  assert.deepEqual(plain([item.kind, item.title, item.quality, item.qualities.map((q) => q.lines), item.url]),
+    ["youtube", "A Talk", "1080p", [1080, 720, 360], "https://www.youtube.com/watch?v=abc123XYZ_0"]);
+  // Other pages aren't asked.
+  const other = load({ tabs: [PAGE] });
+  assert.equal(await other.get("youTubeItem")(PAGE), null);
+});
+
+test("adding a YouTube video makes a fed download of its size, then starts the page streaming at that quality", async () => {
+  const b = youtube();
+  const tab = WATCH;
+  const item = await b.get("youTubeItem")(tab);
+  const answer = await b.get("addItem")(tab, item, { start: true, quality: "720", open: true });
+  assert.equal(answer.ok, true);
+  const add = b.sent.find((m) => m.command === "add");
+  assert.match(add.feed, /^yt-abc123XYZ_0-/);
+  assert.deepEqual(plain([add.size, add.name, add.queue, add.open]), [112e6, "A Talk.mp4", false, true]);
+  const start = b.toTabs.find((m) => m.type === "yt-download");
+  assert.deepEqual(plain([start.tabId, start.feed, start.options]), [7, add.feed, { lines: 720, soundOnly: false }]);
+  // Sound only: an .m4a of the sound's size.
+  await b.get("addItem")(tab, item, { start: true, soundOnly: true });
+  const sound = b.sent.filter((m) => m.command === "add")[1];
+  assert.deepEqual(plain([sound.size, sound.name]), [12e6, "A Talk.m4a"]);
+});
+
+test("a YouTube video's pieces go on to the app, asked again while its download isn't running yet", async () => {
+  let refusals = 2;
+  const b = youtube({ native: (m) => (m.command === "feed" && !m.end && refusals-- > 0 ? { ok: false, error: "waiting" } : { ok: true }) });
+  const answer = await b.ask({ type: "yt-piece", feed: "yt-x-1", track: 1, init: true, data: "AAEC" }, { tab: WATCH });
+  assert.equal(answer.ok, true);
+  const pieces = b.sent.filter((m) => m.command === "feed");
+  assert.equal(pieces.length, 3, "two refusals, then taken");
+  assert.deepEqual(plain(pieces[2]), { command: "feed", feed: "yt-x-1", track: 1, init: true, data: "AAEC" });
+  await b.ask({ type: "yt-end", feed: "yt-x-1", failed: "YouTube refused the stream (403)." }, { tab: WATCH });
+  assert.deepEqual(plain(b.sent.at(-1)), { command: "feed", feed: "yt-x-1", end: true, failed: "YouTube refused the stream (403)." });
+});
+
+test("the page's button on YouTube's player downloads the page's video", async () => {
+  const b = youtube();
+  const answer = await b.ask({ type: "page-button", player: { src: "blob:https://www.youtube.com/1", kind: "video", seconds: 740 } }, { tab: WATCH });
+  assert.equal(answer.ok, true);
+  assert.match(b.sent.find((m) => m.command === "add").feed, /^yt-abc123XYZ_0-/);
+});

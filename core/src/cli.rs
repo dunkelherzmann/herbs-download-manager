@@ -350,6 +350,11 @@ pub fn native(input: &mut impl Read, output: &mut impl Write, dir: &Path) -> i32
             }
             // The extension's list: a stream's first picture and length, made here with the browser's cookies.
             Ok(r) if r.command == "preview" => preview(&r),
+            // A piece of a stream the extension fetches itself (YouTube's, §15), or its end.
+            Ok(r) if r.command == "feed" => {
+                let request = Request { command: "feed".into(), feed: r.feed, track: r.track, init: r.init, data: r.data, end: r.end, failed: r.failed, ..Default::default() };
+                control::send(dir, &request).unwrap_or_else(Answer::failed)
+            }
             Ok(r) => Answer { error: Some(format!("The browser can't ask for “{}”.", r.command)), ..Default::default() },
         };
         let text = serde_json::to_vec(&answer).unwrap_or_default();

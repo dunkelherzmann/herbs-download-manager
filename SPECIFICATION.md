@@ -640,7 +640,7 @@ downloads to the app. The browser keeps a download the app doesn't take.
   request of a file download.
 - The cookies and page arrive as a sign-in for the link's site for this session only (§9.1): they're never written
   to disk, and they keep a saved sign-in's user name and password.
-- The extension talks to `hdm` (§12) by native messaging, which passes on only `add` and `ping`. At each launch the
+- The extension talks to `hdm` (§12) by native messaging, which passes on only `add`, `ping`, `open`, `scan`, `preview` and `feed` (a YouTube video's pieces, §15). At each launch the
   app registers `hdm` with the browsers it finds for the user: a host manifest named
   `org.herbsdownloadmanager.hdm.json` in each browser's `NativeMessagingHosts` folder on the Mac and Linux (Firefox's
   `native-messaging-hosts`), or in the registry under `HKCU\Software\…\NativeMessagingHosts` on Windows. The Linux
@@ -916,6 +916,32 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   address for each story, and the next ones arrive before they show). The page sees no difference. Manifests are
   read from the JSON (a reply may start with `for (;;);` or hold one per line), with `<` written `\u003C` or
   `\u003c`, and each keeps the ids of the post or story holding it and of the objects around it (`pk`, `id`, `code`).
+- **YouTube.** YouTube's player streams a video only through its own protocol (SABR: `POST` requests to `videoplayback`
+  with protobuf bodies, answered in UMP parts), and its addresses need a token the player makes, so neither the app
+  nor a page scan can fetch it. The extension downloads it in YouTube's page itself (`youtube.js`, in the page's own
+  world on www, m and music.youtube.com): it learns from the player's own requests the streaming address (with its
+  `n` value already worked out by the player) and the streamer context with its token, keeping each request by the
+  streaming settings it carries, so an advert's stream is never taken for the video's. It then asks for the video's
+  picture and sound as the player does: what it has (each track's pieces so far), where the player is, the
+  playback cookie and contexts the server gives back, following redirects and backing off as told, each piece
+  once and in order. The layout of the protocol follows the open-source googlevideo project (MIT).
+  - On a watch page (`/watch`, `/shorts/`, `/live/`; live streams aren't offered), the list shows the video first as
+    a card: YouTube's own picture of it with its length, the badge YOUTUBE, its title, "YouTube video · <channel> ·
+    <length>", and a quality picker with each size ("720p · 99.9 MB"; MP4 pictures only, H.264 before AV1 at the
+    same size, the best chosen). **Download** adds it, **Sound Only** (under ▾) takes just the sound as `.m4a`. The
+    page's own download button on YouTube's player does the same with the best quality. The site's naming rule
+    names it; without one it's named after the video's title.
+  - The app makes the download first (always its own, never a mirror of another, and started at once, since the page
+    streams it now) with an `hdm-feed:<id>?size=<bytes>` link, then the page streams: each piece goes from the page
+    through `content.js` and the background script to `hdm`, whose `feed` command stores it in the download's
+    `.hdparts` folder (asked again for a minute while the app opens or the download hasn't started); at the end the
+    app joins the picture and sound into one MP4, as any stream's. The YouTube tab must stay open until it's done.
+  - Pause or Cancel in the app tells the page to stop. A fed download can't continue where it stopped (its pieces
+    come only from its page): resumed, or when the page sends nothing for 90 seconds (its tab was closed), it fails
+    with "The browser stopped sending it: download it again from its page". YouTube's own errors are shown as they
+    come ("YouTube refused the stream (403).").
+  - It needs YouTube's player to have started streaming the video (after any advert): before that the list's
+    Download says "Play the video for a moment first (after any advert), so YouTube's player starts streaming it."
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and

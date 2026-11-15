@@ -485,6 +485,10 @@ impl Manager {
     /// is added as new; the apps ask first with `plan_add`). Mirrors are checked before use, so a link that turns
     /// out to be another file is dropped as "Different file" without harming the download.
     pub fn add_or_mirror(&self, new: NewDownload) -> Added {
+        // A stream the browser hands over piece by piece is always its own download: its pieces come from its page.
+        if crate::media::feed::is_feed_link(&new.url) {
+            return Added::New(self.add(new));
+        }
         let plan = self.plan_add(&new.url, new.name.as_deref(), &new.folder, new.size);
         let Plan::Mirror(id) = plan else { return Added::New(self.add(new)) };
         if let Some(token) = new.early {
