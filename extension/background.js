@@ -450,7 +450,7 @@ async function fetchForPage(url, page, init = {}) {
   }
 }
 
-// A preview in the list (a <video> in the extension's own page) asks for the file as its page would, for two
+// A preview in the list (a <video> or <img> in the extension's own page) asks for the file as its page would, for two
 // minutes: the rule stays while the browser reads the picture and length.
 let mediaRuleId = 10000;
 async function mediaAccess(url, page) {
@@ -465,7 +465,7 @@ async function mediaAccess(url, page) {
   await dnr.updateSessionRules({
     removeRuleIds: [id],
     addRules: [{ id, priority: 1, action: { type: "modifyHeaders", requestHeaders: forced },
-                 condition: { urlFilter: `|${url}|`, resourceTypes: ["media"] } }],
+                 condition: { urlFilter: `|${url}|`, resourceTypes: ["media", "image"] } }],
   }).catch(() => {});
   const timer = setTimeout(() => dnr.updateSessionRules({ removeRuleIds: [id] }).catch(() => {}), 120000);
   // (In the tests' Node, the timer mustn't keep the run alive.)

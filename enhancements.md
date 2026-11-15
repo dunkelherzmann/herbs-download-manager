@@ -293,3 +293,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **Thumbnails for every picture and video in the list:** all multimedia files that support thumbnailing, such as pictures and videos, have thumbnails to make them easier to identify. *Requested 2026-11-15.* Browser extension (all three systems).
