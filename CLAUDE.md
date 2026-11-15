@@ -107,6 +107,20 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   drive the worker and pages over the DevTools protocol (Node's `WebSocket`). Its native-messaging host is still the
   user's real `hdm`, so anything that adds (a Download, the page's button) reaches his running app: check up to the
   click, and test adding with the Node harness or a stand-in page (2026-11-14).
+- **YouTube never plays in a headless browser,** and YouTube accepts its token only from a playing player (stream
+  protection status 2 = pending, then it stops after about 60 s). Test YouTube in a windowed test Edge started
+  off-screen in the background: on the Mac `open -g -n --env HD_DATA_DIR=<test data> -a "Microsoft Edge" --args
+  --user-data-dir=<scratch> --window-position=6000,6000 --disable-backgrounding-occluded-windows
+  --disable-renderer-backgrounding` (plus the extension and DevTools flags above), with a `NativeMessagingHosts`
+  folder inside that user-data-dir whose manifest points at the build under test. On Linux the same profile folder
+  works (Edge on the desktop's `DISPLAY`, its host a script running `flatpak run --env=HD_DATA_DIR=… --command=hdm`).
+  Edge on Windows reads hosts only from the registry, never the profile: there the test Edge reaches whatever
+  Herbert's registration names (the Desktop `hdm.exe`, which `build.ps1` replaces), and `HD_DATA_DIR` in its
+  environment steers it to the test copy; start it in the desktop session (an `/IT` scheduled task), not ssh's
+  session 0. Drive the tab whose URL is `about:blank`: Edge on Windows lists a hidden built-in page first, and a video
+  opened there is no tab, so the extension can't see it. Edge keeps an extension's service worker script cached by
+  version: after editing the extension without raising its version, delete the test profile's `Default/Service
+  Worker` folder (2026-11-15).
 - Content scripts that wait on `requestAnimationFrame` (the page's download button) never run in the app's built-in
   browser pane while it's hidden: a page test there timed out. Test them in the headless Edge test copy, moving the
   pointer with `Input.dispatchMouseEvent` (2026-11-14).
