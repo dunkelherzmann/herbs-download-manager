@@ -934,7 +934,9 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
     a card: YouTube's own picture of it with its length, the badge YOUTUBE, its title, "YouTube video · <channel> ·
     <length>", and a quality picker with each size ("720p · 99.9 MB"; MP4 pictures only, H.264 before AV1 at the
     same size, the best chosen). **Download** adds it, **Sound Only** (under ▾) takes just the sound as `.m4a`. The
-    page's own download button on YouTube's player does the same with the best quality. The site's naming rule
+    page's own download button on YouTube's player does the same with the best quality. The video is the one the
+    page's address names (`watch?v=`, `/shorts/`, `/live/`), from the player that plays it: Shorts play in their own
+    player (`#shorts-player`), watch pages in `#movie_player`. The site's naming rule
     names it; without one it's named after the video's title.
   - The app makes the download first (always its own, never a mirror of another, and started at once, since the page
     streams it now) with an `hdm-feed:<id>?size=<bytes>` link, then the page streams: each piece goes from the page

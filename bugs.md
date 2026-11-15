@@ -99,3 +99,4 @@ No bugs reported yet.
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **YouTube Shorts don't download.** *Reported 2026-11-15.* Browser extension (all three systems). Found: Shorts play in their own player (`#shorts-player`), and the extension asked only the watch page's (`#movie_player`), which is empty on a Short, so it found no video. Extension 1.31 asks the player that plays the video the address names. Checked in a windowed test Edge with a test copy: a 107-second Short at 720p (720 × 1280) downloaded whole and decodes cleanly.

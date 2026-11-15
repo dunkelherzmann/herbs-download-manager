@@ -120,12 +120,30 @@
 
   // ---- the video on the page ---------------------------------------------------------------------------------------
 
+  // The video the page's address names: `watch?v=<id>`, `/shorts/<id>`, `/live/<id>`.
+  function pageVideoId() {
+    const v = new URLSearchParams(location.search).get("v");
+    if (v) return v;
+    const m = /^\/(shorts|live)\/([\w-]{6,})/.exec(location.pathname);
+    return m ? m[2] : "";
+  }
+
+  // The player's answer for that video: Shorts play in their own player (`#shorts-player`), watch pages in
+  // `#movie_player`; the one playing the address's video wins, else one that plays something.
   function playerResponse() {
-    const player = document.getElementById("movie_player");
-    try {
-      if (player && player.getPlayerResponse) return player.getPlayerResponse();
-    } catch {}
-    return window.ytInitialPlayerResponse || null;
+    const wanted = pageVideoId();
+    const players = [document.getElementById("shorts-player"), document.getElementById("movie_player"), ...document.querySelectorAll(".html5-video-player")]
+      .filter((p, i, all) => p && all.indexOf(p) === i && typeof p.getPlayerResponse === "function");
+    const answers = [];
+    for (const p of players) {
+      try {
+        const r = p.getPlayerResponse();
+        if (r && r.videoDetails) answers.push(r);
+      } catch {}
+    }
+    const initial = window.ytInitialPlayerResponse;
+    if (initial && initial.videoDetails) answers.push(initial);
+    return answers.find((r) => wanted && r.videoDetails.videoId === wanted) || answers[0] || null;
   }
 
   // The formats to choose from: MP4 pictures (H.264 first at each size, then AV1) and MP4 sound (the default track).
