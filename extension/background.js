@@ -535,7 +535,7 @@ function mp4Facts(b) {
 // Files' lengths and picture sizes (`mp4Facts`), by address; null when unknown.
 const factsOf = new Map();
 
-const STREAMED = ["stream", "dash", "page-dash"];
+const STREAMED = ["stream", "dash", "page-dash", "youtube"];
 
 // The listed item an element of the page plays (`player`: {src, kind, seconds, width, height}), or null.
 async function itemForPlayer(tab, player) {
@@ -547,6 +547,9 @@ async function itemForPlayer(tab, player) {
   }
   // Only a video or sound plays from a blob: address it got from the tab's fetches.
   if (player.kind !== "video" && player.kind !== "audio") return null;
+  // YouTube's player: the video its page plays, streamed by the page itself.
+  const youtube = await youTubeItem(tab);
+  if (youtube) return youtube;
   const page = web(tab.url) ? tab.url : "";
   const items = await listed(tab.id, tab, await orderSetting());
   const files = items.filter((i) => (i.kind === "video" || i.kind === "audio") && i.url);
@@ -750,6 +753,7 @@ async function pageManifests(tabId) {
 // nothing).
 function nameFor(item, title) {
   const page = (title || "").trim() || "Video";
+  if (item.kind === "youtube") return `${item.title || page}.mp4`;
   if (["stream", "dash", "page-dash"].includes(item.kind)) return `${page}.mp4`;
   // A picture or another file: the app names it from its link (and the server's own name).
   if (item.kind !== "video" && item.kind !== "audio") return null;
@@ -798,6 +802,11 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
     } else if (message.type === "set-min-size") {
       await api.storage.local.set({ minSize: Math.max(0, Number(message.minSize) || 0) });
       reply({ ok: true });
+    } else if (message.type === "yt-piece") {
+      // A piece of a YouTube video its page streams (content.js): on to the app, asked again while the app starts.
+      reply(await feedApp({ command: "feed", feed: message.feed, track: message.track, init: !!message.init, data: message.data }));
+    } else if (message.type === "yt-end") {
+      reply(await feedApp({ command: "feed", feed: message.feed, end: true, failed: message.failed || null }));
     } else if (message.type === "page-manifests") {
       // Manifests the page received in its data replies (content-main.js): kept for the tab, as its own videos.
       if (sender.tab) await keepManifests(sender.tab.id, message.manifests || [], sender.tab.url);
@@ -890,7 +899,7 @@ async function addItem(tab, item, message) {
   // A file the app found on the page comes with its name; what the tab played is named here, by the site's rule when
   // it has one, or as asked in the list.
   // Naming rules are for a site's videos and sounds: a picture or another file keeps its own name.
-  const named = ["stream", "dash", "page-dash", "video", "audio"].includes(item.kind) || item.stream === true;
+  const named = [...STREAMED, "video", "audio"].includes(item.kind) || item.stream === true;
   const rule = tab && named ? ruleFor(await rulesSetting(), tab.url) : null;
   // A site's rule wins over the server's own name (Content-Disposition) or the one a page scan found.
   const name = message.name ? cleanName(message.name) : rule ? await ruleName(rule, item, tab) : item.name || nameFor(item, tab && tab.title);
@@ -909,7 +918,10 @@ async function addItem(tab, item, message) {
   // From the right-click menu: open the app first when it isn't running.
   if (message.open) options.open = true;
   let answer;
-  if (item.kind === "page-dash") {
+  if (item.kind === "youtube") {
+    // YouTube: the page streams it and hands it over piece by piece; the app makes the download and joins it.
+    answer = await addYouTube(tab, item, options, message);
+  } else if (item.kind === "page-dash") {
     // A manifest from the page itself: the app keeps it and downloads the video and its sound from it.
     try {
       answer = await api.runtime.sendNativeMessage(HOST, { command: "add", manifest: item.manifest, referer: tab && tab.url, ...options });
@@ -922,13 +934,80 @@ async function addItem(tab, item, message) {
   return answer || { ok: false, error: `${NAME} didn't answer.` };
 }
 
+// ---- YouTube (§15) -----------------------------------------------------------------------------------------------
+//
+// YouTube streams a video only through its own player's protocol, so youtube.js downloads it in the page itself and
+// content.js hands each piece here, on to the app, which keeps them in a download with an `hdm-feed:` link and joins
+// the picture and sound at the end. The tab must stay open while it runs.
+
+const YOUTUBE_PAGE = /^https:\/\/(www\.|m\.|music\.)?youtube\.com\/(watch|shorts\/|live\/)/;
+
+// The video a YouTube tab shows, as a list item, or null.
+async function youTubeItem(tab) {
+  if (!tab || !YOUTUBE_PAGE.test(tab.url || "")) return null;
+  let video = null;
+  try {
+    video = await api.tabs.sendMessage(tab.id, { type: "yt-describe" });
+  } catch {
+    return null;
+  }
+  if (!video || !video.id || video.live) return null;
+  const best = video.qualities[0];
+  return {
+    kind: "youtube", url: `https://www.youtube.com/watch?v=${video.id}`, videoId: video.id, title: video.title, author: video.author,
+    seconds: video.seconds, quality: best ? `${best.lines}p` : "", qualities: video.qualities.map((q) => ({ lines: q.lines, size: q.size })),
+    sizes: video.qualities.map((q) => [q.lines, q.size]), sound: video.sound, ready: video.ready, size: (best ? best.size : 0) + (video.sound || 0), seen: 1,
+  };
+}
+
+// Sends a feed message to the app; while it's starting (the download not running yet), asks again for a minute.
+async function feedApp(message) {
+  const until = Date.now() + 60000;
+  for (;;) {
+    let answer;
+    try {
+      answer = await api.runtime.sendNativeMessage(HOST, message);
+    } catch {
+      return { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
+    }
+    if (!(answer && !answer.ok && answer.error === "waiting" && Date.now() < until)) return answer || { ok: false };
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+// Adds a YouTube video: the app makes the download (started at once: the page streams it now), then the page starts
+// streaming. `message.quality`: the picture's lines ("720"), else the best.
+async function addYouTube(tab, item, options, message) {
+  if (!tab) return { ok: false, error: "The YouTube tab is gone." };
+  const lines = /^\d+$/.test(message.quality || "") ? Number(message.quality) : 0;
+  const soundOnly = !!message.soundOnly;
+  const picture = soundOnly ? 0 : ((item.sizes || []).find(([l]) => !lines || l <= lines) || [0, 0])[1];
+  const feed = `yt-${item.videoId}-${Date.now().toString(36)}`;
+  const name = soundOnly ? options.name.replace(/\.mp4$/i, ".m4a") : options.name;
+  let answer;
+  try {
+    answer = await api.runtime.sendNativeMessage(HOST, { command: "add", feed, size: picture + (item.sound || 0), name, referer: item.url,
+      subfolder: options.subfolder, open: options.open, queue: false });
+  } catch {
+    return { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
+  }
+  if (!(answer && answer.ok)) return answer;
+  try {
+    await api.tabs.sendMessage(tab.id, { type: "yt-download", feed, options: { lines: lines || undefined, soundOnly } });
+  } catch {
+    await feedApp({ command: "feed", feed, end: true, failed: "The YouTube tab couldn't be reached: load it again and download anew." });
+    return { ok: false, error: "The YouTube tab couldn't be reached: load it again." };
+  }
+  return answer;
+}
+
 // ---- naming rules (§13) -------------------------------------------------------------------------------------
 
 const rulesSetting = async () => (await api.storage.local.get({ rules: [] })).rules;
 
 // The extension a name gets: a stream's MP4, or the file's own (from its link, else its type).
 function extensionFor(item) {
-  if (["stream", "dash", "page-dash"].includes(item.kind)) return "mp4";
+  if (STREAMED.includes(item.kind)) return "mp4";
   const last = decodeURIComponent(pathOf(item.url || "").split("/").pop() || "");
   const own = /\.([a-z0-9]{2,5})$/i.exec(last);
   if (own && MEDIA_EXT.test(last)) return own[1].toLowerCase();
@@ -1020,12 +1099,17 @@ async function listed(tabId, tab, order, page = true) {
     const about = describeManifest(manifest);
     if (!about.protected && !gone.includes(key)) items.unshift({ kind: "page-dash", manifest, ids, url: "", size: 0, seen: 0, ...about });
   }
+  // YouTube's video, from its page (the list only: asking the page takes a moment).
+  if (page && tab) {
+    const youtube = await youTubeItem(tab);
+    if (youtube && !gone.includes(youtube.url)) items.unshift(youtube);
+  }
   const found = (i) => i.seen || 0;
   if (order === "oldest") return items.sort((a, b) => found(a) - found(b));
   if (order === "newest") return items.sort((a, b) => found(b) - found(a));
   const site = tab ? siteOf(tab.url) : "";
   const rank = (i) => [
-    { "page-dash": 0, dash: 0, stream: 1, video: 2, file: 2, audio: 3 }[i.kind] ?? 2,
+    { youtube: 0, "page-dash": 0, dash: 0, stream: 1, video: 2, file: 2, audio: 3 }[i.kind] ?? 2,
     i.live ? 1 : 0,
     i.url && siteOf(i.url) === site ? 0 : i.kind === "page-dash" ? 0 : 1,
     found(i),

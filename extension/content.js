@@ -39,6 +39,59 @@
     if (manifests.length) api.runtime.sendMessage({ type: "page-manifests", manifests }).catch(() => {});
   });
 
+  // YouTube (youtube.js, in the page's world): what the page plays, and downloads it streams piece by piece. Asked by
+  // background.js; each piece goes to it (and on to the app) before the page sends the next.
+  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+    const pending = new Map();
+    const askPage = (type, extra = {}) => new Promise((resolve) => {
+      const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      pending.set(id, resolve);
+      window.postMessage({ herbsDmYouTubeAsk: { ...extra, type, id } }, location.origin);
+      setTimeout(() => { if (pending.delete(id)) resolve(null); }, 3000);
+    });
+    const base64 = (buffer) => {
+      const bytes = new Uint8Array(buffer);
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768));
+      return btoa(s);
+    };
+    const feeds = new Map();
+    addEventListener("message", async (e) => {
+      const a = e.source === window && e.data && e.data.herbsDmYouTubeAnswer;
+      if (!a) return;
+      if (a.type === "describe") {
+        const done = pending.get(a.id);
+        pending.delete(a.id);
+        if (done) done(a.video);
+      } else if (a.type === "piece") {
+        const feed = feeds.get(a.id);
+        let ok = false;
+        try {
+          const answer = await api.runtime.sendMessage({ type: "yt-piece", feed, track: a.track, init: a.init, data: base64(a.data) });
+          ok = !!(answer && answer.ok);
+        } catch {}
+        window.postMessage({ herbsDmYouTubeAck: { id: a.ack, ok } }, location.origin);
+      } else if (a.type === "done") {
+        const feed = feeds.get(a.id);
+        feeds.delete(a.id);
+        if (feed && !a.stopped) api.runtime.sendMessage({ type: "yt-end", feed, failed: a.error || null }).catch(() => {});
+      }
+    });
+    api.runtime.onMessage.addListener((message, sender, reply) => {
+      if (message.type === "yt-describe") {
+        askPage("describe").then(reply);
+        return true;
+      }
+      if (message.type === "yt-download") {
+        // The download's id in the page is the app's feed id.
+        feeds.set(message.feed, message.feed);
+        window.postMessage({ herbsDmYouTubeAsk: { type: "download", id: message.feed, options: message.options || {} } }, location.origin);
+        reply({ ok: true });
+      }
+      return false;
+    });
+  }
+
   let target = null;
   let hideTimer = 0;
   let resetTimer = 0;

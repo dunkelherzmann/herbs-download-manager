@@ -7,6 +7,7 @@ pub mod bits;
 pub mod dash;
 pub mod hls;
 pub mod download;
+pub mod feed;
 pub mod join;
 pub mod mp4;
 pub mod scan;

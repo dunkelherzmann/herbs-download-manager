@@ -6,7 +6,7 @@ const api = globalThis.browser ?? chrome;
 const $ = (id) => document.getElementById(id);
 const ask = (message) => api.runtime.sendMessage(message);
 
-const KIND = { stream: "Video stream", dash: "Video stream", "page-dash": "Video", video: "Video", audio: "Sound" };
+const KIND = { stream: "Video stream", dash: "Video stream", "page-dash": "Video", youtube: "YouTube video", video: "Video", audio: "Sound" };
 
 // "2:07", "1:02:03".
 function length(seconds) {
@@ -75,6 +75,7 @@ function icon(name) {
 // The kind's short badge before a name, as video players label their formats: HLS, DASH, MP4, MP3…
 function badge(item, label) {
   if (item.kind === "stream") return "HLS";
+  if (item.kind === "youtube") return "YOUTUBE";
   if (item.kind === "dash" || item.kind === "page-dash") return "DASH";
   const ext = (label.match(/\.([a-z0-9]{2,5})$/i) || [])[1];
   return ext ? ext.toUpperCase() : item.kind === "audio" ? "SOUND" : item.kind === "video" ? "VIDEO" : "FILE";
@@ -159,11 +160,13 @@ async function show() {
   list.replaceChildren();
   $("empty").hidden = state.items.length > 0;
   for (const item of state.items) {
-    const streamed = ["stream", "dash", "page-dash"].includes(item.kind);
+    const streamed = ["stream", "dash", "page-dash", "youtube"].includes(item.kind);
     const facts = item.kind === "page-dash"
       ? [item.sound ? "Video with sound" : "Video", item.quality, length(item.seconds)]
-      : [KIND[item.kind], size(item.size)];
-    list.append(row(tab, item, streamed ? tab.title || title(item, tab) : title(item, tab), facts));
+      : item.kind === "youtube" ? [KIND.youtube, item.author, length(item.seconds)]
+        : [KIND[item.kind], size(item.size)];
+    const label = item.kind === "youtube" ? item.title : streamed ? tab.title || title(item, tab) : title(item, tab);
+    list.append(row(tab, item, label, facts));
   }
   selectionChanged();
   $("scan").onclick = async () => {
@@ -304,8 +307,11 @@ function pickers(item) {
   };
   const qualities = item.qualities || [];
   const sounds = item.sounds || [];
-  const quality = qualities.length > 1 && list("Quality to download (Auto: as in Settings)", [["", "Auto quality"], ["highest", "Highest"],
-    ...qualities.map((q) => [String(q.lines), `${q.lines}p${q.bandwidth ? ` · ${(q.bandwidth / 1e6).toFixed(1)} Mb/s` : ""}`])]);
+  // A YouTube video's qualities with their sizes (the best first, chosen by default); a stream's with its bit rate.
+  const quality = qualities.length > 1 && (item.kind === "youtube"
+    ? list("Quality to download", qualities.map((q) => [String(q.lines), `${q.lines}p${q.size ? ` · ${size(q.size)}` : ""}`]))
+    : list("Quality to download (Auto: as in Settings)", [["", "Auto quality"], ["highest", "Highest"],
+      ...qualities.map((q) => [String(q.lines), `${q.lines}p${q.bandwidth ? ` · ${(q.bandwidth / 1e6).toFixed(1)} Mb/s` : ""}`])]));
   const sound = sounds.length > 1 && list("Sound to download (Auto: as in Settings)", [["*", "Auto sound"], ["", "The stream's own sound"],
     ...sounds.map((s) => [s.language, s.name === s.language ? s.language : `${s.name} (${s.language})`])]);
   const chosen = () => {
@@ -350,6 +356,16 @@ function thumbnail(tab, item, streamed) {
     if (seconds) time.textContent = length(seconds);
   };
   box.append(overlay);
+  // YouTube's own picture of the video, and its length.
+  if (item.kind === "youtube") {
+    const img = document.createElement("img");
+    img.src = `https://i.ytimg.com/vi/${encodeURIComponent(item.videoId)}/mqdefault.jpg`;
+    img.alt = "";
+    img.onerror = () => img.remove();
+    box.prepend(img);
+    if (item.seconds) time.textContent = length(item.seconds);
+    return box;
+  }
   if (!streamed) {
     // Asked for as its page would (cookies, Referer): TikTok's server refuses its files to anyone without its cookie.
     ask({ type: "media-access", url: item.url, page: tab.url }).catch(() => null).then(() => show(`${item.url}#t=1`));
@@ -376,8 +392,8 @@ function thumbnail(tab, item, streamed) {
 function row(tab, item, label, facts) {
   const li = document.createElement("li");
   li.className = "card";
-  const pick = item.kind === "stream" ? pickers(item) : { chosen: () => ({}), chips: [] };
-  const streamed = ["stream", "dash", "page-dash"].includes(item.kind);
+  const pick = item.kind === "stream" || item.kind === "youtube" ? pickers(item) : { chosen: () => ({}), chips: [] };
+  const streamed = ["stream", "dash", "page-dash", "youtube"].includes(item.kind);
   // The picture: videos and streams get a preview; a sound or a file, its kind's mark.
   let thumb;
   if (streamed || item.kind === "video") {

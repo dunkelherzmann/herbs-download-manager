@@ -35,7 +35,9 @@ function area() {
   };
 }
 
-function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "", cookies = [] } = {}) {
+function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "", cookies = [], tabMessage = () => undefined } = {}) {
+  // What the tab's content script answered: `tabMessage(tabId, message)`, each message kept in `toTabs`.
+  const toTabs = [];
   const sent = [];
   // Each setUiOptions call's `enabled`: whether the browser's own downloads panel shows.
   const ui = [];
@@ -78,6 +80,10 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
       },
       query: async () => [...tabMap.values()].filter((t) => t.active),
       reload: async () => {},
+      sendMessage: async (tabId, message) => {
+        toTabs.push({ tabId, ...message });
+        return tabMessage(tabId, message);
+      },
       onActivated: event(),
       onRemoved: event(),
       onUpdated: event(),
@@ -114,7 +120,7 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
     await get("noting");
   };
   const items = async (tabId = 1) => (await chrome.storage.session.get({ [`media-${tabId}`]: [] }))[`media-${tabId}`];
-  return { chrome, context, get, ask, respond, items, sent, fetches, rules, menus, ui };
+  return { chrome, context, get, ask, respond, items, sent, fetches, rules, menus, ui, toTabs };
 }
 
 // Response headers as the browser gives them.
