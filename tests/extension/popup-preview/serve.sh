@@ -10,5 +10,7 @@ cp -R "$ROOT/extension" "$DIR"
 cp "$ROOT/tests/extension/popup-preview/stub.js" "$DIR/stub.js"
 cp -R "$ROOT/tests/extension/popup-preview/samples" "$DIR/samples"
 sed -i.bak 's#<script src="popup.js"></script>#<script src="stub.js"></script><script src="popup.js"></script>#' "$DIR/popup.html"
+# The background check (fresh.js) runs before the stand-in exists, and has no extension to restart here.
+sed -i.bak 's#<script src="fresh.js"></script>##' "$DIR/popup.html"
 echo "http://127.0.0.1:8765/popup.html"
 cd "$DIR" && exec python3 -m http.server 8765 --bind 127.0.0.1

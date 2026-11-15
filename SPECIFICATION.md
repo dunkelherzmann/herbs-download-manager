@@ -619,6 +619,13 @@ downloads to the app. The browser keeps a download the app doesn't take.
   turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for 2 seconds when the
   app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed shadow root, so the
   page's styles can't change it.
+- **The extension checks that its background script is current.** Edge can keep running an extension's old
+  background script from its cache after the extension's files were replaced by a newer version; the old script
+  doesn't answer what it doesn't know. Before handing a file over, the page's button asks the background script which
+  version it is; the list and the options page ask as they open. When no answer comes within 4 seconds, or it names
+  another version than the extension's, the extension restarts itself, which loads its files anew, and the button
+  turns red with "Herb's Download Manager's extension was restarted to load its new version: load the page again,
+  then click again." (Chrome, Edge, Brave and Vivaldi; all three systems.)
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
   the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none,
   and the rest of its lines (Accept, Accept-Language, Sec-Fetch-*, Sec-Ch-Ua*, its own tokens; not its cookies,

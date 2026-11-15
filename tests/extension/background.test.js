@@ -527,3 +527,16 @@ test("the page's button on YouTube's player downloads the page's video", async (
   assert.equal(answer.ok, true);
   assert.match(b.sent.find((m) => m.command === "add").feed, /^yt-abc123XYZ_0-/);
 });
+
+test("the background script answers hello with its own version, which is manifest.json's", async () => {
+  const manifest = JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "..", "extension", "manifest.json"), "utf8"));
+  const b = load();
+  assert.deepEqual(plain(await b.ask({ type: "hello" })), { script: manifest.version }, "raise SCRIPT_VERSION in background.js with the manifest's version");
+  const resources = manifest.web_accessible_resources.flatMap((r) => r.resources);
+  assert.ok(resources.includes("restart.html"), "the page's button opens restart.html in a frame");
+  const fs = require("node:fs");
+  const ext = require("node:path").join(__dirname, "..", "..", "extension");
+  for (const page of ["popup.html", "options.html", "restart.html"]) {
+    assert.match(fs.readFileSync(require("node:path").join(ext, page), "utf8"), /<script src="fresh\.js"><\/script>/, `${page} checks the background script`);
+  }
+});

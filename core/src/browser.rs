@@ -11,7 +11,7 @@ pub const FIREFOX_ID: &str = "hdm@herbsdownloadmanager.org";
 /// The extension's id in Chrome and its kin, fixed by the public key in its manifest.
 pub const CHROME_ID: &str = "clhikpnhhffblbcgfcpebhiholmchidg";
 
-const FILES: [(&str, &[u8]); 19] = [
+const FILES: [(&str, &[u8]); 21] = [
     ("manifest.json", include_bytes!("../../extension/manifest.json")),
     ("background.js", include_bytes!("../../extension/background.js")),
     ("popup.html", include_bytes!("../../extension/popup.html")),
@@ -24,6 +24,8 @@ const FILES: [(&str, &[u8]); 19] = [
     ("options.html", include_bytes!("../../extension/options.html")),
     ("options.js", include_bytes!("../../extension/options.js")),
     ("options.css", include_bytes!("../../extension/options.css")),
+    ("fresh.js", include_bytes!("../../extension/fresh.js")),
+    ("restart.html", include_bytes!("../../extension/restart.html")),
     ("icons/icon-16.png", include_bytes!("../../extension/icons/icon-16.png")),
     ("icons/icon-32.png", include_bytes!("../../extension/icons/icon-32.png")),
     ("icons/icon-48.png", include_bytes!("../../extension/icons/icon-48.png")),
