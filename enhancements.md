@@ -293,4 +293,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **Thumbnails for every picture and video in the list:** all multimedia files that support thumbnailing, such as pictures and videos, have thumbnails to make them easier to identify. *Requested 2026-11-15.* Browser extension (all three systems).
+- [x] **Thumbnails for every picture and video in the list:** all multimedia files that support thumbnailing, such as pictures and videos, have thumbnails to make them easier to identify. *Requested 2026-11-15.* Browser extension (all three systems). Shipped in extension 1.30 (#11): pictures show the picture itself (with the page's cookies and Referer), files the scan calls Video get the video preview, and a video or picture that can't be loaded shows its kind's mark instead of an empty box; sounds keep their mark. Checked in the list's preview, light and dark.
