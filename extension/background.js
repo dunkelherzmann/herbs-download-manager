@@ -8,6 +8,11 @@ if (typeof nameByRule === "undefined" && typeof importScripts === "function") im
 
 const api = globalThis.browser ?? chrome;
 const HOST = "org.herbsdownloadmanager.hdm";
+// This script's own version, the same as manifest.json's (a test checks it). Edge can go on running an extension's
+// old background script from its cache after the extension's files were replaced by a newer version: the page's
+// button and the list then got no answer (bugs.md, 2026-11-16). The extension's pages and the page's button ask
+// "hello" first, and restart the extension (fresh.js) when no answer comes or it names another version.
+const SCRIPT_VERSION = "1.32";
 const NAME = "Herb's Download Manager";
 
 async function isOn() {
@@ -766,7 +771,9 @@ function nameFor(item, title) {
 // The popup's questions.
 api.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
-    if (message.type === "state") {
+    if (message.type === "hello") {
+      reply({ script: SCRIPT_VERSION });
+    } else if (message.type === "state") {
       const tab = await api.tabs.get(message.tabId).catch(() => null);
       const order = await orderSetting();
       const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;

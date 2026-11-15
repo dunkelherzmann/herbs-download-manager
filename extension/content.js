@@ -252,6 +252,23 @@
     return [...hints].slice(0, 30);
   }
 
+  // Whether the background script answers as this version (fresh.js has why it might not). When it doesn't, a hidden
+  // frame of the extension's restart page restarts the extension, which loads its files anew.
+  const STALE = "Herb's Download Manager's extension was restarted to load its new version: load the page again, then click again.";
+  async function current() {
+    const answer = await Promise.race([
+      api.runtime.sendMessage({ type: "hello" }).catch(() => null),
+      new Promise((done) => setTimeout(() => done(null), 4000)),
+    ]);
+    if (answer && answer.script === api.runtime.getManifest().version) return true;
+    const frame = document.createElement("iframe");
+    frame.src = api.runtime.getURL("restart.html");
+    frame.style.cssText = "display:none";
+    frame.setAttribute("aria-hidden", "true");
+    root.append(frame);
+    return false;
+  }
+
   // Swallowed before the page sees it, so a click doesn't also play, pause or open what's under it.
   for (const type of ["mousedown", "mouseup", "pointerdown", "pointerup", "dblclick"]) {
     button.addEventListener(type, (e) => e.stopPropagation());
@@ -274,7 +291,7 @@
     button.className = "shown busy";
     let answer;
     try {
-      answer = await api.runtime.sendMessage({ type: "page-button", player });
+      answer = (await current()) ? await api.runtime.sendMessage({ type: "page-button", player }) : { ok: false, error: STALE };
     } catch {
       answer = { ok: false, error: "Herb's Download Manager's extension was updated: load the page again." };
     }
