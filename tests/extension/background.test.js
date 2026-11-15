@@ -329,8 +329,18 @@ test("a file's preview in the list is asked for with the page's cookies and addr
   const b = load({ tabs: [TIKTOK], cookies: [{ name: "tt_chain_token", value: "secret" }] });
   await b.ask({ type: "media-access", url: clip("a"), page: TIKTOK.url });
   const [rule] = b.rules.added;
-  assert.deepEqual(plain(rule.condition), { urlFilter: `|${clip("a")}|`, resourceTypes: ["media"] });
+  assert.deepEqual(plain(rule.condition), { urlFilter: `|${clip("a")}|`, resourceTypes: ["media", "image"] });
   assert.deepEqual(plain(rule.action.requestHeaders).map((h) => h.header), ["cookie", "referer"]);
+});
+
+test("a picture's thumbnail in the list is asked for as its page would, like a video's preview", async () => {
+  const b = load({ tabs: [PAGE], cookies: [{ name: "session", value: "s1" }] });
+  const photo = "https://example.com/files/photo.jpg";
+  await b.ask({ type: "media-access", url: photo, page: PAGE.url });
+  const [rule] = b.rules.added;
+  assert.ok(plain(rule.condition).resourceTypes.includes("image"), "an <img> in the list gets the rule too");
+  assert.deepEqual(plain(rule.action.requestHeaders), [
+    { header: "cookie", operation: "set", value: "session=s1" }, { header: "referer", operation: "set", value: PAGE.url }]);
 });
 
 // ---- Removing from the list (×) ---------------------------------------------------------------------------------

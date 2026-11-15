@@ -882,14 +882,19 @@ picture and sound sample keeps the bytes the site sent, so the file has the site
   **Highest** and each picture size with its bit rate ("720p · 2.8 Mb/s", one per size, HDR left out as above); and
   **Auto sound**, **The stream's own sound** and each sound track by name and language ("English (en)"). What they
   show is what the app downloads.
-Each video and stream shows a **preview** to its left, so several found on one page can be told apart: one picture
-with a play mark and its length over its corner ("0:13"); a sound or another file shows its kind's mark instead. A stream's is made by `hdm` itself (the app needn't run), with the page's
+Each video, stream and picture shows a **thumbnail** to its left, in both lists (played on this page, and files on
+this page), so several found on one page can be told apart. A video's is one picture with a play mark and its length
+over its corner ("0:13"); a picture's is the picture itself (one over 20 MB isn't loaded for this and shows its mark).
+A sound or another file shows its kind's mark instead. Pictures are found by their kind (the page scan's "Picture"),
+their type or their name (`.jpg`, `.png`, `.webp`…); whole video files likewise (the scan's "Video", `.mp4`,
+`.webm`…). A stream's is made by `hdm` itself (the app needn't run), with the page's
 cookies: the first whole picture of its smallest quality's first piece, as a tiny MP4 (a few KB), and its length from
 the playlist or manifest (none for a live stream). Three are made at a time and kept while the browser runs. A whole
-video file's picture and length are read by the browser, which asks for it as its page would (the site's cookies
-and the page as Referer, set by a browser rule for that address for two minutes: TikTok's server refuses its files to
-anyone without its `tt_chain_token` cookie). A video that can't be previewed (a DASH quality kept as one
-file with no index, a protected or broken stream) keeps an empty box; sounds have none.
+video file's picture and length, and a picture, are read by the browser, which asks for them as their page would
+(the site's cookies and the page as Referer, set by a browser rule for that address, for videos and pictures, for two
+minutes: TikTok's server refuses its files to anyone without its `tt_chain_token` cookie). A video or picture that
+can't be shown (a DASH quality kept as one file with no index, a protected or broken stream, a format the browser
+can't draw, a refused address) shows its kind's mark instead, with the video's length when it's known.
 Each item has a **×** in its corner that removes it from the list. It stays out while the tab shows that page, even
 when the page fetches it again; a video read from the page's own data is noted by its manifest. Another page in the
 tab starts a fresh list.

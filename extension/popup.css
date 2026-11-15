@@ -66,8 +66,9 @@ ul.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .thumb .play svg { width: 8px; height: 8px; fill: #fff; stroke: none; }
 .thumb .time:empty { display: none; }
 .thumb .overlay:has(.time:empty) { padding: 1px; }
-.thumb.sound { display: grid; place-items: center; color: var(--dim); }
-.thumb.sound svg { width: 26px; height: 26px; }
+.thumb.mark { display: grid; place-items: center; color: var(--dim); }
+.thumb.mark > svg { width: 26px; height: 26px; }
+.thumb.mark .overlay:has(.time:empty) { display: none; }
 
 /* Its checkbox, over the picture's top left corner. */
 .card .pick { position: absolute; top: calc(var(--m) + 4px); left: calc(var(--m) + 4px); z-index: 1; width: 18px; height: 18px;

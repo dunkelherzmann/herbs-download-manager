@@ -65,6 +65,8 @@ const ICON = {
   play: '<path d="M5 3.5v9l7.5-4.5z"/>',
   sound: '<path d="M3 6.2h2.4L8.6 3.4v9.2L5.4 9.8H3z"/><path d="M11 5.6a3.4 3.4 0 0 1 0 4.8M12.8 4a5.6 5.6 0 0 1 0 8"/>',
   file: '<path d="M4 1.8h5.2L12.4 5v9.2H4z"/><path d="M9 1.8V5h3.4"/>',
+  video: '<rect x="1.8" y="3.4" width="12.4" height="9.2" rx="1.2"/><path d="M6.6 6v4l3.4-2z"/>',
+  picture: '<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.2"/><circle cx="5.6" cy="6.2" r="1.1"/><path d="M2 11.6l3.6-3.4 2.6 2.4 2-1.8 3.8 3.2"/>',
 };
 function icon(name) {
   const box = document.createElement("span");
@@ -323,9 +325,47 @@ function pickers(item) {
   return { box: quality || sound ? box : null, chosen, chips: [quality, sound].filter(Boolean) };
 }
 
+// What an item is, for its picture: a picture (by its kind, the scan's kind, its type or its name), a whole video
+// file, or something else.
+const PICTURE_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg|ico|tiff?|heic|heif|jxl)$/i;
+const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mkv|ogv|avi|wmv|flv|3gp)$/i;
+const nameOf = (item) => {
+  try { return [item.name || "", decodeURIComponent(new URL(item.url).pathname)]; } catch { return [item.name || ""]; }
+};
+// (A scan's "File" is a kind it couldn't tell, so the name decides.)
+const named = (item, ext) => item.kind === "file" && (!item.found || item.found === "File") && nameOf(item).some((n) => ext.test(n));
+const isPicture = (item) => item.kind === "image" || item.found === "Picture" || /^image\//.test(item.mime || "") || named(item, PICTURE_EXT);
+const isVideoFile = (item) => item.kind === "video" || (item.kind === "file" && (item.found === "Video" || /^video\//.test(item.mime || "")))
+  || named(item, VIDEO_EXT);
+
+// A kind's mark in the picture's place: a sound, a file, or a video or picture that couldn't be shown.
+function mark(box, name) {
+  box.classList.add("mark");
+  box.prepend(icon(name));
+  return box;
+}
+
+// A picture's own image, asked for as its page would (cookies, Referer); its mark when it can't be loaded or is too
+// big to load just for this (over 20 MB).
+function pictureThumb(tab, item) {
+  const box = document.createElement("span");
+  box.className = "thumb";
+  box.setAttribute("aria-hidden", "true");
+  if (item.size > 20e6 || !item.url) return mark(box, "picture");
+  ask({ type: "media-access", url: item.url, page: tab.url }).catch(() => null).then(() => {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.onerror = () => { img.remove(); mark(box, "picture"); };
+    img.src = item.url;
+    box.prepend(img);
+  });
+  return box;
+}
+
 // A video's preview beside its name (§15), so several found on one page can be told apart: one picture and its
 // length. A stream's picture comes from hdm (its smallest quality's first piece, three asked at a time); a whole
-// video file's the browser reads itself. Without one, the box stays empty.
+// video file's the browser reads itself. Without one, the video's mark.
 let previewsRunning = 0;
 const previewsWaiting = [];
 
@@ -350,7 +390,7 @@ function thumbnail(tab, item, streamed) {
     video.onloadedmetadata = () => {
       if (!seconds && Number.isFinite(video.duration)) time.textContent = length(video.duration);
     };
-    video.onerror = () => video.remove();
+    video.onerror = () => { video.remove(); mark(box, "video"); };
     video.src = src;
     box.prepend(video);
     if (seconds) time.textContent = length(seconds);
@@ -361,7 +401,7 @@ function thumbnail(tab, item, streamed) {
     const img = document.createElement("img");
     img.src = `https://i.ytimg.com/vi/${encodeURIComponent(item.videoId)}/mqdefault.jpg`;
     img.alt = "";
-    img.onerror = () => img.remove();
+    img.onerror = () => { img.remove(); mark(box, "video"); };
     box.prepend(img);
     if (item.seconds) time.textContent = length(item.seconds);
     return box;
@@ -377,7 +417,7 @@ function thumbnail(tab, item, streamed) {
     const answer = await ask({ type: "preview", tabId: tab.id, item }).catch(() => null);
     previewsRunning -= 1;
     if (previewsWaiting.length) previewsWaiting.shift()();
-    if (!(answer && answer.ok && answer.preview)) return;
+    if (!(answer && answer.ok && answer.preview)) return mark(box, "video");
     const bytes = Uint8Array.from(atob(answer.preview.mp4), (c) => c.charCodeAt(0));
     show(URL.createObjectURL(new Blob([bytes], { type: "video/mp4" })), answer.preview.seconds || item.seconds);
   };
@@ -394,15 +434,17 @@ function row(tab, item, label, facts) {
   li.className = "card";
   const pick = item.kind === "stream" || item.kind === "youtube" ? pickers(item) : { chosen: () => ({}), chips: [] };
   const streamed = ["stream", "dash", "page-dash", "youtube"].includes(item.kind);
-  // The picture: videos and streams get a preview; a sound or a file, its kind's mark.
+  // The picture: videos and streams get a preview, pictures their own image; a sound or another file, its kind's mark.
   let thumb;
-  if (streamed || item.kind === "video") {
+  if (streamed || isVideoFile(item)) {
     thumb = thumbnail(tab, item, streamed);
+  } else if (isPicture(item)) {
+    thumb = pictureThumb(tab, item);
   } else {
     thumb = document.createElement("span");
-    thumb.className = "thumb sound";
+    thumb.className = "thumb";
     thumb.setAttribute("aria-hidden", "true");
-    thumb.append(icon(item.kind === "audio" ? "sound" : "file"));
+    mark(thumb, item.kind === "audio" || item.found === "Sound" ? "sound" : "file");
   }
   const body = document.createElement("div");
   body.className = "body";
