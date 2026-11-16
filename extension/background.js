@@ -12,7 +12,7 @@ const HOST = "org.herbsdownloadmanager.hdm";
 // old background script from its cache after the extension's files were replaced by a newer version: the page's
 // button and the list then got no answer (bugs.md, 2026-11-16). The extension's pages and the page's button ask
 // "hello" first, and restart the extension (fresh.js) when no answer comes or it names another version.
-const SCRIPT_VERSION = "1.33";
+const SCRIPT_VERSION = "1.34";
 const NAME = "Herb's Download Manager";
 
 async function isOn() {
@@ -187,7 +187,20 @@ async function makeMenu() {
   api.contextMenus.create({ id: "hdm-link", title: `Download Now with ${NAME}`, contexts });
   api.contextMenus.create({ id: "hdm-link-queue", title: `Add to Queue in ${NAME}`, contexts });
 }
-api.runtime.onInstalled.addListener(() => { makeMenu(); showState(); applyPanel(); });
+api.runtime.onInstalled.addListener((details) => { makeMenu(); showState(); applyPanel(); addToOpenTabs(details).catch(() => {}); });
+
+// After the extension is installed, updated or reloaded, the tabs already open still run the old copy of its page
+// scripts, which can't reach it any more: the page's button turned red until the page was loaded again (bugs.md,
+// 2026-11-16). The current ones are put into every frame of each open web page; the old copy steps aside.
+async function addToOpenTabs(details) {
+  if (!api.scripting || !["install", "update"].includes(details && details.reason)) return;
+  for (const tab of await api.tabs.query({})) {
+    if (!web(tab.url) || tab.discarded) continue;
+    const target = { tabId: tab.id, allFrames: true };
+    await api.scripting.executeScript({ target, files: ["content-main.js"], world: "MAIN", injectImmediately: true }).catch(() => {});
+    await api.scripting.executeScript({ target, files: ["content.js"], injectImmediately: true }).catch(() => {});
+  }
+}
 api.runtime.onStartup.addListener(() => { makeMenu(); showState(); applyPanel(); });
 // Each time the background script starts (after sleeping too): the browser's downloads panel as the switch says.
 showBrowserDownloads().catch(() => {});

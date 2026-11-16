@@ -4,9 +4,13 @@
 // Herb's Download Manager (background.js finds it and hands it over). Runs in every page and frame.
 
 (() => {
-  if (globalThis.__herbsDmButton) return;
-  globalThis.__herbsDmButton = true;
   const api = globalThis.browser ?? chrome;
+  // One copy per frame. A copy left from before the extension was updated or restarted can't reach it any more: the
+  // new copy (put into open tabs by background.js) takes over, and the old one takes its button away.
+  const alive = () => { try { return !!api.runtime.id; } catch { return false; } };
+  const before = globalThis.__herbsDmButton;
+  if (before === true || (typeof before === "function" && before())) return;
+  globalThis.__herbsDmButton = alive;
   // Listeners on the window and the document, kept so they can be added again: a page that writes a frame of its own
   // (an about:blank frame filled with document.open and write) erases them, while this script stays (§15).
   const listeners = [];
@@ -15,9 +19,18 @@
     target.addEventListener(type, fn, options);
   };
   // Adding a listener that's still there changes nothing; document.open empties the document, which this sees.
-  new MutationObserver(() => {
+  const relisten = new MutationObserver(() => {
     for (const [target, type, fn, options] of listeners) target.addEventListener(type, fn, options);
-  }).observe(document, { childList: true });
+  });
+  relisten.observe(document, { childList: true });
+  // Once the extension is gone (updated, restarted, turned off), this copy stops and takes its button away.
+  function orphaned() {
+    if (alive()) return false;
+    relisten.disconnect();
+    for (const [target, type, fn, options] of listeners) target.removeEventListener(type, fn, options);
+    host.remove();
+    return true;
+  }
   const SIZE = 22;
   // Pictures smaller than this (icons, avatars, spacers) get no button.
   const PICTURE_MIN = 48;
@@ -44,7 +57,7 @@
 
   // Manifests the page received in its data replies (content-main.js), handed to background.js.
   on(window, "message", (e) => {
-    if (e.source !== window || !e.data || !Array.isArray(e.data.herbsDmManifests)) return;
+    if (e.source !== window || !e.data || !Array.isArray(e.data.herbsDmManifests) || orphaned()) return;
     const manifests = e.data.herbsDmManifests.filter((m) => m && typeof m.xml === "string")
       .map((m) => ({ xml: m.xml, ids: (Array.isArray(m.ids) ? m.ids : []).map(String).slice(0, 20) }));
     if (manifests.length) api.runtime.sendMessage({ type: "page-manifests", manifests }).catch(() => {});
@@ -175,6 +188,14 @@
   // then a sound, picture or video, an embedded document, then a background picture.
   function fileAt(x, y) {
     const els = elementsAt(document, x, y);
+    // Whether a picture covers most of a video (at least 80% of it).
+    const covers = (pic, video) => {
+      const a = pic.getBoundingClientRect();
+      const b = video.getBoundingClientRect();
+      const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      return w > 0 && h > 0 && w * h >= 0.8 * b.width * b.height;
+    };
     const big = (el, min) => {
       const r = el.getBoundingClientRect();
       return r.width >= min && r.height >= min;
@@ -185,6 +206,9 @@
       if (el instanceof HTMLVideoElement || el instanceof HTMLAudioElement) {
         if (big(el, SIZE + 8)) return { el, src: sourceOf(el), kind: el instanceof HTMLVideoElement ? "video" : "audio" };
       } else if (el instanceof HTMLImageElement) {
+        // A picture laid over a video (its cover before it plays, as Instagram's feed does) stands for the video.
+        const video = els.find((v) => v instanceof HTMLVideoElement && covers(el, v));
+        if (video && big(video, SIZE + 8)) return { el: video, src: sourceOf(video), kind: "video" };
         if (big(el, PICTURE_MIN) && web(el.currentSrc || el.src)) return { el, src: el.currentSrc || el.src, kind: "image" };
       } else if (el instanceof HTMLEmbedElement || el instanceof HTMLObjectElement) {
         const src = el.src || el.data || "";
@@ -248,7 +272,7 @@
   // everything under the pointer is checked, not just the top element.
   let pending = false;
   on(window, "mousemove", (e) => {
-    if (pending) return;
+    if (pending || orphaned()) return;
     pending = true;
     requestAnimationFrame(() => {
       pending = false;
@@ -261,6 +285,9 @@
   on(window, "scroll", () => target && place(), { passive: true, capture: true });
   on(window, "resize", () => target && place(), { passive: true });
   on(document, "mouseleave", () => target && hide(false));
+  // The manifests the page received before this copy started (it was put into an open tab after an update): the
+  // page's own script (content-main.js) keeps them and sends them again.
+  window.postMessage({ herbsDmReplay: true }, location.origin === "null" ? "*" : location.origin);
 
   // What the page names around a video, for telling apart videos of the same length: the parts of its address
   // (`/stories/<user>/<id>/`) and of the links to posts near the video (`/p/<code>/`, `/reel/<code>/`).
@@ -280,7 +307,7 @@
 
   // Whether the background script answers as this version (fresh.js has why it might not). When it doesn't, a hidden
   // frame of the extension's restart page restarts the extension, which loads its files anew.
-  const STALE = "Herb's Download Manager's extension was restarted to load its new version: load the page again, then click again.";
+  const STALE = "Herb's Download Manager's extension was restarted to load its new version: click again.";
   async function current() {
     const answer = await Promise.race([
       api.runtime.sendMessage({ type: "hello" }).catch(() => null),

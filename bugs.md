@@ -105,3 +105,8 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Instagram videos didn't download from the page's button on the Mac** (red "!"). *Reported 2026-11-16, with a picture of a feed video.* Browser extension, Edge on the Mac (all three systems). Found, with a copy of Herbert's Edge profile and a test copy of the app: extension 1.33 itself downloads feed videos, but a tab opened before the extension was updated or restarted kept the old copy of the page's scripts, which can't reach the extension any more, so the button turned red ("the extension was updated: load the page again"). Extension 1.34 puts its page scripts into open tabs when it's installed, updated or restarted, the old copy takes its button away, and the page's own script hands over the manifests it received before, so feed videos loaded earlier are still found without loading the page again. Checked in the profile copy: after an update, the same feed video downloaded again whole from the open tab. Shipped in extension 1.34 (#18).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
+- [x] **The page's button on a paused Instagram feed video downloaded its cover picture** (*found in testing*, 2026-11-16). Browser extension (all three systems). Before a feed video plays, Instagram lays its cover picture over it, and the button took the picture. A picture covering most of a video now stands for the video. Checked in the profile copy: a paused 58-second feed video downloaded as its MP4. Shipped in extension 1.34 (#18).
