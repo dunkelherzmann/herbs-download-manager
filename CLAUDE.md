@@ -127,6 +127,14 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   copy's unpacked extension at a test folder by editing `extensions.settings.<id>.path` in its `Preferences`, and its
   host through a `NativeMessagingHosts` folder in the copy. Edge kept running a stale cached `background.js` in his
   profile after an update (bugs.md, 2026-11-16): in the worker, `typeof SCRIPT_VERSION` tells which script runs.
+- Embedded content needs its own cases (bugs.md, 2026-11-16): a frame a page writes itself (`srcdoc`, `about:blank`)
+  gets content scripts only with `match_about_blank`/`match_origin_as_fallback`, and the page's `document.open` there
+  erases the script's window and document listeners while its globals stay (content.js adds them back); shadow roots
+  hide their elements from `elementsFromPoint`. When clicking the page's button from DevTools, find where it really
+  sits (`chrome.dom.openOrClosedShadowRoot(host)` in the extension's world of that frame): a letterboxed video's element
+  is narrower than its player. In Edge on Windows pick the tab whose `document.visibilityState` is visible, not by
+  address: once the hidden built-in page is navigated it matches too, and clicks there never land. A fresh test
+  profile on Windows signs itself in to the Windows account (his favourites sync in): delete it after the test.
 - Content scripts that wait on `requestAnimationFrame` (the page's download button) never run in the app's built-in
   browser pane while it's hidden: a page test there timed out. Test them in the headless Edge test copy, moving the
   pointer with `Input.dispatchMouseEvent` (2026-11-14).
