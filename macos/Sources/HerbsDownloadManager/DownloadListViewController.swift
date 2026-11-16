@@ -192,8 +192,8 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case "size": return cmp(a.size ?? 0, b.size ?? 0)
         case "speed": return cmp(a.speed, b.speed)
         case "timeLeft": return cmp(a.timeLeft ?? .max, b.timeLeft ?? .max)
-        case "connections": return cmp(a.activeConnections, b.activeConnections)
-        case "mirrors": return cmp(a.sourcesKnown, b.sourcesKnown)
+        case "connections": return cmp(a.connectionsSort, b.connectionsSort)
+        case "mirrors": return cmp(a.mirrorsSort, b.mirrorsSort)
         case "added": return cmp(a.added, b.added)
         case "finished": return cmp(a.finished ?? 0, b.finished ?? 0)
         case "location": return a.folder.localizedStandardCompare(b.folder)
@@ -253,8 +253,8 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case "size": text = item.sizeText
         case "speed": text = item.speedText
         case "timeLeft": text = item.timeLeftText
-        case "connections": text = item.status.isFinished ? "" : "\(item.activeConnections) / \(item.allowedConnections)"
-        case "mirrors": text = "\(item.sourcesInUse) / \(item.sourcesKnown)"
+        case "connections": text = item.connectionsText
+        case "mirrors": text = item.mirrorsText
         case "added": text = Self.dateFormat.string(from: Date(timeIntervalSince1970: TimeInterval(item.added)))
         case "finished": text = item.finished.map { Self.dateFormat.string(from: Date(timeIntervalSince1970: TimeInterval($0))) } ?? ""
         case "location": text = (item.folder as NSString).abbreviatingWithTildeInPath

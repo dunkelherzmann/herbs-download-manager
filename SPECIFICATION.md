@@ -78,8 +78,8 @@ Columns, all sortable, every column but Name can be hidden from the header's con
 | L3 | Size | downloaded / total ("1.2 GB / 4.0 GB"; total "Unknown" when the server sends none) |
 | L4 | Speed | current speed |
 | L5 | Time Left | estimated time left |
-| L6 | Connections | active connections / allowed ("6 / 32") |
-| L7 | Mirrors | sources in use / known ("2 / 3") |
+| L6 | Connections | while it runs, connections receiving now / allowed ("6 / 32"; a stream fetches at most 6 pieces at once, a download the browser streams to the app counts as 1); otherwise the most it used at once over its runs ("14"), blank if it never received data |
+| L7 | Mirrors | while it runs, sources in use / known ("2 / 3"); otherwise how many of its sources gave it data, of those known ("2 of 3"; a finished download from an older list counts its link) |
 | L8 | Date Added | default sort, newest first |
 | L9 | Date Finished | |
 | L10 | Location | destination folder |

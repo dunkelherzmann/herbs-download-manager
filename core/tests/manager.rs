@@ -70,6 +70,8 @@ fn a_download_added_without_starting_waits() {
     let row = m.rows().remove(0);
     assert_eq!((row.id, row.status, row.name.as_str()), (id, Status::Waiting, "never.zip"));
     assert_eq!(row.sources_known, 1);
+    // Never run: no connections used, none of its one source.
+    assert_eq!((row.connections_text.as_str(), row.mirrors_text.as_str()), ("", "0 of 1"));
 }
 
 #[test]
@@ -85,14 +87,30 @@ fn pause_keeps_the_bytes_and_resume_finishes() {
     assert!(row.status_text.starts_with("Downloading "), "{}", row.status_text);
     assert_eq!(row.allowed_connections, 4);
     std::thread::sleep(Duration::from_millis(600));
+    // While it runs, the columns are live: "connections now / allowed", "sources in use / known".
+    let live = m.rows().remove(0);
+    assert_eq!(live.connections_text, format!("{} / 4", live.active_connections));
+    assert!(live.active_connections >= 1, "{}", live.connections_text);
+    assert_eq!(live.mirrors_text, "1 / 1");
     m.pause(&[id]);
     wait(&m, id, |s| *s == Status::Paused);
     let paused = m.rows().remove(0);
     assert!(paused.downloaded > 0 && paused.status_text.starts_with("Paused "));
+    // Stopped, they show what it used: the most connections at once, and the sources that gave data.
+    let most: u32 = paused.connections_text.parse().expect("a number of connections");
+    assert!((1..=4).contains(&most), "{}", paused.connections_text);
+    assert_eq!((paused.mirrors_text.as_str(), paused.connections_sort), ("1 of 1", most));
     s.update("/f.bin", |f| f.rate = None);
     m.resume(&[id]);
     wait(&m, id, |s| *s == Status::Finished);
     assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
+    let done = m.rows().remove(0);
+    assert!(done.connections_text.parse::<u32>().unwrap() >= most, "the most over both runs");
+    assert_eq!(done.mirrors_text, "1 of 1");
+    // Kept in the list: the same after the app starts again.
+    drop(m);
+    let again = Manager::open(&dir).unwrap();
+    assert_eq!(again.rows()[0].connections_text, done.connections_text);
 }
 
 #[test]

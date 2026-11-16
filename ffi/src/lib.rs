@@ -309,6 +309,12 @@ pub struct DownloadRow {
     pub allowed_connections: u32,
     pub sources_in_use: u32,
     pub sources_known: u32,
+    /// The Connections and Mirrors columns: live while it runs ("6 / 32", "1 / 3"), what it used when not ("14",
+    /// "2 of 3"), and the numbers they sort by.
+    pub connections_text: String,
+    pub mirrors_text: String,
+    pub connections_sort: u32,
+    pub mirrors_sort: u32,
     /// Seconds since 1970.
     pub added: u64,
     pub finished: Option<u64>,
@@ -346,6 +352,10 @@ impl From<manager::Row> for DownloadRow {
             allowed_connections: r.allowed_connections,
             sources_in_use: r.sources_in_use,
             sources_known: r.sources_known,
+            connections_text: r.connections_text,
+            mirrors_text: r.mirrors_text,
+            connections_sort: r.connections_sort,
+            mirrors_sort: r.mirrors_sort,
             added: r.added,
             finished: r.finished,
             folder: r.folder.to_string_lossy().into_owned(),

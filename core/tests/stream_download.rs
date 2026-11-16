@@ -103,6 +103,11 @@ fn a_paused_stream_continues_with_the_pieces_it_has() {
         assert!(Instant::now() < until, "no piece arrived");
         std::thread::sleep(Duration::from_millis(20));
     }
+    // While its pieces come: the pieces fetched at once out of a stream's few, and its one source in use.
+    let live = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert!(live.active_connections >= 1 && live.allowed_connections <= 6, "{}", live.connections_text);
+    assert_eq!(live.connections_text, format!("{} / {}", live.active_connections, live.allowed_connections));
+    assert_eq!(live.mirrors_text, "1 / 1");
     m.pause(&[id]);
     wait_for(&m, id, "paused", |s| *s == Status::Paused);
     let kept: Vec<String> = std::fs::read_dir(&parts).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| !n.ends_with(".tmp")).collect();
@@ -111,6 +116,10 @@ fn a_paused_stream_continues_with_the_pieces_it_has() {
     m.resume(&[id]);
     wait_for(&m, id, "finished", |s| *s == Status::Finished);
     assert_eq!(std::fs::read(dir.join("files/h264-ts.mp4")).unwrap(), joined_directly("h264-ts", &dir));
+    // Finished: what it used.
+    let done = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert!(done.connections_text.parse::<u32>().is_ok_and(|n| (1..=6).contains(&n)), "{}", done.connections_text);
+    assert_eq!(done.mirrors_text, "1 of 1");
     assert!(m.quit(Duration::from_secs(5)));
 }
 

@@ -623,13 +623,16 @@ async fn fetch_all(
     let have: u64 = here.iter().filter_map(|p| std::fs::metadata(parts.join(&p.file)).ok()).map(|m| m.len()).sum();
     progress.downloaded.fetch_add(have, Ordering::SeqCst);
     let at_once = req.connections.clamp(1, MAX_AT_ONCE) as usize;
+    // A stream fetches at most MAX_AT_ONCE pieces at once, whatever the download's connections say: the list shows that.
+    progress.allowed.store(at_once, Ordering::SeqCst);
     let semaphore = Arc::new(tokio::sync::Semaphore::new(at_once));
     let mut tasks = tokio::task::JoinSet::new();
     for piece in missing {
         let (client, req, progress, stop, parts, semaphore) = (client.clone(), req.clone(), progress.clone(), stop.clone(), parts.to_path_buf(), semaphore.clone());
         tasks.spawn(async move {
             let _slot = semaphore.acquire_owned().await;
-            progress.active.fetch_add(1, Ordering::SeqCst);
+            let now = progress.active.fetch_add(1, Ordering::SeqCst) + 1;
+            progress.peak.fetch_max(now, Ordering::SeqCst);
             let result = fetch_piece(&client, &piece, &req, &progress, &stop, &parts).await;
             progress.active.fetch_sub(1, Ordering::SeqCst);
             result
