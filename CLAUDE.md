@@ -135,6 +135,11 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   is narrower than its player. In Edge on Windows pick the tab whose `document.visibilityState` is visible, not by
   address: once the hidden built-in page is navigated it matches too, and clicks there never land. A fresh test
   profile on Windows signs itself in to the Windows account (his favourites sync in): delete it after the test.
+- After the extension restarts or is updated (`chrome.runtime.reload()` from its worker, which fires `onInstalled` with
+  "update"), an open tab has two extension worlds named "Herb's Download Manager": the old copy, whose `chrome.runtime`
+  is gone, and the one background.js put in. Over DevTools, read the button from the newest context id. To try an
+  update without touching the installed folder, load a scratch copy with `--load-extension`, raise its version on
+  disk, then reload it from the worker (2026-11-16).
 - Content scripts that wait on `requestAnimationFrame` (the page's download button) never run in the app's built-in
   browser pane while it's hidden: a page test there timed out. Test them in the headless Edge test copy, moving the
   pointer with `Input.dispatchMouseEvent` (2026-11-14).
