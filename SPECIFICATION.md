@@ -608,7 +608,8 @@ downloads to the app. The browser keeps a download the app doesn't take.
   right corner of the file under the pointer, and goes 0.8 s after the pointer leaves. Files are: a link to a file
   (its address ends in a file type the page scan knows, §15, such as `.zip`, `.pdf`, `.dmg`, `.mp4` or `.m3u8`, or
   the link has `download`), a picture (from 48 × 48 pixels), a picture drawn as an element's background (not the
-  page's own), a video or sound (players' layers over a video don't hide it), and an embedded document (`<embed>`,
+  page's own), a video or sound (players' layers over a video don't hide it, nor a picture covering most of it, such as
+  the cover Instagram's feed shows before a video plays), and an embedded document (`<embed>`,
   `<object>`). A link to a file wins over what it holds, so a thumbnail that links to its full picture gives that
   picture; the button sits in the corner of the bigger of the two, and beside a link too small to hold it. Its hover
   text says "Download this file (video, sound, picture) with Herb's Download Manager". A click downloads that file at
@@ -628,8 +629,13 @@ downloads to the app. The browser keeps a download the app doesn't take.
   doesn't answer what it doesn't know. Before handing a file over, the page's button asks the background script which
   version it is; the list and the options page ask as they open. When no answer comes within 4 seconds, or it names
   another version than the extension's, the extension restarts itself, which loads its files anew, and the button
-  turns red with "Herb's Download Manager's extension was restarted to load its new version: load the page again,
-  then click again." (Chrome, Edge, Brave and Vivaldi; all three systems.)
+  turns red with "Herb's Download Manager's extension was restarted to load its new version: click again." (Chrome,
+  Edge, Brave and Vivaldi; all three systems.)
+- **Pages already open keep working after the extension is updated.** When the extension is installed, updated or
+  restarted, it puts its page scripts into every frame of each open web page (not discarded tabs, not the browser's
+  own pages), so the page's button works without loading the page again. The copy left from before steps aside and
+  takes its button away, and the page's own script hands the new copy the manifests it received before (its newest
+  60), so videos the page loaded earlier (Instagram's feed) are still found.
 - A download the extension hands over is asked for as the browser asked: its User-Agent, the page as Referer (when
   the browser saw a player fetch it, exactly that request's Referer, Origin and User-Agent, none when it sent none,
   and the rest of its lines (Accept, Accept-Language, Sec-Fetch-*, Sec-Ch-Ua*, its own tokens; not its cookies,

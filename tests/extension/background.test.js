@@ -455,7 +455,8 @@ test("the page's hook passes on manifests in JSON replies and leaves other repli
     addEventListener(type, f) { this.listeners.push(f); }
   }
   XHR.prototype.send = function () { this.listeners.forEach((f) => f()); };
-  const window = { postMessage: (m) => posted.push(m) };
+  const heard = [];
+  const window = { postMessage: (m) => posted.push(m), addEventListener: (type, f) => type === "message" && heard.push(f) };
   const context = vm.createContext({ XMLHttpRequest: XHR, window, location: { origin: "https://www.instagram.com" }, JSON });
   context.globalThis = context;
   vm.runInContext(fs.readFileSync(require("node:path").join(__dirname, "../../extension/content-main.js"), "utf8"), context);
@@ -473,6 +474,11 @@ test("the page's hook passes on manifests in JSON replies and leaves other repli
   assert.equal(posted[1].herbsDmManifests.length, 2);
   assert.ok(first.ids.includes("4029997378001864916") && first.ids.includes("42"), "its own ids and its reel's");
   assert.ok(second.ids.includes("4030015634607606450"));
+  // A new copy of content.js (put into the open tab after an update) asks again: all three come back, once.
+  heard.forEach((f) => f({ source: window, data: { herbsDmReplay: true } }));
+  heard.forEach((f) => f({ source: {}, data: { herbsDmReplay: true } }));
+  assert.equal(posted.length, 3, "only the page's own window may ask");
+  assert.equal(posted[2].herbsDmManifests.length, 3);
 });
 
 test("the page's button tells apart stories of the same length by the id the page's address names", async () => {
@@ -565,6 +571,19 @@ test("on a YouTube watch page only the page's own player is asked and streams", 
   const b = youtube();
   await b.ask({ type: "page-button", player: { src: "blob:https://www.youtube.com/1", kind: "video", seconds: 740 } }, { tab: WATCH, frameId: 0, url: WATCH.url });
   assert.deepEqual(plain(b.toTabs.map((m) => [m.type, m.frameId])), [["yt-describe", 0], ["yt-download", 0]]);
+});
+
+test("after an update the page scripts go into every open web page, so its button works without loading it again", async () => {
+  const b = load({ tabs: [PAGE, { id: 2, url: "chrome://settings/" }, { id: 3, url: "https://www.instagram.com/", discarded: true }] });
+  b.chrome.tabs.query = async () => [PAGE, { id: 2, url: "chrome://settings/" }, { id: 3, url: "https://www.instagram.com/", discarded: true }];
+  const injected = [];
+  b.chrome.scripting.executeScript = async (o) => { injected.push([o.target.tabId, o.target.allFrames, o.files.join(), o.world || "ISOLATED"]); return []; };
+  await b.get("addToOpenTabs")({ reason: "update" });
+  assert.deepEqual(plain(injected), [[1, true, "content-main.js", "MAIN"], [1, true, "content.js", "ISOLATED"]],
+    "only live web pages, every frame; the page's own script first so it can hand over what it kept");
+  injected.length = 0;
+  await b.get("addToOpenTabs")({ reason: "chrome_update" });
+  assert.equal(injected.length, 0, "not when only the browser was updated");
 });
 
 test("the background script answers hello with its own version, which is manifest.json's", async () => {

@@ -45,10 +45,22 @@
     return found;
   }
 
+  // What was passed, the newest 60, sent again when a new copy of content.js asks (it starts in an open tab after the
+  // extension was updated, when what the page received before is gone from the extension).
+  const passed = [];
+  const target = location.origin === "null" ? "*" : location.origin;
   function pass(text) {
     const manifests = manifestsIn(text);
-    if (manifests.length) window.postMessage({ herbsDmManifests: manifests }, location.origin === "null" ? "*" : location.origin);
+    if (!manifests.length) return;
+    passed.push(...manifests);
+    passed.splice(0, Math.max(0, passed.length - 60));
+    window.postMessage({ herbsDmManifests: manifests }, target);
   }
+  window.addEventListener("message", (e) => {
+    if (e.source === window && e.data && e.data.herbsDmReplay === true && passed.length) {
+      window.postMessage({ herbsDmManifests: passed.slice() }, target);
+    }
+  });
 
   const send = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function (...args) {
