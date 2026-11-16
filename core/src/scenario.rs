@@ -279,7 +279,7 @@ impl Run<'_> {
     }
 }
 
-/// Words separated by spaces; "double quotes" keep spaces in one word ("f9/small - kept.bin").
+/// Words separated by spaces; "double quotes" keep spaces in one word ("f9/small 2.bin").
 fn split_words(line: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();

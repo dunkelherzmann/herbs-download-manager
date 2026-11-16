@@ -235,10 +235,10 @@ Whenever a download is added (New Download, Add Links, Import, clipboard, drop, 
 the same name, whether a download in the list (finished, or unfinished with another size) or a file in the folder, asks:
 
 > A different “report.pdf” is already in Downloads. Skip the new link, replace the existing file (it goes to the
-> Trash), or keep both, the new one as “report - kept.pdf”. The one there is 1.0 MB; the new one is 2.4 MB.
+> Trash), or keep both, the new one as “report 2.pdf”. The one there is 1.0 MB; the new one is 2.4 MB.
 
-Buttons: **Keep Both** (default), **Skip**, **Replace**. Keep Both names the new download "<name> - kept.<ext>"
-("report - kept.pdf", then "report - kept 2.pdf"; "README - kept" without an extension), so the original keeps its
+Buttons: **Keep Both** (default), **Skip**, **Replace**. Keep Both numbers the new download, the original counting as
+1: "<name> 2.<ext>" ("report 2.pdf", then "report 3.pdf"; "README 2" without an extension), so the original keeps its
 name. Replace moves the existing file to the Trash and removes its download from the list. When more links follow,
 **Do the same for the rest** answers once for all. Other links in the same batch for that file follow the choice:
 mirrors of the kept or replacing download, or skipped too. A link to the same file as an unfinished download is

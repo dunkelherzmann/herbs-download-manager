@@ -20,7 +20,7 @@ pub const RETRIES: RangeInclusive<u32> = 0..=20;
 pub enum WhenFileExists {
     /// Skip, Replace or Keep Both, asked each time.
     Ask,
-    /// The new download is named "<name> - kept.<ext>".
+    /// The new download is named "<name> 2.<ext>" (then 3, 4, …).
     KeepBoth,
     /// The new link is not added.
     Skip,

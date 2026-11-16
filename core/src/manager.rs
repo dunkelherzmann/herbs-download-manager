@@ -190,11 +190,12 @@ pub struct Clash {
     pub path: Option<PathBuf>,
     pub size: Option<u64>,
     pub finished: bool,
-    /// The name Keep Both gives the new download: "name - kept.ext", then "name - kept 2.ext" and so on.
+    /// The name Keep Both gives the new download: "name 2.ext", then "name 3.ext" and so on (the original is 1).
     pub kept_name: String,
 }
 
-/// "report - kept.pdf", "report - kept 2.pdf", …: the first not used in the folder or by a download in the list.
+/// "report 2.pdf", "report 3.pdf", … (the original counts as 1): the first not used in the folder or by a download in
+/// the list.
 fn kept_name(folder: &Path, name: &str, slots: &[Slot]) -> String {
     let (stem, ext) = match name.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
@@ -206,10 +207,7 @@ fn kept_name(folder: &Path, name: &str, slots: &[Slot]) -> String {
             || transfer::part_path(&p).exists()
             || slots.iter().any(|s| s.entry.folder == folder && s.entry.name.as_deref() == Some(n))
     };
-    (1..)
-        .map(|i| if i == 1 { format!("{stem} - kept{ext}") } else { format!("{stem} - kept {i}{ext}") })
-        .find(|n| !used(n))
-        .expect("some kept name is free")
+    (2..).map(|i| format!("{stem} {i}{ext}")).find(|n| !used(n)).expect("some numbered name is free")
 }
 
 impl Added {

@@ -23,7 +23,7 @@ enum ClashChoice {
 extension AppModel {
     /// Adds links one at a time, so links to the same file gather into one download and its mirrors (M5). When a
     /// different file already has a link's name, in the list or in the folder, it asks Skip, Replace or Keep Both
-    /// (the new one named "name - kept.ext"), with "Do the same for the rest" when more links follow, unless
+    /// (the new one named "name 2.ext"), with "Do the same for the rest" when more links follow, unless
     /// Settings ▸ When a file exists has the answer. The footer sums up what happened.
     func addAsking(_ links: [PendingLink], folder: URL, connections: UInt32, start: Bool, window: NSWindow?) async {
         // S7: a choice made in Settings is used without asking.
