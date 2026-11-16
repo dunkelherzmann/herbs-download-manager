@@ -120,11 +120,12 @@
 
   // ---- the video on the page ---------------------------------------------------------------------------------------
 
-  // The video the page's address names: `watch?v=<id>`, `/shorts/<id>`, `/live/<id>`.
+  // The video the page's address names: `watch?v=<id>`, `/shorts/<id>`, `/live/<id>`, or an embedded player's
+  // `/embed/<id>`.
   function pageVideoId() {
     const v = new URLSearchParams(location.search).get("v");
     if (v) return v;
-    const m = /^\/(shorts|live)\/([\w-]{6,})/.exec(location.pathname);
+    const m = /^\/(shorts|live|embed)\/([\w-]{6,})/.exec(location.pathname);
     return m ? m[2] : "";
   }
 

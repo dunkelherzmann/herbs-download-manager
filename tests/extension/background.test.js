@@ -270,6 +270,23 @@ test("the page's button on a picture or sound hands over its own address, named 
   assert.deepEqual([none.ok, /play it first/.test(none.error)], [false, true]);
 });
 
+test("the page's button in an embedded frame hands over that frame's address as the Referer", async () => {
+  const b = load({ tabs: [PAGE], native: () => ({ ok: true }) });
+  // Another frame of the tab asked the same host, with its own page as Referer: not this picture's.
+  b.chrome.webRequest.onSendHeaders.fire({ tabId: 1, url: "https://img.example.com/other.jpg", type: "xmlhttprequest",
+    requestHeaders: [{ name: "Referer", value: "https://ads.example.net/frame.html" }] });
+  const embed = "https://embed.example.org/post/7";
+  await b.ask({ type: "page-button", player: { src: "https://img.example.com/p/harbour.jpg", kind: "image", page: embed } }, { tab: PAGE, frameId: 3, url: embed });
+  // A frame written by its page (srcdoc, about:blank) names its page's address.
+  await b.ask({ type: "page-button", player: { src: "https://img.example.com/p/bay.jpg", kind: "image", page: PAGE.url } }, { tab: PAGE, frameId: 4, url: "about:srcdoc" });
+  // On the tab's own page, as before.
+  await b.ask({ type: "page-button", player: { src: "https://img.example.com/p/cove.jpg", kind: "image", page: PAGE.url } }, { tab: PAGE, frameId: 0, url: PAGE.url });
+  const [framed, written, top] = b.sent.filter((m) => m.command === "add");
+  assert.deepEqual([framed.urls[0], framed.referer], ["https://img.example.com/p/harbour.jpg", embed]);
+  assert.deepEqual([written.urls[0], written.referer], ["https://img.example.com/p/bay.jpg", PAGE.url]);
+  assert.deepEqual([top.urls[0], top.referer], ["https://img.example.com/p/cove.jpg", "https://ads.example.net/frame.html"]);
+});
+
 test("the page's button on a streamed video takes the tab's stream", async () => {
   const b = load({ tabs: [PAGE], fetch: () => ({ body: VOD }) });
   await b.respond({ url: "https://cdn.example.com/v/index.m3u8" });
@@ -526,6 +543,28 @@ test("the page's button on YouTube's player downloads the page's video", async (
   const answer = await b.ask({ type: "page-button", player: { src: "blob:https://www.youtube.com/1", kind: "video", seconds: 740 } }, { tab: WATCH });
   assert.equal(answer.ok, true);
   assert.match(b.sent.find((m) => m.command === "add").feed, /^yt-abc123XYZ_0-/);
+});
+
+test("the page's button on a YouTube player embedded in another site downloads that player's video", async () => {
+  // Only the embed's frame plays it: the tab's own page is another site's.
+  const b = load({ tabs: [PAGE], tabMessage: (id, m, o) => (m.type === "yt-describe" && o.frameId === 6 ? DESCRIBED : m.type === "yt-describe" ? null : { ok: true }) });
+  const embed = "https://www.youtube-nocookie.com/embed/abc123XYZ_0?rel=0";
+  const answer = await b.ask({ type: "page-button", player: { src: "blob:https://www.youtube-nocookie.com/1", kind: "video", seconds: 740, page: embed } }, { tab: PAGE, frameId: 6, url: embed });
+  assert.equal(answer.ok, true);
+  assert.match(b.sent.find((m) => m.command === "add").feed, /^yt-abc123XYZ_0-/);
+  const start = b.toTabs.find((m) => m.type === "yt-download");
+  assert.deepEqual(plain([start.tabId, start.frameId]), [PAGE.id, 6], "the embed's own frame streams it");
+  // A frame that isn't YouTube's player isn't asked.
+  const other = load({ tabs: [PAGE], tabMessage: () => DESCRIBED });
+  const none = await other.ask({ type: "page-button", player: { src: "blob:https://ads.example.net/1", kind: "video", seconds: 740 } }, { tab: PAGE, frameId: 2, url: "https://ads.example.net/v" });
+  assert.equal(none.ok, false);
+  assert.equal(other.toTabs.filter((m) => m.type === "yt-describe").length, 0);
+});
+
+test("on a YouTube watch page only the page's own player is asked and streams", async () => {
+  const b = youtube();
+  await b.ask({ type: "page-button", player: { src: "blob:https://www.youtube.com/1", kind: "video", seconds: 740 } }, { tab: WATCH, frameId: 0, url: WATCH.url });
+  assert.deepEqual(plain(b.toTabs.map((m) => [m.type, m.frameId])), [["yt-describe", 0], ["yt-download", 0]]);
 });
 
 test("the background script answers hello with its own version, which is manifest.json's", async () => {
