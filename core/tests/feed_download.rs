@@ -145,7 +145,9 @@ fn a_fed_stream_is_joined_from_the_pieces_the_browser_sends() {
         Status::Finished => {}
         other => panic!("{other:?}"),
     }
-    let path = m.rows().into_iter().find(|r| r.id == id).unwrap().path.unwrap();
+    let row = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    assert_eq!((row.connections_text.as_str(), row.mirrors_text.as_str()), ("1", "1 of 1"), "the page's stream is its one connection");
+    let path = row.path.unwrap();
     assert_eq!(path.file_name().unwrap(), "A Video.mp4");
     assert!(!path.with_file_name("A Video.mp4.hdparts").exists(), "the pieces go once joined");
     same_as_ffmpeg(&path, &base.join("video.mp4"), &base.join("audio.mp4"));

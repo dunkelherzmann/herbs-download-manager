@@ -122,6 +122,8 @@ pub async fn run(url: &str, folder: &Path, name: &str, progress: &Progress, stop
         return Outcome::Failed(format!("Can't make {}: {e}", parts.display()));
     }
     progress.resumable.store(false, Ordering::SeqCst);
+    // The page streams it to the app as one connection.
+    progress.allowed.store(1, Ordering::SeqCst);
     if let Some(s) = size {
         progress.size.store(s, Ordering::SeqCst);
     }
@@ -132,7 +134,11 @@ pub async fn run(url: &str, folder: &Path, name: &str, progress: &Progress, stop
     };
     loop {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        progress.downloaded.store(feed.received.load(Ordering::SeqCst), Ordering::SeqCst);
+        let received = feed.received.load(Ordering::SeqCst);
+        if received > 0 && progress.active.swap(1, Ordering::SeqCst) == 0 {
+            progress.peak.fetch_max(1, Ordering::SeqCst);
+        }
+        progress.downloaded.store(received, Ordering::SeqCst);
         // Paused or cancelled: the feed stays known as stopped, so the browser's next piece is told to stop.
         if let Some(outcome) = crate::transfer::stop_outcome(stop) {
             feed.state.lock().unwrap().stopped = true;
@@ -158,6 +164,7 @@ pub async fn run(url: &str, folder: &Path, name: &str, progress: &Progress, stop
         }
     }
     forget();
+    progress.active.store(0, Ordering::SeqCst);
     progress.finishing.store(true, Ordering::SeqCst);
     let (lengths, has_init) = {
         let s = feed.state.lock().unwrap();

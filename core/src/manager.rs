@@ -73,6 +73,14 @@ pub struct Entry {
     /// The user's own note on it (the Note column, found by the search).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The most connections it received data on at once, over its runs (the Connections column while it isn't
+    /// running); none before it ever received data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_connections: Option<u32>,
+    /// How many of its sources (link and mirrors) gave it data, over its runs (the Mirrors column while it isn't
+    /// running).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_sources: Option<u32>,
     /// A streamed video (an HLS playlist, §15): its pieces are downloaded and joined into one MP4.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stream: bool,
@@ -106,6 +114,12 @@ pub struct Row {
     pub allowed_connections: u32,
     pub sources_in_use: u32,
     pub sources_known: u32,
+    /// L6 and L7 as the list shows them: live while it runs ("6 / 32", "1 / 3"), what it used when not ("14",
+    /// "2 of 3"), and the number the columns sort by.
+    pub connections_text: String,
+    pub mirrors_text: String,
+    pub connections_sort: u32,
+    pub mirrors_sort: u32,
     pub added: u64,
     pub finished: Option<u64>,
     pub folder: PathBuf,
@@ -554,6 +568,8 @@ impl Manager {
                     verified: None,
                     needs_login: None,
                     note: None,
+                    used_connections: None,
+                    used_sources: None,
                 },
                 running: None,
             });
@@ -695,6 +711,17 @@ impl Manager {
                 promote(e, &new);
                 promoted = Some(new);
             }
+            // What it used, for the list while it doesn't run: the most connections at once, and the sources that gave
+            // data (a stream's or a fed download's one source counts once data came).
+            let peak = running.progress.peak.load(Ordering::SeqCst) as u32;
+            if peak > 0 {
+                e.used_connections = Some(e.used_connections.unwrap_or(0).max(peak));
+            }
+            let gave = sources.iter().filter(|s| s.bytes > 0).count() as u32;
+            let gave = if gave == 0 && e.downloaded > 0 { 1 } else { gave };
+            if gave > 0 {
+                e.used_sources = Some(e.used_sources.unwrap_or(0).max(gave));
+            }
             // Only a download that quitting paused starts again at launch.
             e.resume_at_launch &= matches!(outcome, Outcome::Paused);
             match outcome {
@@ -763,6 +790,8 @@ impl Manager {
         e.size = None;
         e.downloaded = 0;
         e.finished = None;
+        e.used_connections = None;
+        e.used_sources = None;
         e.status = Status::Waiting;
     }
 
@@ -872,6 +901,8 @@ impl Manager {
                     verified: None,
                     needs_login: None,
                     note: None,
+                    used_connections: None,
+                    used_sources: None,
                 },
                 running: None,
             });
@@ -992,6 +1023,8 @@ impl Manager {
                     verified: e.verified,
                     needs_login: None,
                     note: None,
+                    used_connections: None,
+                    used_sources: None,
                 },
                 running: None,
             });
@@ -1406,6 +1439,7 @@ fn row(slot: &Slot) -> Row {
     let e = &slot.entry;
     let mut status = e.status.clone();
     let (mut downloaded, mut size, mut speed, mut active) = (e.downloaded, e.size, 0u64, 0u32);
+    let mut allowed = e.connections;
     let mut name = e.name.clone();
     let (mut in_use, mut known) = (0u32, 1 + e.mirrors.len() as u32);
     let mut live = Vec::new();
@@ -1415,6 +1449,11 @@ fn row(slot: &Slot) -> Row {
         downloaded = p.downloaded.load(Ordering::SeqCst);
         size = p.size().or(size);
         active = p.active.load(Ordering::SeqCst) as u32;
+        // What it may use now: a stream's few pieces at once, a fed download's one, or what the engine allows.
+        let now = p.allowed.load(Ordering::SeqCst) as u32;
+        if now > 0 {
+            allowed = now;
+        }
         if name.is_none() {
             name = p.name.lock().unwrap().clone();
         }
@@ -1436,6 +1475,10 @@ fn row(slot: &Slot) -> Row {
             known = (sources.len() as u32).max(known);
             in_use = sources.iter().filter(|s| s.active > 0).count() as u32;
         }
+        // A stream or a fed download counts no connections per source: the one it's on is in use while data comes.
+        if active > 0 && in_use == 0 {
+            in_use = (sources.iter().filter(|s| s.status == transfer::SourceStatus::Working).count() as u32).max(1);
+        }
         if active > 0 || downloaded > e.downloaded {
             status = Status::Downloading;
             resumable = p.resumable.load(Ordering::SeqCst);
@@ -1451,6 +1494,15 @@ fn row(slot: &Slot) -> Row {
         _ => None,
     };
     let name = name.unwrap_or_else(|| name_from_url(&e.url));
+    let running = slot.running.is_some();
+    let used = e.used_sources.unwrap_or(if e.status == Status::Finished { 1 } else { 0 });
+    let (connections_text, connections_sort) = if running {
+        (format!("{active} / {allowed}"), active)
+    } else {
+        (e.used_connections.map(|n| n.to_string()).unwrap_or_default(), e.used_connections.unwrap_or(0))
+    };
+    let (mirrors_text, mirrors_sort) =
+        if running { (format!("{in_use} / {known}"), in_use) } else { (format!("{used} of {known}"), used) };
     Row {
         id: e.id,
         kind: FileKind::of(&name),
@@ -1463,9 +1515,13 @@ fn row(slot: &Slot) -> Row {
         speed,
         time_left,
         active_connections: active,
-        allowed_connections: e.connections,
+        allowed_connections: allowed,
         sources_in_use: in_use,
         sources_known: known,
+        connections_text,
+        mirrors_text,
+        connections_sort,
+        mirrors_sort,
         added: e.added,
         finished: e.finished,
         folder: e.folder.clone(),
