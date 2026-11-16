@@ -7,6 +7,17 @@
   if (globalThis.__herbsDmButton) return;
   globalThis.__herbsDmButton = true;
   const api = globalThis.browser ?? chrome;
+  // Listeners on the window and the document, kept so they can be added again: a page that writes a frame of its own
+  // (an about:blank frame filled with document.open and write) erases them, while this script stays (§15).
+  const listeners = [];
+  const on = (target, type, fn, options) => {
+    listeners.push([target, type, fn, options]);
+    target.addEventListener(type, fn, options);
+  };
+  // Adding a listener that's still there changes nothing; document.open empties the document, which this sees.
+  new MutationObserver(() => {
+    for (const [target, type, fn, options] of listeners) target.addEventListener(type, fn, options);
+  }).observe(document, { childList: true });
   const SIZE = 22;
   // Pictures smaller than this (icons, avatars, spacers) get no button.
   const PICTURE_MIN = 48;
@@ -32,7 +43,7 @@
   root.querySelector("img").src = api.runtime.getURL("icons/icon-32.png");
 
   // Manifests the page received in its data replies (content-main.js), handed to background.js.
-  addEventListener("message", (e) => {
+  on(window, "message", (e) => {
     if (e.source !== window || !e.data || !Array.isArray(e.data.herbsDmManifests)) return;
     const manifests = e.data.herbsDmManifests.filter((m) => m && typeof m.xml === "string")
       .map((m) => ({ xml: m.xml, ids: (Array.isArray(m.ids) ? m.ids : []).map(String).slice(0, 20) }));
@@ -41,7 +52,7 @@
 
   // YouTube (youtube.js, in the page's world): what the page plays, and downloads it streams piece by piece. Asked by
   // background.js; each piece goes to it (and on to the app) before the page sends the next.
-  if (/(^|\.)youtube\.com$/.test(location.hostname)) {
+  if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
     const pending = new Map();
     const askPage = (type, extra = {}) => new Promise((resolve) => {
       const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -56,7 +67,7 @@
       return btoa(s);
     };
     const feeds = new Map();
-    addEventListener("message", async (e) => {
+    on(window, "message", async (e) => {
       const a = e.source === window && e.data && e.data.herbsDmYouTubeAnswer;
       if (!a) return;
       if (a.type === "describe") {
@@ -141,14 +152,29 @@
     if (el === document.body || el === document.documentElement) return null;
     const url = /url\(["']?([^"')]+)["']?\)/.exec(getComputedStyle(el).backgroundImage || "");
     if (!url) return null;
-    const src = new URL(url[1], location.href).href;
+    const src = new URL(url[1], document.baseURI).href;
     return web(src) ? { el, src, kind: "image" } : null;
+  }
+
+  // Everything under the point, a web component's own elements included (its shadow root, open or closed): what's
+  // under the point inside a shadow root comes before its host. Each shadow root is looked into once.
+  const shadowOf = (el) => el.shadowRoot || (api.dom && api.dom.openOrClosedShadowRoot ? api.dom.openOrClosedShadowRoot(el)
+    : typeof el.openOrClosedShadowRoot === "function" ? el.openOrClosedShadowRoot() : null);
+  function elementsAt(scope, x, y, out = [], seen = new Set([root])) {
+    seen.add(scope);
+    for (const el of scope.elementsFromPoint(x, y)) {
+      if (el === host || out.includes(el)) continue;
+      const inner = shadowOf(el);
+      if (inner && !seen.has(inner) && seen.size < 50) elementsAt(inner, x, y, out, seen);
+      if (!out.includes(el)) out.push(el);
+    }
+    return out;
   }
 
   // The file under the point: a link to a file first (a thumbnail that opens its full picture gives that picture),
   // then a sound, picture or video, an embedded document, then a background picture.
   function fileAt(x, y) {
-    const els = document.elementsFromPoint(x, y).filter((el) => el !== host);
+    const els = elementsAt(document, x, y);
     const big = (el, min) => {
       const r = el.getBoundingClientRect();
       return r.width >= min && r.height >= min;
@@ -221,7 +247,7 @@
   // Looked for at most once a frame while the pointer moves; players often lay their controls over the video, so
   // everything under the pointer is checked, not just the top element.
   let pending = false;
-  addEventListener("mousemove", (e) => {
+  on(window, "mousemove", (e) => {
     if (pending) return;
     pending = true;
     requestAnimationFrame(() => {
@@ -232,9 +258,9 @@
       else if (target) hide(false);
     });
   }, { passive: true, capture: true });
-  addEventListener("scroll", () => target && place(), { passive: true, capture: true });
-  addEventListener("resize", () => target && place(), { passive: true });
-  document.addEventListener("mouseleave", () => target && hide(false));
+  on(window, "scroll", () => target && place(), { passive: true, capture: true });
+  on(window, "resize", () => target && place(), { passive: true });
+  on(document, "mouseleave", () => target && hide(false));
 
   // What the page names around a video, for telling apart videos of the same length: the parts of its address
   // (`/stories/<user>/<id>/`) and of the links to posts near the video (`/p/<code>/`, `/reel/<code>/`).
@@ -242,7 +268,7 @@
     const parts = (path) => path.split("/").filter((p) => /^[\w-]{6,}$/.test(p));
     const hints = new Set(parts(location.pathname));
     let box = el;
-    for (let up = 0; box && up < 12; up++, box = box.parentElement) {
+    for (let up = 0; box && up < 12; up++, box = box.parentElement || (box.getRootNode && box.getRootNode().host)) {
       const links = box.querySelectorAll ? box.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/reels/"], a[href*="/videos/"]') : [];
       if (links.length) {
         for (const a of [...links].slice(0, 10)) for (const p of parts(new URL(a.href, location.href).pathname)) hints.add(p);
@@ -286,6 +312,8 @@
       width: el instanceof HTMLVideoElement ? el.videoWidth : 0,
       height: el instanceof HTMLVideoElement ? el.videoHeight : 0,
       hints: hintsFor(el),
+      // The page that holds it: this frame's (a frame written by its page, about:blank or srcdoc, has its page's).
+      page: web(location.href) ? location.href : document.baseURI,
     };
     clearTimeout(resetTimer);
     button.className = "shown busy";

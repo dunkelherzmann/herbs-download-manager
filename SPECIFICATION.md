@@ -618,7 +618,11 @@ downloads to the app. The browser keeps a download the app doesn't take.
   through a `blob:` address is matched against what the tab fetched, as §15 says; with nothing to match the button
   turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for 2 seconds when the
   app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed shadow root, so the
-  page's styles can't change it.
+  page's styles can't change it. Embedded content works as the page itself does: frames from other sites, frames a
+  page writes itself (`srcdoc`, an `about:blank` frame filled by the page, which keeps the button after
+  `document.open`), the files inside web components (their shadow roots, open or closed), and YouTube's player
+  embedded in another site (§15). A file in a frame is handed over with that frame's address as its Referer, or its
+  page's for a frame the page wrote, unless the browser saw the request itself.
 - **The extension checks that its background script is current.** Edge can keep running an extension's old
   background script from its cache after the extension's files were replaced by a newer version; the old script
   doesn't answer what it doesn't know. Before handing a file over, the page's button asks the background script which
@@ -931,7 +935,7 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
 - **YouTube.** YouTube's player streams a video only through its own protocol (SABR: `POST` requests to `videoplayback`
   with protobuf bodies, answered in UMP parts), and its addresses need a token the player makes, so neither the app
   nor a page scan can fetch it. The extension downloads it in YouTube's page itself (`youtube.js`, in the page's own
-  world on www, m and music.youtube.com): it learns from the player's own requests the streaming address (with its
+  world on www, m and music.youtube.com and in YouTube's embedded players): it learns from the player's own requests the streaming address (with its
   `n` value already worked out by the player) and the streamer context with its token, keeping each request by the
   streaming settings it carries, so an advert's stream is never taken for the video's. It then asks for the video's
   picture and sound as the player does: what it has (each track's pieces so far), where the player is, the
@@ -945,6 +949,10 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
     page's address names (`watch?v=`, `/shorts/`, `/live/`), from the player that plays it: Shorts play in their own
     player (`#shorts-player`), watch pages in `#movie_player`. The site's naming rule
     names it; without one it's named after the video's title.
+  - YouTube's player embedded in another site's page (`youtube.com/embed/<id>`, `youtube-nocookie.com/embed/<id>`):
+    the page's own download button on it downloads the embed's video at the best quality, streamed by the embed's
+    frame the same way; the tab's page names it by its site's rule. On a watch page, only the page's own player is
+    asked, never a YouTube frame inside it.
   - The app makes the download first (always its own, never a mirror of another, and started at once, since the page
     streams it now) with an `hdm-feed:<id>?size=<bytes>` link, then the page streams: each piece goes from the page
     through `content.js` and the background script to `hdm`, whose `feed` command stores it in the download's

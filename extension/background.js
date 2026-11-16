@@ -12,7 +12,7 @@ const HOST = "org.herbsdownloadmanager.hdm";
 // old background script from its cache after the extension's files were replaced by a newer version: the page's
 // button and the list then got no answer (bugs.md, 2026-11-16). The extension's pages and the page's button ask
 // "hello" first, and restart the extension (fresh.js) when no answer comes or it names another version.
-const SCRIPT_VERSION = "1.32";
+const SCRIPT_VERSION = "1.33";
 const NAME = "Herb's Download Manager";
 
 async function isOn() {
@@ -119,7 +119,7 @@ async function pagesForScan(tabId) {
 // Previews already made, by link (or manifest): the newest 60.
 const previews = new Map();
 
-async function send(url, referer, extra = {}, tabId = -1) {
+async function send(url, referer, extra = {}, tabId = -1, frame = "") {
   // As the browser asks: its User-Agent and the page, which guarded streams want with every piece. When the browser
   // saw the player fetch this address, exactly what the player sent goes instead of the tab's page: its own Referer
   // and Origin, or none when it sent none (a player in an embedded frame often sends its frame's address, or nothing
@@ -131,10 +131,11 @@ async function send(url, referer, extra = {}, tabId = -1) {
     if (item) seen = item.asked;
   }
   let exact = Boolean(seen);
-  if (!seen) try { seen = hostHeaders.get(`${tabId} ${new URL(url).host}`); } catch {}
+  // (Not for the page's button on an element in a frame of its own: that frame's address beats a guess by host.)
+  if (!seen && !frame) try { seen = hostHeaders.get(`${tabId} ${new URL(url).host}`); } catch {}
   const header = (name) => seen && (seen.headers.find((h) => h.name.toLowerCase() === name) || {}).value;
   const message = {
-    command: "add", urls: [url], referer: exact ? header("referer") || "" : header("referer") || referer || "",
+    command: "add", urls: [url], referer: exact ? header("referer") || "" : header("referer") || frame || referer || "",
     cookies: await cookiesFor(url), check: true, user_agent: header("user-agent") || navigator.userAgent, ...extra,
   };
   // The Origin the player sent (none for a request to its own site); without it the app derives one from the Referer.
@@ -543,7 +544,7 @@ const factsOf = new Map();
 const STREAMED = ["stream", "dash", "page-dash", "youtube"];
 
 // The listed item an element of the page plays (`player`: {src, kind, seconds, width, height}), or null.
-async function itemForPlayer(tab, player) {
+async function itemForPlayer(tab, player, frame = null) {
   const src = player.src || "";
   if (web(src)) {
     // Its own address: a file as it is (a picture, a sound, a video), named by its link.
@@ -553,7 +554,7 @@ async function itemForPlayer(tab, player) {
   // Only a video or sound plays from a blob: address it got from the tab's fetches.
   if (player.kind !== "video" && player.kind !== "audio") return null;
   // YouTube's player: the video its page plays, streamed by the page itself.
-  const youtube = await youTubeItem(tab);
+  const youtube = await youTubeItem(tab, frame);
   if (youtube) return youtube;
   const page = web(tab.url) ? tab.url : "";
   const items = await listed(tab.id, tab, await orderSetting());
@@ -825,12 +826,16 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
         reply({ ok: false });
         return;
       }
-      const item = await itemForPlayer(tab, message.player || {});
+      const item = await itemForPlayer(tab, message.player || {}, { id: sender.frameId || 0, url: sender.url || "" });
       if (!item) {
         reply({ ok: false, error: "Nothing to download yet: play it first." });
         return;
       }
-      reply(await addItem(tab, item, { start: true, open: true }));
+      // Fetched as its own frame fetched it: a picture or video embedded from another site goes with that frame's
+      // address as its Referer when the browser didn't see the request itself.
+      const page = message.player && message.player.page;
+      const frame = !sender.frameId ? "" : web(page) ? page : web(sender.url) ? sender.url : "";
+      reply(await addItem(tab, item, { start: true, open: true, frame }));
     } else if (message.type === "media-access") {
       // A file's own preview in the list: the browser asks for it as the page would (§15).
       await mediaAccess(message.url, message.page);
@@ -936,7 +941,7 @@ async function addItem(tab, item, message) {
       answer = { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
     }
   } else {
-    answer = await send(item.url, tab && tab.url, options, tab ? tab.id : -1);
+    answer = await send(item.url, tab && tab.url, options, tab ? tab.id : -1, message.frame);
   }
   return answer || { ok: false, error: `${NAME} didn't answer.` };
 }
@@ -948,13 +953,17 @@ async function addItem(tab, item, message) {
 // the picture and sound at the end. The tab must stay open while it runs.
 
 const YOUTUBE_PAGE = /^https:\/\/(www\.|m\.|music\.)?youtube\.com\/(watch|shorts\/|live\/)/;
+// YouTube's player embedded in another site's page, in a frame of its own.
+const YOUTUBE_EMBED = /^https:\/\/(www\.)?youtube(-nocookie)?\.com\/embed\/[\w-]{6,}/;
 
-// The video a YouTube tab shows, as a list item, or null.
-async function youTubeItem(tab) {
-  if (!tab || !YOUTUBE_PAGE.test(tab.url || "")) return null;
+// The video a YouTube tab shows, or a YouTube player embedded in one of its frames (`frame`: its id and address), as
+// a list item, or null.
+async function youTubeItem(tab, frame = null) {
+  const frameId = frame && frame.id ? frame.id : 0;
+  if (!tab || !(frameId ? YOUTUBE_EMBED.test(frame.url || "") : YOUTUBE_PAGE.test(tab.url || ""))) return null;
   let video = null;
   try {
-    video = await api.tabs.sendMessage(tab.id, { type: "yt-describe" });
+    video = await api.tabs.sendMessage(tab.id, { type: "yt-describe" }, { frameId });
   } catch {
     return null;
   }
@@ -964,6 +973,7 @@ async function youTubeItem(tab) {
     kind: "youtube", url: `https://www.youtube.com/watch?v=${video.id}`, videoId: video.id, title: video.title, author: video.author,
     seconds: video.seconds, quality: best ? `${best.lines}p` : "", qualities: video.qualities.map((q) => ({ lines: q.lines, size: q.size })),
     sizes: video.qualities.map((q) => [q.lines, q.size]), sound: video.sound, ready: video.ready, size: (best ? best.size : 0) + (video.sound || 0), seen: 1,
+    frameId,
   };
 }
 
@@ -1000,7 +1010,7 @@ async function addYouTube(tab, item, options, message) {
   }
   if (!(answer && answer.ok)) return answer;
   try {
-    await api.tabs.sendMessage(tab.id, { type: "yt-download", feed, options: { lines: lines || undefined, soundOnly } });
+    await api.tabs.sendMessage(tab.id, { type: "yt-download", feed, options: { lines: lines || undefined, soundOnly } }, { frameId: item.frameId || 0 });
   } catch {
     await feedApp({ command: "feed", feed, end: true, failed: "The YouTube tab couldn't be reached: load it again and download anew." });
     return { ok: false, error: "The YouTube tab couldn't be reached: load it again." };

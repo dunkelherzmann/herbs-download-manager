@@ -80,9 +80,9 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
       },
       query: async () => [...tabMap.values()].filter((t) => t.active),
       reload: async () => {},
-      sendMessage: async (tabId, message) => {
-        toTabs.push({ tabId, ...message });
-        return tabMessage(tabId, message);
+      sendMessage: async (tabId, message, options = {}) => {
+        toTabs.push({ tabId, frameId: options.frameId, ...message });
+        return tabMessage(tabId, message, options);
       },
       onActivated: event(),
       onRemoved: event(),
