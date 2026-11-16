@@ -91,9 +91,9 @@ setting when-file-exists keep-both
 add f9 start $L/small.bin
 wait f9/small.bin finished 30
 add f9 start $M1/small.bin
-wait "f9/small - kept.bin" finished 30
+wait "f9/small 2.bin" finished 30
 expect-file f9/small.bin exists
-expect-file "f9/small - kept.bin" exists
+expect-file "f9/small 2.bin" exists
 setting when-file-exists ask
 
 feature Delete moves the file to the trash

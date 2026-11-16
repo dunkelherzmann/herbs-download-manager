@@ -408,7 +408,7 @@ fn a_link_to_a_file_already_in_the_list_becomes_its_mirror() {
 }
 
 #[test]
-fn a_different_file_with_the_same_name_is_a_clash_with_a_kept_name() {
+fn a_different_file_with_the_same_name_is_a_clash_with_a_numbered_name() {
     let data = pattern(MIB, 12);
     let (_rt, s) = server(&data, None);
     let dir = folder("clash");
@@ -422,26 +422,26 @@ fn a_different_file_with_the_same_name_is_a_clash_with_a_kept_name() {
     let Plan::Clash(c) = m.plan_add("http://other.example/f.bin", None, &files, Some(5)) else { panic!() };
     assert_eq!(
         c,
-        Clash { id: Some(id), path: Some(files.join("f.bin")), size: Some(MIB as u64), finished: true, kept_name: "f - kept.bin".into() }
+        Clash { id: Some(id), path: Some(files.join("f.bin")), size: Some(MIB as u64), finished: true, kept_name: "f 2.bin".into() }
     );
 
-    // A file already in the folder clashes too, and kept names count up past the ones in use.
+    // A file already in the folder clashes too, and the numbers count up past the names in use.
     std::fs::write(files.join("notes.txt"), b"hi").unwrap();
-    std::fs::write(files.join("notes - kept.txt"), b"hi").unwrap();
+    std::fs::write(files.join("notes 2.txt"), b"hi").unwrap();
     let Plan::Clash(c) = m.plan_add("http://a.example/notes.txt", None, &files, None) else { panic!() };
-    assert_eq!((c.id, c.size, c.kept_name.as_str()), (None, Some(2), "notes - kept 2.txt"));
+    assert_eq!((c.id, c.size, c.kept_name.as_str()), (None, Some(2), "notes 3.txt"));
     // A name without an extension.
     std::fs::write(files.join("README"), b"x").unwrap();
     let Plan::Clash(c) = m.plan_add("http://a.example/README", None, &files, None) else { panic!() };
-    assert_eq!(c.kept_name, "README - kept");
+    assert_eq!(c.kept_name, "README 2");
 
-    // Keep Both: added under the kept name, which the next clash then skips.
-    let kept = m.add(NewDownload { name: Some("f - kept.bin".into()), ..new("http://127.0.0.1:9/f.bin".into(), &dir, false) });
+    // Keep Both: added under the numbered name, which the next clash then skips.
+    let kept = m.add(NewDownload { name: Some("f 2.bin".into()), ..new("http://127.0.0.1:9/f.bin".into(), &dir, false) });
     // A link the kept download already uses (as its link or a mirror) is that download, whatever its name.
     m.add_mirrors(kept, &["http://c.example/f.bin".to_string()]);
     assert_eq!(m.plan_add("http://c.example/f.bin", None, &files, None), Plan::Mirror(kept));
     let Plan::Clash(c) = m.plan_add("http://b.example/f.bin", None, &files, Some(7)) else { panic!() };
-    assert_eq!((c.id, c.kept_name.as_str()), (Some(id), "f - kept 2.bin"));
+    assert_eq!((c.id, c.kept_name.as_str()), (Some(id), "f 3.bin"));
 }
 
 #[test]
@@ -547,7 +547,7 @@ fn an_add_session_gathers_mirrors_and_asks_about_a_name_in_use() {
     let links = vec![link(s2.url("/f.bin"), other.len() as u64), link(s3.url("/f.bin"), other.len() as u64)];
     let mut session = AddSession::new(&m, links, &dir.join("files"), 4, false);
     let Step::Ask(question) = session.step(&m) else { panic!("expected a question") };
-    assert_eq!(question.clash.kept_name, "f - kept.bin");
+    assert_eq!(question.clash.kept_name, "f 2.bin");
     assert!(question.more);
     assert!(question.title().contains("A different “f.bin” is already in the list"), "{}", question.title());
     session.answer(&m, Choice::KeepBoth, false);
@@ -555,7 +555,7 @@ fn an_add_session_gathers_mirrors_and_asks_about_a_name_in_use() {
     assert_eq!((summary.new, summary.kept, summary.mirrored), (1, 1, 1));
     assert_eq!(summary.text().as_deref(), Some("1 download added, 1 link added as a mirror, 1 kept under a new name"));
     let rows = m.rows();
-    let kept = rows.iter().find(|r| r.name == "f - kept.bin").expect("kept under a new name");
+    let kept = rows.iter().find(|r| r.name == "f 2.bin").expect("kept under a new name");
     assert_eq!(kept.sources_known, 2, "the second link became its mirror");
 
     // Skip, for the rest: nothing more is added.

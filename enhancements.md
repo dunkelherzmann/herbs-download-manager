@@ -294,3 +294,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Thumbnails for every picture and video in the list:** all multimedia files that support thumbnailing, such as pictures and videos, have thumbnails to make them easier to identify. *Requested 2026-11-15.* Browser extension (all three systems). Shipped in extension 1.30 (#11): pictures show the picture itself (with the page's cookies and Referer), files the scan calls Video get the video preview, and a video or picture that can't be loaded shows its kind's mark instead of an empty box; sounds keep their mark. Checked in the list's preview, light and dark.
+- [x] **Keep Both numbers the new file instead of "- kept":** a new file with the same name as one already there is named "<name> 2.<ext>", then "<name> 3.<ext>" and so on, the original counting as 1, instead of "<name> - kept.<ext>" and "<name> - kept <n>.<ext>". *Requested 2026-11-16.* Mac, Linux, Windows (shared core). Done in #17: the shared core names it, so the question's text and the new file follow on every platform; the feature tests check "small 2.bin" on each.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
