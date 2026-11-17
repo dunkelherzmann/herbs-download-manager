@@ -389,7 +389,7 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 batch: Vec::new(),
             })
         });
-        if let Some(&popup) = FORMS.with(|forms| forms.borrow().get(&(hwnd.0 as isize)).and_then(|f| f.controls.get(&22).copied())) {
+        if let Some(popup) = FORMS.with(|forms| forms.borrow().get(&(hwnd.0 as isize)).and_then(|f| f.controls.get(&22).copied())) {
             fill_folder_popup(popup, &crate::save_folder(&ctx.manager));
         }
         hwnd
@@ -640,7 +640,7 @@ pub fn batch(ctx: &Ctx) {
     let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (600, 226), &[
         (ID_PATTERN, w!("EDIT"), "", EDIT, 20, 20, 560, 26),
         (ID_BATCH_HELP, w!("STATIC"), BATCH_HELP, 0, 20, 56, 560, 32),
-        (ID_BATCH_PREVIEW, w!("STATIC"), "", SS_NOPREFIX.0, 20, 98, 560, 54),
+        (ID_BATCH_PREVIEW, w!("STATIC"), "", 0x80 /* SS_NOPREFIX */, 20, 98, 560, 54),
         (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 402, 176, 85, 30),
         (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 495, 176, 85, 30),
     ]);

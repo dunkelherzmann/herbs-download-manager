@@ -63,6 +63,14 @@ pub fn tip(control: HWND, text: &str) {
     }
 }
 
+/// Holds back the hover texts of `control`'s window while `on` (the list's cells show their own), and lets them show
+/// again after.
+pub fn pause(control: HWND, on: bool) {
+    unsafe {
+        SendMessageW(tooltips_for(control), TTM_ACTIVATE, Some(WPARAM(!on as usize)), None);
+    }
+}
+
 /// The name screen readers say for a control (instead of its text, for a glyph button).
 pub fn name(control: HWND, text: &str) {
     unsafe {
