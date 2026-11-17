@@ -82,7 +82,10 @@ const C_OPEN_WITH_OTHER: u16 = 159;
 const C_OPEN_WITH: u16 = 180;
 /// Posted by a second launch to the running copy: show the window (one copy per data folder, as on the Mac).
 const WM_SHOW_AGAIN: u32 = WM_APP + 30;
-// The private messages: WM_PROBED (add.rs) +1, WM_SCANNED (add.rs) +2, WM_FEATURE (features.rs) +20, WM_TRAY +21, WM_QUEUE_DONE (queuedone.rs) +22.
+/// Files handed to a second copy, passed on to this one (WM_COPYDATA), then imported from its own message.
+const COPY_FILES: usize = 0x4844_4d46;
+const WM_IMPORT_FILES: u32 = WM_APP + 31;
+// The private messages: WM_PROBED (add.rs) +1, WM_SCANNED (add.rs) +2, WM_FEATURE (features.rs) +20, WM_TRAY +21, WM_QUEUE_DONE (queuedone.rs) +22, WM_DROPPED (dragdrop.rs) +23, WM_TOAST (toast.rs) +24.
 /// The notification area icon's messages (a click on the "Download finished" balloon).
 const WM_TRAY: u32 = WM_APP + 21;
 const NIN_BALLOONUSERCLICK: u32 = 0x405;
@@ -90,6 +93,7 @@ const NIN_BALLOONUSERCLICK: u32 = 0x405;
 thread_local! {
     /// The download the last "Download finished" balloon was about.
     static LAST_FINISHED: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+    static PENDING_FILES: RefCell<Vec<std::path::PathBuf>> = const { RefCell::new(Vec::new()) };
 }
 const C_COLUMN: u16 = 160; // + column index
 const ID_SIDEBAR: u16 = 200;
@@ -329,6 +333,14 @@ pub fn run() {
                 }
                 let prop = GetPropW(found, w!("hdm-key"));
                 if prop.0 as usize as u64 == u64::from_str_radix(&key[..12], 16).unwrap_or(0) {
+                    // Files handed to this copy go to the running one's Import Links.
+                    let files = file_arguments();
+                    if !files.is_empty() {
+                        let text: Vec<u16> = files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n").encode_utf16().collect();
+                        let data = COPYDATASTRUCT { dwData: COPY_FILES, cbData: (text.len() * 2) as u32, lpData: text.as_ptr() as *mut _ };
+                        let _ = AllowSetForegroundWindow(ASFW_ANY);
+                        SendMessageW(found, WM_COPYDATA, None, Some(LPARAM(&data as *const _ as isize)));
+                    }
                     let _ = PostMessageW(Some(found), WM_SHOW_AGAIN, WPARAM(0), LPARAM(0));
                     let _ = AllowSetForegroundWindow(ASFW_ANY);
                     break;
@@ -604,6 +616,11 @@ pub fn run() {
             A11Y_REPORT.with(|p| *p.borrow_mut() = Some(path));
             SetTimer(Some(hwnd), TIMER_A11Y, 1500, None);
         }
+        // Opened with files ("Open with", a drop on the .exe's icon): Import Links with them.
+        let files = file_arguments();
+        if !files.is_empty() {
+            import_paths(hwnd, &files);
+        }
         if let Some(manager) = with(|s| s.manager.clone()) {
             crate::features::run_if_asked(hwnd, &manager);
         }
@@ -870,7 +887,10 @@ fn refresh() {
             && s.manager.settings().notify_when_finished
         {
             for r in s.rows.iter().filter(|r| finished.contains(&r.id) && !before.contains(&r.id)) {
-                notify(s.window, &mut s.tray_icon, &r.name);
+                // A toast with Open and Show in Folder, as on the Mac; the balloon where Windows shows no toast.
+                if !crate::toast::finished(s.window, r.id, &r.name) {
+                    notify(s.window, &mut s.tray_icon, &r.name);
+                }
                 LAST_FINISHED.set(Some(r.id));
             }
         }
@@ -1283,6 +1303,33 @@ thread_local! {
     static OPEN_WITH: RefCell<Vec<crate::openwith::App>> = const { RefCell::new(Vec::new()) };
 }
 
+/// Import Links (§5.7) from these files: Add Links with every link in them, or an alert saying they have none. Also
+/// for files handed to the .exe ("Open with", a drop on its icon).
+fn import_paths(hwnd: HWND, paths: &[std::path::PathBuf]) {
+    let Some(ctx) = add_ctx() else { return };
+    match crate::add::links_in_files(paths).filter(|l| !l.is_empty()) {
+        Some(links) => crate::add::add_links(&ctx, links),
+        None => {
+            let heading = match paths {
+                [one] => format!("“{}” has no links.", one.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                _ => "These files have no links.".to_string(),
+            };
+            crate::alert::tell(hwnd, &heading, "Import Links reads text files (with or without an extension), Markdown, rich text \
+                                                and HTML, and finds the web addresses (http, https or ftp) in them.");
+        }
+    }
+}
+
+/// Files handed to the .exe ("Open with", a drop on its icon, §5.7): every argument, when none is one of the app's
+/// own flags.
+fn file_arguments() -> Vec<std::path::PathBuf> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a.starts_with("--")) {
+        return Vec::new();
+    }
+    args.into_iter().map(std::path::PathBuf::from).filter(|p| p.is_file()).collect()
+}
+
 fn command(hwnd: HWND, id: u16) {
     let sel = selected();
     let rows = with(|s| s.rows.clone()).unwrap_or_default();
@@ -1358,18 +1405,8 @@ fn command(hwnd: HWND, id: u16) {
                 }
             }
             C_IMPORT => {
-                if let (Some(ctx), Some(paths)) = (add_ctx(), crate::add::import_files(hwnd)) {
-                    match crate::add::links_in_files(&paths).filter(|l| !l.is_empty()) {
-                        Some(links) => crate::add::add_links(&ctx, links),
-                        None => {
-                            let heading = match paths.as_slice() {
-                                [one] => format!("“{}” has no links.", one.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
-                                _ => "These files have no links.".to_string(),
-                            };
-                            crate::alert::tell(hwnd, &heading, "Import Links reads text files (with or without an extension), Markdown, rich text \
-                                                                and HTML, and finds the web addresses (http, https or ftp) in them.");
-                        }
-                    }
+                if let Some(paths) = crate::add::import_files(hwnd) {
+                    import_paths(hwnd, &paths);
                 }
             }
             // Export Links (§5.8): the selected downloads, or all with none selected, as a tree of names and links.
@@ -1796,6 +1833,17 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 }
                 LRESULT(0)
             }
+            crate::toast::WM_TOAST => {
+                // The toast's buttons: Open, or Show in Folder (also a click on the toast). The file may have been
+                // renamed or moved since: it is looked up now.
+                let id = wparam.0 as u64;
+                if let Some(r) = with(|s| s.manager.rows().into_iter().find(|r| r.id == id)).flatten()
+                    && let Some(p) = r.path.filter(|p| p.exists())
+                {
+                    open_path(&p, lparam.0 != crate::toast::OPEN);
+                }
+                LRESULT(0)
+            }
             crate::queuedone::WM_QUEUE_DONE => {
                 crate::queuedone::countdown(hwnd, wparam.0);
                 LRESULT(0)
@@ -1882,6 +1930,25 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             // The close box closes the window; the app keeps running, as the Mac's does (Quit, Ctrl+Q, quits).
             WM_CLOSE => {
                 hide_window(hwnd);
+                LRESULT(0)
+            }
+            WM_COPYDATA => {
+                let data = &*(lparam.0 as *const COPYDATASTRUCT);
+                if data.dwData == COPY_FILES && !data.lpData.is_null() {
+                    let text = String::from_utf16_lossy(std::slice::from_raw_parts(data.lpData as *const u16, data.cbData as usize / 2));
+                    let paths: Vec<std::path::PathBuf> = text.lines().map(std::path::PathBuf::from).collect();
+                    // After this message returns, so the copy that sent it can end.
+                    PENDING_FILES.with(|p| p.borrow_mut().extend(paths));
+                    let _ = PostMessageW(Some(hwnd), WM_IMPORT_FILES, WPARAM(0), LPARAM(0));
+                }
+                LRESULT(1)
+            }
+            WM_IMPORT_FILES => {
+                show_window(hwnd);
+                let paths: Vec<std::path::PathBuf> = PENDING_FILES.with(|p| p.borrow_mut().drain(..).collect());
+                if !paths.is_empty() {
+                    import_paths(hwnd, &paths);
+                }
                 LRESULT(0)
             }
             WM_SHOW_AGAIN => {

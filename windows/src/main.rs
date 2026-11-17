@@ -25,6 +25,8 @@ mod signins;
 mod features;
 #[cfg(windows)]
 mod queuedone;
+#[cfg(windows)]
+mod toast;
 
 use std::path::PathBuf;
 
