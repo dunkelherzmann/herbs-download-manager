@@ -637,12 +637,12 @@ fn update_summary(hwnd: HWND) {
 /// Batch Download (§5.5), as the Mac's: the link, the help on ranges, and a preview of the count with the first and
 /// last links (a mistake in red).
 pub fn batch(ctx: &Ctx) {
-    let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (600, 226), &[
+    let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (600, 212), &[
         (ID_PATTERN, w!("EDIT"), "", EDIT, 20, 20, 560, 26),
         (ID_BATCH_HELP, w!("STATIC"), BATCH_HELP, 0, 20, 56, 560, 32),
-        (ID_BATCH_PREVIEW, w!("STATIC"), "", 0x80 /* SS_NOPREFIX */, 20, 98, 560, 54),
-        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 402, 176, 85, 30),
-        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 495, 176, 85, 30),
+        (ID_BATCH_PREVIEW, w!("STATIC"), "", 0x80 /* SS_NOPREFIX */, 20, 98, 560, 50),
+        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 402, 162, 85, 30),
+        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 495, 162, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (ID_PATTERN, "Batch link", "Batch link: a link with a range placeholder"),
