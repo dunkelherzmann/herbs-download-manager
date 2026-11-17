@@ -471,6 +471,8 @@ thread_local! {
     /// The rows as the list shows them, in order, for drawing (kept apart from the window's state, which may be busy
     /// while the list paints).
     pub static ROWS: RefCell<Vec<Row>> = const { RefCell::new(Vec::new()) };
+    /// The row links are being dragged over, framed (dragdrop.rs).
+    pub static DROP_ROW: Cell<Option<usize>> = const { Cell::new(None) };
     /// The system's small file icons, and which column is sorted which way.
     pub static IMAGES: Cell<isize> = const { Cell::new(0) };
     pub static SORT: Cell<(usize, bool)> = const { Cell::new((7, false)) };
@@ -605,6 +607,16 @@ pub fn list_draw(lparam: LPARAM, columns: usize) -> LRESULT {
             let text = cell_text.map(|f| f(column, &row)).unwrap_or_default();
             let color = if column == 1 && matches!(row.status, Status::Failed(_)) && !(selected && focused) { p.red } else { fore };
             theme::text(dc, &text, cell, fonts.text, color, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        }
+        // Links dragged over an unfinished download: its row is framed in the accent colour, as the Mac's list does.
+        if DROP_ROW.get() == Some(index) {
+            let pen = CreatePen(PS_SOLID, s(2), p.accent);
+            let old_pen = SelectObject(dc, pen.into());
+            let old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            let _ = RoundRect(dc, row_rect.left + s(2), row_rect.top + s(1), row_rect.right - s(2), row_rect.bottom, s(8), s(8));
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            let _ = DeleteObject(pen.into());
         }
         LRESULT(CDRF_SKIPDEFAULT as isize)
     }

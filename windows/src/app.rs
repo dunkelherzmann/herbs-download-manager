@@ -560,7 +560,7 @@ pub fn run() {
         load_layout(hwnd);
         theme::apply(hwnd);
         // Links and files dropped on the window, or on a download in it (§5.4, §7.1 M4).
-        crate::dragdrop::register(hwnd);
+        crate::dragdrop::register(hwnd, true, "Drop links here");
         // S16: told of every clipboard change (used only while Watch the clipboard is on).
         let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(hwnd);
         layout(hwnd);
@@ -1303,6 +1303,31 @@ thread_local! {
     static OPEN_WITH: RefCell<Vec<crate::openwith::App>> = const { RefCell::new(Vec::new()) };
 }
 
+/// The list row under a screen point, when it is an unfinished download (links dropped there become its mirrors,
+/// §7.1 M4).
+pub(crate) fn mirror_row_at(x: i32, y: i32) -> Option<usize> {
+    let list = with(|s| s.list)?;
+    unsafe {
+        let mut hit = LVHITTESTINFO { pt: POINT { x, y }, ..Default::default() };
+        let _ = ScreenToClient(list, &mut hit.pt);
+        let i = SendMessageW(list, LVM_HITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
+        let row = chrome::ROWS.with(|r| r.borrow().get(usize::try_from(i).ok()?).cloned())?;
+        (row.status != Status::Finished).then_some(i as usize)
+    }
+}
+
+/// Frames the row links are dragged over (or none).
+pub(crate) fn set_drop_row(row: Option<usize>) {
+    if chrome::DROP_ROW.get() != row {
+        chrome::DROP_ROW.set(row);
+        if let Some(list) = with(|s| s.list) {
+            unsafe {
+                let _ = InvalidateRect(Some(list), None, false);
+            }
+        }
+    }
+}
+
 /// Import Links (§5.7) from these files: Add Links with every link in them, or an alert saying they have none. Also
 /// for files handed to the .exe ("Open with", a drop on its icon).
 fn import_paths(hwnd: HWND, paths: &[std::path::PathBuf]) {
@@ -1854,26 +1879,18 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             crate::dragdrop::WM_DROPPED => {
                 let dropped = Box::from_raw(lparam.0 as *mut crate::dragdrop::Dropped);
-                let links = hd_core::links::find(&dropped.text);
-                if links.is_empty() {
-                    added(Some("No links found in what was dropped".into()));
-                    return LRESULT(0);
-                }
-                // On a download in the list: its mirrors (§7.1 M4); anywhere else: Add Links.
-                let list = with(|s| s.list).unwrap_or_default();
-                let mut hit = LVHITTESTINFO { pt: POINT { x: dropped.x, y: dropped.y }, ..Default::default() };
-                let _ = ScreenToClient(list, &mut hit.pt);
-                let i = SendMessageW(list, LVM_HITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
-                let id = (i >= 0).then(|| with(|s| s.shown.get(i as usize).copied()).flatten()).flatten();
-                match id {
+                let links = dropped.links;
+                // On an unfinished download in the list: its mirrors (§7.1 M4); anywhere else, finished downloads
+                // included: Add Links.
+                match mirror_row_at(dropped.x, dropped.y).and_then(|i| with(|s| s.shown.get(i).copied()).flatten()) {
                     Some(id) => {
                         let note = with(|s| {
                             let n = s.manager.add_mirrors(id, &links);
                             let name = s.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_default();
                             match n {
-                                0 => format!("{name} already has those links"),
-                                1 => format!("Added 1 mirror to {name}"),
-                                n => format!("Added {n} mirrors to {name}"),
+                                0 => format!("“{name}” already has those links"),
+                                1 => format!("Added as a mirror of “{name}”"),
+                                n => format!("Added {n} mirrors of “{name}”"),
                             }
                         });
                         added(note);
