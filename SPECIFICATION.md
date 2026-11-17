@@ -6,7 +6,10 @@ Its main inspiration is Progressive Downloader (threads and mirrors per task). I
 icons follow AB Download Manager's layout; its menus are in one Main Menu (☰), as in Herb's Terminal. There are no tags.
 
 The macOS version is the reference. The Linux and Windows versions look and work 1:1 like it, except the window
-controls: minimize, maximize and close sit on the right, and the Main Menu (☰) takes the left corner of the title bar.
+controls: minimize, maximize and close sit on the right. On Linux the Main Menu (☰) takes the left corner of the title
+bar; on Windows it stays at the right end of the toolbar, as on the Mac, just before the window controls. Every version
+follows the system's light or dark appearance (on Windows, Settings ▸ Personalization ▸ Colors ▸ Choose your app mode),
+with the Mac window's colours in each.
 
 **App icon** (`icon/icon.svg`, its own design): a frosted-white drive, its lid narrower at the top, with a gray
 download arrow coming in from above and a blue light on the right of its base, on a blue macOS-style rounded square
@@ -20,7 +23,7 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 | Platform | App | Build |
 |---|---|---|
 | macOS 15+, Apple silicon | Swift 6 + AppKit host over the shared core | Built on Mac |
-| Windows 11 | Rust Win32 host (`windows` crate) over the shared core, one static portable `.exe` (no installer, nothing added to the system) | Built on Windows |
+| Windows 11 | Rust Win32 host (`windows` crate) over the shared core: one static `.exe` (with `hdm.exe` beside it), installed for the user by an installer (`windows/installer`, Inno Setup; no administrator rights) or run as is from the zip | Built on Windows |
 | Linux | Rust GTK 4 + libadwaita host (`gtk4-rs`) over the shared core, Flatpak `org.herbsdownloadmanager.app` | Built on Linux |
 
 - **Shared core** (`core/`, Rust, one Cargo workspace): the download engine (sources, segments, connections,
@@ -40,7 +43,7 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 The layout, top to bottom:
 
 1. **Title bar**: the window controls, the title "Herb's Download Manager", the toolbar (§3), **Search** (🔍, T10)
-   and, at the right end on macOS, the **Main Menu** (☰, §4). Search opens a find bar at the top right of the list,
+   and, at the right end on macOS (on Windows just before the window controls), the **Main Menu** (☰, §4). Search opens a find bar at the top right of the list,
    as in Herb's Terminal: it shows only downloads whose name, link or note contains the text as you type, and Done (Esc)
    hides it and shows every download again. Every menu is in the window, so on a wide screen no
    command needs a trip to the top of the screen.
@@ -49,6 +52,11 @@ The layout, top to bottom:
 4. **Download list** (§2.2) to the right of the sidebar.
 5. **Footer**: number of selected downloads, number of active downloads, total download speed.
 
+Closing the window (its close button, Close Window, Hide Herb's DM) leaves the app running, so downloads carry on: on
+the Mac in the Dock, on Windows in the notification area, where a click on its icon brings the window back and a
+right-click offers Show and Quit. Opening the app again while it runs brings its window back; only one copy runs at a
+time (on Windows, one per data folder, so a test copy can run beside it). The window's size and place, the sidebar's
+width and the list's columns and sort are remembered.
 Dropping links, text or `.txt`/`.html` files on the window adds every link found (§5.4); while dragging, the
 window dims and shows "Drop links here". Dropped on an unfinished download in the list (the row is highlighted),
 they become its mirrors instead (§7.1). The footer also shows a short note for a few seconds after a link becomes a
@@ -104,7 +112,7 @@ accessibility label. Buttons that don't apply to the selection are disabled.
 | T8 | Settings | "Settings" | ⌘, / Ctrl+, |
 | T10 | Search (🔍): opens the find bar (§2) | "Search: show only downloads whose name, link or note contains some text" | ⌘F / Ctrl+F |
 | T11 | Keep on Top (📌, between Settings and Search; filled and tinted while on). On Linux it is shown disabled: GTK 4 and Wayland don't let an app keep itself above others, so its hover text points to the window manager's Always on Top (right-click the title bar) | "Keep on Top: keep Herb's DM above every other app's windows" | ⌃⌘T / Ctrl+Alt+T |
-| T9 | Main Menu (☰, after the search field on macOS; the left corner on Linux and Windows) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
+| T9 | Main Menu (☰, after the search field on macOS and Windows; the left corner on Linux) | "Main Menu: every command, from File, Edit, Tasks, View, Window and Help to Settings and Quit" | — |
 
 Separators group T2–T3, T4–T5, T6, T7 and T8, as in AB Download Manager.
 
@@ -112,12 +120,12 @@ Icons use each platform's own monochrome symbols, never another app's artwork:
 
 | Action | macOS (SF Symbols) | Linux (Adwaita symbolic) | Windows (Segoe Fluent Icons) |
 |---|---|---|---|
-| New Download | `link.badge.plus` | `list-add-symbolic` | Add |
-| Resume | `play.fill` | `media-playback-start-symbolic` | Play |
-| Pause | `pause.fill` | `media-playback-pause-symbolic` | Pause |
-| Start Queue | `text.line.first.and.arrowtriangle.forward` | `media-seek-forward-symbolic` | Next |
-| Stop Queue | `stop.circle` | `media-playback-stop-symbolic` | Stop |
-| Stop All | `stop.fill` | `process-stop-symbolic` | Stop (filled) |
+| New Download | `link.badge.plus` | `list-add-symbolic` | Link with a small Add |
+| Resume | `play.fill` | `media-playback-start-symbolic` | PlaySolid |
+| Pause | `pause.fill` | `media-playback-pause-symbolic` | PauseSolid |
+| Start Queue | `text.line.first.and.arrowtriangle.forward` | `media-seek-forward-symbolic` | three lines, a small PlaySolid before the first |
+| Stop Queue | `stop.circle` | `media-playback-stop-symbolic` | a circle with a small StopSolid |
+| Stop All | `stop.fill` | `process-stop-symbolic` | StopSolid (rounded) |
 | Delete | `trash` | `user-trash-symbolic` | Delete |
 | Settings | `gearshape` | `emblem-system-symbolic` | Settings |
 | Search | `magnifyingglass` | `system-search-symbolic` | Search |
@@ -135,29 +143,32 @@ and Paste in text fields included.
 | Menu | Items |
 |---|---|
 | Herb's DM (macOS menu bar only) | About Herb's Download Manager · Settings… ⌘, · Hide Herb's DM / Hide Others / Show All · Quit Herb's DM ⌘Q |
-| File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · Export Links… ⇧⌘E · — · Close Window ⌘W · (Linux, Windows: Exit) |
+| File | New Download… ⌘N · Import Links… ⇧⌘O · Add from Clipboard ⇧⌘V · Batch Download… ⇧⌘N · Export Links… ⇧⌘E · — · Close Window ⌘W · (Linux: Exit) |
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Rename… · Move To… · Note… · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
-| Window | standard (macOS) |
+| Window | standard (macOS); Minimize · Zoom · — · Bring All to Front (Windows) |
 | Help | Herb's Download Manager Help ⌘? (F1 on Linux and Windows): opens the guide, `HELP.md`, on the project's page |
-| (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS) · Quit Herb's DM ⌘Q |
+| (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS; Ctrl+H on Windows, which closes the window to the notification area) · Quit Herb's DM ⌘Q |
 
 **About Herb's Download Manager** shows the app's icon, name and version, "A download manager · Many connections ·
-Mirrors · Streams", "By dunkelherzmann" and the project's address as a link that opens it in the browser (on Windows,
-a task dialog with the link).
+Mirrors · Streams", "By dunkelherzmann" and the project's address as a link that opens it in the browser.
 
 **Alerts and sheets** (Delete, a name in use, sign-ins, the scheduler's countdown…) answer the keyboard on the Mac as
 on Linux and Windows: the arrow keys and Tab move the highlight (the blue button) between their buttons, Return or
 Enter presses the highlighted one, and Esc cancels, whether or not Keyboard navigation is on in System Settings. A
-text field in an alert keeps Tab and the arrows for itself. Linux's and Windows' dialogs do this on their own.
+text field in an alert keeps Tab and the arrows for itself. Linux's dialogs do this on their own. Windows draws its
+alerts as the Mac's (the app's icon above a bold question and its explanation, centred; two buttons side by side with
+the default on the right, more stacked with the default on top), in the light or dark look, Enter pressing the default
+and Esc the cancel button.
 
 ### 4.1 Download context menu
 
 Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in Folder) · Rename… · Move To… · Note… · — · Resume · Pause ·
 Restart · — · **Add Mirror…** · **Connections ▸** (Add Connection, Remove Connection, the live list) · — ·
 Copy Link · Properties · — · Delete. Items that don't apply are hidden (Connections for finished downloads) or
-disabled.
+disabled. Open With ▸ lists the apps the system suggests for the file, the default one first and marked "(default)";
+on Windows it ends with Choose Another App…, Windows' own "Open with" window.
 
 **Rename…** (F2 on Linux and Windows) and **Move To…** work on one finished download whose file is on disk; they are
 also in the Main Menu's Tasks. Rename asks for the new name, with the part before the extension selected; Move To asks

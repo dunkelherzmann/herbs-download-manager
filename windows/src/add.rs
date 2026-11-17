@@ -23,7 +23,7 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{BOOL, PCWSTR, PWSTR, w};
+use windows::core::{PCWSTR, PWSTR, w};
 
 const WM_PROBED: u32 = WM_APP + 1;
 /// A page scan's answer (§15), posted back to Add Links (WM_APP + 2: see app.rs's list of private messages).
@@ -74,36 +74,19 @@ pub fn add_all(owner: HWND, manager: &Manager, links: Vec<PendingLink>, folder: 
         match session.step(manager) {
             Step::Done(summary) => return summary.text(),
             Step::Ask(q) => {
-                let (title, body) = (wide(&q.title()), wide(&q.body()));
-                let labels = [wide("Keep Both"), wide("Skip"), wide("Replace (the old file goes to the Recycle Bin)")];
-                let buttons = [
-                    TASKDIALOG_BUTTON { nButtonID: 1, pszButtonText: PCWSTR(labels[0].as_ptr()) },
-                    TASKDIALOG_BUTTON { nButtonID: 2, pszButtonText: PCWSTR(labels[1].as_ptr()) },
-                    TASKDIALOG_BUTTON { nButtonID: 3, pszButtonText: PCWSTR(labels[2].as_ptr()) },
-                ];
-                let rest = wide("Do the same for the rest");
-                let config = TASKDIALOGCONFIG {
-                    cbSize: std::mem::size_of::<TASKDIALOGCONFIG>() as u32,
-                    hwndParent: owner,
-                    pszWindowTitle: w!("Herb's Download Manager"),
-                    pszMainInstruction: PCWSTR(title.as_ptr()),
-                    pszContent: PCWSTR(body.as_ptr()),
-                    cButtons: 3,
-                    pButtons: buttons.as_ptr(),
-                    nDefaultButton: 1,
-                    pszVerificationText: if q.more { PCWSTR(rest.as_ptr()) } else { PCWSTR::null() },
-                    ..Default::default()
-                };
-                let (mut pressed, mut for_rest) = (0i32, BOOL(0));
-                unsafe {
-                    let _ = TaskDialogIndirect(&config, Some(&mut pressed), None, Some(&mut for_rest));
+                let mut alert = crate::alert::Alert::new(q.title(), q.body(),
+                                                         &["Keep Both", "Skip", "Replace (the old file goes to the Recycle Bin)"], 0, Some(1));
+                if q.more {
+                    alert.checkbox = Some("Do the same for the rest".into());
                 }
+                let (answer, for_rest) = crate::alert::run(owner, alert);
+                let pressed = answer.map(|i| i as i32 + 1).unwrap_or(2);
                 let choice = match pressed {
                     1 => Choice::KeepBoth,
                     3 => Choice::Replace,
                     _ => Choice::Skip,
                 };
-                session.answer(manager, choice, for_rest.as_bool());
+                session.answer(manager, choice, for_rest);
             }
         }
     }
@@ -374,6 +357,8 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 map.insert(id, c);
             }
         }
+        // Created visible, so its controls take the light or dark look here, now that they exist.
+        crate::theme::apply(hwnd);
         FORMS.with(|forms| {
             forms.borrow_mut().insert(hwnd.0 as isize, Form {
                 ctx: ctx.clone(),
@@ -414,7 +399,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000 /* SS_PATHELLIPSIS */, 110, 168, 330, 20),
         (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 450, 162, 90, 28),
         (0, w!("STATIC"), "Connections:", LABEL, 12, 206, 90, 20),
-        (23, w!("EDIT"), &ctx.manager.settings().connections.to_string(), EDIT | ES_NUMBER as u32, 110, 202, 60, 24),
+        (23, w!("COMBOBOX"), "", (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32, 110, 202, 70, 400),
         (0, w!("STATIC"), "Size:", LABEL, 12, 240, 90, 20),
         (24, w!("STATIC"), "", 0, 110, 240, 430, 20),
         (0, w!("STATIC"), "Stream:", LABEL, 12, 274, 90, 20),
@@ -443,6 +428,17 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         }
         if let Some(l) = link {
             set_text(f.controls[&ID_LINK], &l);
+        }
+        // As on the Mac: hints in the empty fields, and Connections as a list of 1–32.
+        unsafe {
+            SendMessageW(f.controls[&ID_LINK], EM_SETCUEBANNER, Some(WPARAM(0)), Some(LPARAM(w!("https://example.com/file.zip").0 as isize)));
+            SendMessageW(f.controls[&21], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("From the server").0 as isize)));
+            let connections = f.ctx.manager.settings().connections.clamp(1, 32);
+            for n in 1..=32 {
+                let t = wide(&n.to_string());
+                SendMessageW(f.controls[&23], CB_ADDSTRING, None, Some(LPARAM(t.as_ptr() as isize)));
+            }
+            SendMessageW(f.controls[&23], CB_SETCURSEL, Some(WPARAM(connections as usize - 1)), None);
         }
         unsafe {
             let _ = SetFocus(Some(f.controls[&ID_LINK]));
@@ -624,7 +620,7 @@ pub fn batch(ctx: &Ctx) {
         (ID_PATTERN, w!("EDIT"), "", EDIT, 12, 14, 536, 26),
         (26, w!("STATIC"), "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters.", 0, 12, 50, 536, 40),
         (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 370, 112, 85, 30),
-        (ID_NEXT, w!("BUTTON"), "Next", DEFAULT, 463, 112, 85, 30),
+        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 463, 112, 85, 30),
     ]);
     explain_ids(hwnd, &[
         (ID_PATTERN, "Link pattern", "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters"),
@@ -727,6 +723,9 @@ fn submit(hwnd: HWND, start: bool) {
 
 extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
+        if let Some(r) = crate::theme::dialog(hwnd, msg, wparam, lparam) {
+            return r;
+        }
         match msg {
             WM_COMMAND => {
                 let id = (wparam.0 & 0xffff) as u16;
