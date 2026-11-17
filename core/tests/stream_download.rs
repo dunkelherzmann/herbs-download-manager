@@ -103,8 +103,15 @@ fn a_paused_stream_continues_with_the_pieces_it_has() {
         assert!(Instant::now() < until, "no piece arrived");
         std::thread::sleep(Duration::from_millis(20));
     }
-    // While its pieces come: the pieces fetched at once out of a stream's few, and its one source in use.
-    let live = m.rows().into_iter().find(|r| r.id == id).unwrap();
+    // While its pieces come: the pieces fetched at once out of a stream's few, and its one source in use. Between two
+    // pieces none may be in flight, so wait for one.
+    let live = loop {
+        let live = m.rows().into_iter().find(|r| r.id == id).unwrap();
+        if live.active_connections >= 1 || Instant::now() >= until {
+            break live;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
     assert!(live.active_connections >= 1 && live.allowed_connections <= 6, "{}", live.connections_text);
     assert_eq!(live.connections_text, format!("{} / {}", live.active_connections, live.allowed_connections));
     assert_eq!(live.mirrors_text, "1 / 1");
