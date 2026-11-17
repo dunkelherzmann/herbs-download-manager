@@ -16,6 +16,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   returns tail's status (#89 merged with Linux and Windows failing, 2026-11-10).
   Merge only when `gh pr checks` shows that every GitHub Actions job passed too: a failing Actions job was missed
   on #101 (2026-11-10).
+  Every merge to main raises the version (`scripts/version.sh`), a docs-only one too: merge bookkeeping PRs (bugs.md
+  ticks, notes) before building the installs, or the installed copies are one behind main (2026-11-17). A build from
+  anything but main shows main's number plus `+branch.N`.
   After `gh pr merge`, confirm the PR says MERGED before removing its worktree or branch: a merge refused for a
   conflict, then the branch deleted, closed #100 unmerged and the installs built main without it (2026-11-10).
 - Other sessions often work in this same folder: do your own work in a worktree of your own from the start (`git
