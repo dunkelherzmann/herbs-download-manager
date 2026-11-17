@@ -324,6 +324,9 @@ pub fn run() {
         };
         let mutex_name = wide(&format!("Local\\HerbsDownloadManager-{key}"));
         let _mutex = windows::Win32::System::Threading::CreateMutexW(None, false, PCWSTR(mutex_name.as_ptr()));
+        // An update (the installer, through Windows' Restart Manager) closes this copy and opens it again: without
+        // this it stayed closed afterwards. Flags 1 | 2: not after a crash or a hang.
+        let _ = windows::Win32::System::Recovery::RegisterApplicationRestart(w!(""), windows::Win32::System::Recovery::REGISTER_APPLICATION_RESTART_FLAGS(1 | 2));
         if GetLastError() == ERROR_ALREADY_EXISTS {
             let class = w!("HerbsDownloadManager");
             let mut after: Option<HWND> = None;
@@ -1973,6 +1976,16 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             WM_SHOW_AGAIN => {
                 show_window(hwnd);
+                LRESULT(0)
+            }
+            // Windows signing out or shutting down, or an installer closing the app for an update (Restart Manager):
+            // the close box only hides the window, so the installer couldn't replace the files and gave up (exit
+            // code 5; bugs.md, 2026-11-17). Agree, then quit as Quit does, without asking.
+            WM_QUERYENDSESSION => LRESULT(1),
+            WM_ENDSESSION => {
+                if wparam.0 != 0 {
+                    let _ = DestroyWindow(hwnd);
+                }
                 LRESULT(0)
             }
             WM_DESTROY => {

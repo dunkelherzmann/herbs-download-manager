@@ -121,3 +121,5 @@ No bugs reported yet.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [ ] **The Windows installer couldn't update a running copy** (*found while installing*, 2026-11-17). Windows. Run over a copy that was open (in the window or in the tray), the installer stopped with exit code 5 and left the old files, because the app hid itself when Windows asked it to close. The app now quits when Windows signs out, shuts down or an installer closes it for an update, and asks Windows to open it again afterwards.
+  - [ ] Windows
