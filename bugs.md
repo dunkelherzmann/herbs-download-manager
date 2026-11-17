@@ -114,3 +114,5 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **The Windows toolbar's buttons did nothing when clicked** (*found in testing*, 2026-11-17). Windows. New Download, Resume, Settings, Search and the rest ignored clicks; their Ctrl shortcuts and the menus still worked. Found: the toolbar handed the keyboard back the moment a button took it, and a Win32 button that loses the keyboard while pressed lets go without reporting the click. It now gives the keyboard back once the click is done. Checked on Windows with a test copy: Settings, Search and New Download open from their buttons.
+  - [x] Windows
