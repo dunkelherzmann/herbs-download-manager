@@ -44,10 +44,10 @@ Windows version further from the Mac than the ticks below said. Done in the pari
 
 Still different from the Mac, in build order:
 
-- [ ] "Download finished" with Open and Show in Folder buttons (a toast; now the balloon, whose click shows the file). (§9 S9)
+- [x] "Download finished" with Open and Show in Folder buttons (a toast; now the balloon, whose click shows the file). (§9 S9) PR_A
 - [ ] Dragging onto the window: the "Drop links here" overlay, the copy cursor only when links are found, finished
   downloads not taking mirrors, links in a dragged or copied web page's HTML. (§2, §5.4, §7.1)
-- [ ] Files handed to the `.exe` ("Open with", a drop on its icon) open Import Links. (§5.7)
+- [x] Files handed to the `.exe` ("Open with", a drop on its icon) open Import Links. (§5.7) PR_A
 - [ ] Add Links: the Folder column, a resizable window, the drop overlay. (§5.3)
 - [ ] Batch: the whole help text with a separate First/Last preview, mistakes in red. (§5.5)
 - [ ] Download window: resizable; right-click on a source (Copy Link, Make Main Link, Remove); the Mirrors columns

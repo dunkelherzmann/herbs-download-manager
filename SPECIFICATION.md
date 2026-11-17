@@ -232,7 +232,8 @@ more rows (several mirrors of one file at once, say); a link already listed is s
 ### 5.4 Drag and drop
 
 Links, text, and text-based files (§5.7) dropped on the window or the Dock icon open the Add Links window with
-every link they contain.
+every link they contain. On Windows, files handed to the `.exe` (Open with, a drop on its icon or shortcut) open
+Import Links the same way, in the copy already running if there is one.
 
 ### 5.6 A name in use
 
@@ -414,7 +415,7 @@ the file, that mirror becomes its link.
 | S6 | Retries per source | 5 | 0–20 |
 | S7 | When a file exists | Ask | Ask, Keep both, Skip the new link, Replace the existing file (§5.6) |
 | S8 | Look for checksum files | On | fetches `<file>.sha256` (and `.sha512`, `.sha1`, `.md5`) next to the link and verifies with it |
-| S9 | Show a notification when a download finishes | On | with **Open** and **Show in Finder** (Show in Folder) buttons; clicking it shows the file. Windows' balloon has no buttons: clicking it shows the file |
+| S9 | Show a notification when a download finishes | On | with **Open** and **Show in Finder** (Show in Folder) buttons; clicking it shows the file. On Windows a toast, named for the app under its own AppUserModelID; where Windows shows no toast, the notification area's balloon, whose click shows the file |
 | S10 | Server limits | | how many servers limit connections, with **Forget** (§7.4) |
 | S11 | Sign-ins | | how many are saved and how, with **Manage…** (§9.1) |
 | S12 | Keep the server's date for finished files | Off | the file gets the server's `Last-Modified` date instead of the time it finished |
