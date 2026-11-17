@@ -241,6 +241,12 @@ pub fn control(hwnd: HWND) {
                 if !header.is_invalid() {
                     let _ = SetWindowTheme(header, if p.dark { w!("DarkMode_ItemsView") } else { w!("ItemsView") }, PCWSTR::null());
                 }
+                // The dark items view leaves the column titles' text black: they get the mode's text colour. The main
+                // list draws its own titles (chrome.rs).
+                let main = GetParent(hwnd).is_ok_and(|parent| class_of(parent) == "HerbsDownloadManager");
+                if !main {
+                    let _ = SetWindowSubclass(hwnd, Some(header_text_proc), 0x4844_4854, 0);
+                }
             }
             "SysTreeView32" => {
                 let _ = SetWindowTheme(hwnd, explorer, PCWSTR::null());
@@ -328,6 +334,26 @@ pub fn erase(hwnd: HWND, dc: HDC) -> LRESULT {
         FillRect(dc, &rect, brush(palette().chrome));
     }
     LRESULT(1)
+}
+
+/// A list's column titles in the mode's text colour (see `control`).
+unsafe extern "system" fn header_text_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _: usize, _: usize) -> LRESULT {
+    unsafe {
+        if msg == WM_NOTIFY {
+            let draw = &*(lparam.0 as *const NMCUSTOMDRAW);
+            let header = HWND(SendMessageW(hwnd, LVM_GETHEADER, None, None).0 as *mut _);
+            if draw.hdr.code == NM_CUSTOMDRAW && draw.hdr.hwndFrom == header {
+                if draw.dwDrawStage == CDDS_PREPAINT {
+                    return LRESULT(CDRF_NOTIFYITEMDRAW as isize);
+                }
+                if draw.dwDrawStage == CDDS_ITEMPREPAINT {
+                    SetTextColor(draw.hdc, palette().text);
+                    return LRESULT(CDRF_DODEFAULT as isize);
+                }
+            }
+        }
+        DefSubclassProc(hwnd, msg, wparam, lparam)
+    }
 }
 
 /// Check boxes and radio buttons with the mode's text colour: the box from the theme, the text drawn here.
