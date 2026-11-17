@@ -45,17 +45,17 @@ Windows version further from the Mac than the ticks below said. Done in the pari
 Still different from the Mac, in build order:
 
 - [x] "Download finished" with Open and Show in Folder buttons (a toast; now the balloon, whose click shows the file). (§9 S9) #24
-- [ ] Dragging onto the window: the "Drop links here" overlay, the copy cursor only when links are found, finished
-  downloads not taking mirrors, links in a dragged or copied web page's HTML. (§2, §5.4, §7.1)
+- [x] Dragging onto the window: the "Drop links here" overlay, the copy cursor only when links are found, finished
+  downloads not taking mirrors, links in a dragged or copied web page's HTML. (§2, §5.4, §7.1) #25
 - [x] Files handed to the `.exe` ("Open with", a drop on its icon) open Import Links. (§5.7) #24
-- [ ] Add Links: the Folder column, a resizable window, the drop overlay. (§5.3)
-- [ ] Batch: the whole help text with a separate First/Last preview, mistakes in red. (§5.5)
-- [ ] Download window: resizable; right-click on a source (Copy Link, Make Main Link, Remove); the Mirrors columns
-  Address and Connections; Options' Connections as a list. (§6, §7.3)
-- [ ] Rename selects the name up to its extension. (§4.1)
-- [ ] New Download's Save to as a folder pop-up (the folder and the folders above it). (§5.1)
-- [ ] The context menu's Connections ▸ with the live connections. (§4.1)
-- [ ] Hover text on the Status, Location and Note cells (the row shows its link). (§2.2)
+- [x] Add Links: the Folder column, a resizable window, the drop overlay. (§5.3) #25
+- [x] Batch: the whole help text with a separate First/Last preview, mistakes in red. (§5.5) #25
+- [x] Download window: resizable; right-click on a source (Copy Link, Make Main Link, Remove); the Mirrors columns
+  Address and Connections; Options' Connections as a list. (§6, §7.3) #25
+- [x] Rename selects the name up to its extension. (§4.1) #25
+- [x] New Download's Save to as a folder pop-up (the folder and the folders above it). (§5.1) #25
+- [x] The context menu's Connections ▸ with the live connections. (§4.1) #25
+- [x] Hover text on the Status, Location and Note cells (the row shows its link). (§2.2) #25
 
 ## Bugs to fix
 
