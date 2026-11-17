@@ -45,6 +45,11 @@ const ID_LIST: u16 = 10;
 const ID_PATTERN: u16 = 11;
 /// "Only the sound" (New Download) and "Only the sound of streamed videos" (Add Links).
 const ID_SOUND: u16 = 12;
+const ID_SAVE_LABEL: u16 = 28;
+const ID_BATCH_HELP: u16 = 26;
+/// Save to, as the Mac's folder pop-up.
+const FOLDER_POPUP: u32 = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
+const ID_BATCH_PREVIEW: u16 = 27;
 const ID_NEXT: u16 = ID_DOWNLOAD;
 
 pub(crate) fn wide(s: &str) -> Vec<u16> {
@@ -156,7 +161,7 @@ pub(crate) fn choose_folder(owner: HWND, title: &str) -> Option<PathBuf> {
     }
 }
 
-/// The clipboard's text, if any.
+/// The clipboard's text, if any, and a copied web page's HTML.
 pub fn clipboard_text(owner: HWND) -> String {
     unsafe {
         if OpenClipboard(Some(owner)).is_err() {
@@ -174,6 +179,12 @@ pub fn clipboard_text(owner: HWND) -> String {
                 out = String::from_utf16_lossy(std::slice::from_raw_parts(p, n));
                 let _ = GlobalUnlock(memory);
             }
+        }
+        // A copied web page also brings its HTML: its links' addresses count too, as on the Mac.
+        let html = RegisterClipboardFormatW(w!("HTML Format"));
+        if let Ok(data) = GetClipboardData(html) {
+            out.push('\n');
+            out.push_str(&crate::dragdrop::html_fragment(&crate::dragdrop::bytes(HGLOBAL(data.0))));
         }
         let _ = CloseClipboard();
         out
@@ -281,7 +292,7 @@ struct Form {
     /// New Download's link is a web page: Download and Add open Add Links with its files instead.
     page: bool,
     shown: Vec<usize>,
-    /// Add Links' sort: the column clicked last (0 Name, 1 Size, 2 Link) and whether A to Z (smallest first).
+    /// Add Links' sort: the column clicked last (0 Name, 1 Size, 2 Folder, 3 Link) and whether A to Z (smallest first).
     sort: Option<(usize, bool)>,
     batch: Vec<String>,
 }
@@ -328,13 +339,15 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
         let scale = GetDpiForWindow(ctx.owner).max(96) as i32;
         let px = |v: i32| v * scale / 96;
         let t = wide(title);
+        // Add Links resizes, as on the Mac; the other forms keep their size.
+        let style = if kind == FormKind::AddLinks { WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX } else { WS_CAPTION | WS_SYSMENU };
         let mut rect = RECT { left: 0, top: 0, right: px(size.0), bottom: px(size.1) };
-        let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU, false, WINDOW_EX_STYLE::default());
+        let _ = AdjustWindowRectEx(&mut rect, style, false, WINDOW_EX_STYLE::default());
         let hwnd = CreateWindowExW(
             WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT,
             w!("HerbsDMForm"),
             PCWSTR(t.as_ptr()),
-            WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+            style | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             rect.right - rect.left,
@@ -376,6 +389,9 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 batch: Vec::new(),
             })
         });
+        if let Some(popup) = FORMS.with(|forms| forms.borrow().get(&(hwnd.0 as isize)).and_then(|f| f.controls.get(&22).copied())) {
+            fill_folder_popup(popup, &crate::save_folder(&ctx.manager));
+        }
         hwnd
     }
 }
@@ -396,7 +412,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (0, w!("STATIC"), "Name:", LABEL, 12, 132, 90, 20),
         (21, w!("EDIT"), "", EDIT, 110, 128, 430, 24),
         (0, w!("STATIC"), "Save to:", LABEL, 12, 168, 90, 20),
-        (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000 /* SS_PATHELLIPSIS */, 110, 168, 330, 20),
+        (22, w!("COMBOBOX"), "", FOLDER_POPUP, 110, 164, 330, 300),
         (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 450, 162, 90, 28),
         (0, w!("STATIC"), "Connections:", LABEL, 12, 206, 90, 20),
         (23, w!("COMBOBOX"), "", (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32, 110, 202, 70, 400),
@@ -463,8 +479,8 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_LIST, WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS, 12, 46, 736, 280),
                 (ID_MIRRORS, w!("BUTTON"), "Treat as mirrors of one file", BS_AUTOCHECKBOX as u32, 12, 334, 300, 24),
                 (ID_SOUND, w!("BUTTON"), "Only the sound of streamed videos", BS_AUTOCHECKBOX as u32, 320, 334, 320, 24),
-                (0, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
-                (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000, 76, 370, 560, 20),
+                (ID_SAVE_LABEL, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
+                (22, w!("COMBOBOX"), "", FOLDER_POPUP, 76, 366, 560, 300),
                 (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 648, 364, 100, 28),
                 (25, w!("STATIC"), "", 0, 12, 418, 380, 20),
                 (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 470, 412, 85, 30),
@@ -475,14 +491,16 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 let list = f.controls[&ID_LIST];
                 SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, Some(WPARAM(0)),
                              Some(LPARAM((LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER) as isize)));
-                for (i, (name, width)) in [("Name", 300), ("Size", 110), ("Link", 300)].iter().enumerate() {
+                // The Mac's columns: Name, Size, Folder (where it's saved) and Link.
+                for (i, (name, width)) in [("Name", 260), ("Size", 110), ("Folder", 140), ("Link", 260)].iter().enumerate() {
                     let text = wide(name);
                     let column = LVCOLUMNW { mask: LVCF_TEXT | LVCF_WIDTH, cx: *width, pszText: PWSTR(text.as_ptr() as *mut _), ..Default::default() };
                     SendMessageW(list, LVM_INSERTCOLUMNW, Some(WPARAM(i)), Some(LPARAM(&column as *const _ as isize)));
                 }
                 SendMessageW(f.controls[&ID_FILTER], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("Filter").0 as isize)));
-                DragAcceptFiles(h, true);
             });
+            // Links dropped on the window while it's open join the list; while dragging, it dims and says so.
+            crate::dragdrop::register(h, false, "Drop links to add them");
             explain_ids(h, &[
                 (ID_FILTER, "Filter", "Show only links whose name or address contains this text"),
                 (ID_CHECK_ALL, "", "Tick every link shown"),
@@ -499,7 +517,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
             // Test hook: `--sort-links name|size|link [desc]` sorts as clicks on that header do.
             let args: Vec<String> = std::env::args().collect();
             if let Some(i) = args.iter().position(|a| a == "--sort-links") {
-                let column = ["name", "size", "link"].iter().position(|c| args.get(i + 1).is_some_and(|a| a == c)).unwrap_or(0);
+                let column = ["name", "size", "folder", "link"].iter().position(|c| args.get(i + 1).is_some_and(|a| a == c)).unwrap_or(0);
                 with_form(h, |f| f.sort = Some((column, args.get(i + 2).is_none_or(|a| a != "desc"))));
             }
             h
@@ -536,8 +554,9 @@ fn show_items(hwnd: HWND) {
         // In the order of the header clicked last (the core's `links::sort_order`, sizes by bytes), which is also the
         // order they are added in.
         if let Some((column, ascending)) = f.sort {
-            let column = [LinkColumn::Name, LinkColumn::Size, LinkColumn::Link][column];
-            let rows: Vec<LinkRow> = f.items.iter().map(|i| LinkRow { name: &i.1, size: i.2, folder: "", url: &i.0 }).collect();
+            let column = [LinkColumn::Name, LinkColumn::Size, LinkColumn::Folder, LinkColumn::Link][column];
+            let folder = f.folder.display().to_string();
+            let rows: Vec<LinkRow> = f.items.iter().map(|i| LinkRow { name: &i.1, size: i.2, folder: &folder, url: &i.0 }).collect();
             let order = hd_core::links::sort_order(&rows, column, ascending);
             let mut slots: Vec<Option<_>> = f.items.drain(..).map(Some).collect();
             f.items = order.into_iter().filter_map(|i| slots[i].take()).collect();
@@ -548,7 +567,7 @@ fn show_items(hwnd: HWND) {
             .collect();
         // The header's sort arrow.
         let header = HWND(SendMessageW(list, LVM_GETHEADER, None, None).0 as *mut _);
-        for c in 0..3 {
+        for c in 0..4 {
             let mut item = HDITEMW { mask: HDI_FORMAT, ..Default::default() };
             SendMessageW(header, HDM_GETITEMW, Some(WPARAM(c)), Some(LPARAM(&mut item as *mut _ as isize)));
             item.fmt.0 &= !(HDF_SORTUP.0 | HDF_SORTDOWN.0);
@@ -563,7 +582,8 @@ fn show_items(hwnd: HWND) {
         SendMessageW(list, LVM_DELETEALLITEMS, None, None);
         for (row, &i) in f.shown.iter().enumerate() {
             let (url, name, _, size, checked) = &f.items[i];
-            for (col, text) in [name, size, url].iter().enumerate() {
+            let folder = f.folder.display().to_string();
+            for (col, text) in [name, size, &folder, url].iter().enumerate() {
                 let text = wide(text);
                 let item = LVITEMW { mask: LVIF_TEXT, iItem: row as i32, iSubItem: col as i32, pszText: PWSTR(text.as_ptr() as *mut _), ..Default::default() };
                 SendMessageW(list, if col == 0 { LVM_INSERTITEMW } else { LVM_SETITEMW }, None, Some(LPARAM(&item as *const _ as isize)));
@@ -614,25 +634,50 @@ fn update_summary(hwnd: HWND) {
     });
 }
 
-/// Batch Download (§5.5).
+/// Batch Download (§5.5), as the Mac's: the link, the help on ranges, and a preview of the count with the first and
+/// last links (a mistake in red).
 pub fn batch(ctx: &Ctx) {
-    let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (560, 160), &[
-        (ID_PATTERN, w!("EDIT"), "", EDIT, 12, 14, 536, 26),
-        (26, w!("STATIC"), "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters.", 0, 12, 50, 536, 40),
-        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 370, 112, 85, 30),
-        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 463, 112, 85, 30),
+    let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (600, 212), &[
+        (ID_PATTERN, w!("EDIT"), "", EDIT, 20, 20, 560, 26),
+        (ID_BATCH_HELP, w!("STATIC"), BATCH_HELP, 0, 20, 56, 560, 32),
+        (ID_BATCH_PREVIEW, w!("STATIC"), "", 0x80 /* SS_NOPREFIX */, 20, 98, 560, 50),
+        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 402, 162, 85, 30),
+        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 495, 162, 85, 30),
     ]);
     explain_ids(hwnd, &[
-        (ID_PATTERN, "Link pattern", "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters"),
+        (ID_PATTERN, "Batch link", "Batch link: a link with a range placeholder"),
         (ID_CANCEL, "", "Close without adding anything (Esc)"),
-        (ID_NEXT, "", "Show these links in Add Links (Enter)"),
+        (ID_NEXT, "", "Show the links in the Add Links window (Enter)"),
     ]);
     with_form(hwnd, |f| unsafe {
         SendMessageW(f.controls[&ID_PATTERN], EM_SETCUEBANNER, Some(WPARAM(1)),
                      Some(LPARAM(w!("https://example.com/img^(###1-100).jpg").0 as isize)));
+        let dpi = GetDpiForWindow(hwnd);
+        SendMessageW(f.controls[&ID_BATCH_HELP], WM_SETFONT, Some(WPARAM(crate::theme::fonts(dpi).small.0 as usize)), Some(LPARAM(1)));
+        crate::theme::set_tone(f.controls[&ID_BATCH_HELP], crate::theme::Tone::Secondary);
+        SendMessageW(f.controls[&ID_BATCH_PREVIEW], WM_SETFONT, Some(WPARAM(crate::theme::mono(dpi).0 as usize)), Some(LPARAM(1)));
+        crate::theme::set_tone(f.controls[&ID_BATCH_PREVIEW], crate::theme::Tone::Secondary);
         let _ = EnableWindow(f.controls[&ID_NEXT], false);
         let _ = SetFocus(Some(f.controls[&ID_PATTERN]));
     });
+}
+
+/// The Batch window's help on ranges (the Mac's words).
+const BATCH_HELP: &str = "Put a range where the number or letters change: ^(###1-100) pads to 3 digits, ^(0-ffH) counts in \
+                          hexadecimal, ^(a-z) or ^(AA-BZ) in letters. Separate several ranges with commas.";
+
+/// Batch's preview for a pattern: the count with the first and last links, or what is wrong (true), or nothing.
+fn batch_preview(pattern: &str) -> (String, bool, Vec<String>) {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return (String::new(), false, Vec::new());
+    }
+    match hd_core::links::expand_batch(pattern) {
+        Ok(l) if l.len() == 1 => (format!("1 link: {}", l[0]), false, l),
+        Ok(l) if !l.is_empty() => (format!("{} links\r\nFirst: {}\r\nLast:  {}", l.len(), l[0], l[l.len() - 1]), false, l),
+        Ok(_) => (String::new(), false, Vec::new()),
+        Err(e) => (e, true, Vec::new()),
+    }
 }
 
 fn submit(hwnd: HWND, start: bool) {
@@ -736,10 +781,15 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     (ID_DOWNLOAD, _) => submit(hwnd, true),
                     (ID_CHOOSE, _) => {
                         if let Some(dir) = choose_folder(hwnd, "Save to") {
-                            with_form(hwnd, |f| {
-                                set_text(f.controls[&22], &dir.display().to_string());
+                            let links = with_form(hwnd, |f| {
+                                fill_folder_popup(f.controls[&22], &dir);
                                 f.folder = dir;
+                                f.kind == FormKind::AddLinks
                             });
+                            // The Folder column shows it.
+                            if links == Some(true) {
+                                show_items(hwnd);
+                            }
                         }
                     }
                     (ID_LINK, EN_CHANGE) => {
@@ -756,6 +806,21 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         SetTimer(Some(hwnd), TIMER_PROBE, 500, None);
                     }
                     (ID_FILTER, EN_CHANGE) => show_items(hwnd),
+                    // Save to's pop-up: the folder, or one of the folders above it.
+                    (22, CBN_SELCHANGE) => {
+                        let links = with_form(hwnd, |f| {
+                            let popup = f.controls[&22];
+                            let at = SendMessageW(popup, CB_GETCURSEL, None, None).0;
+                            if let Some(dir) = f.folder.ancestors().nth(at.max(0) as usize).map(PathBuf::from) {
+                                fill_folder_popup(popup, &dir);
+                                f.folder = dir;
+                            }
+                            f.kind == FormKind::AddLinks
+                        });
+                        if links == Some(true) {
+                            show_items(hwnd);
+                        }
+                    }
                     (ID_MIRRORS, _) => update_summary(hwnd),
                     (ID_SOUND, _) => {}
                     (ID_CHECK_ALL | ID_UNCHECK_ALL, _) => {
@@ -768,17 +833,13 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         show_items(hwnd);
                     }
                     (ID_PATTERN, EN_CHANGE) => {
-                        with_form(hwnd, |f| match hd_core::links::expand_batch(text_of(f.controls[&ID_PATTERN]).trim()) {
-                            Ok(l) if !l.is_empty() => {
-                                set_text(f.controls[&26], &format!("{} links: {} … {}", l.len(), l[0], l[l.len() - 1]));
-                                let _ = EnableWindow(f.controls[&ID_NEXT], true);
-                                f.batch = l;
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                set_text(f.controls[&26], &e);
-                                let _ = EnableWindow(f.controls[&ID_NEXT], false);
-                            }
+                        with_form(hwnd, |f| {
+                            let (text, mistake, links) = batch_preview(&text_of(f.controls[&ID_PATTERN]));
+                            let preview = f.controls[&ID_BATCH_PREVIEW];
+                            set_text(preview, &text);
+                            crate::theme::set_tone(preview, if mistake { crate::theme::Tone::Red } else { crate::theme::Tone::Secondary });
+                            let _ = EnableWindow(f.controls[&ID_NEXT], !links.is_empty());
+                            f.batch = links;
                         });
                     }
                     _ => {}
@@ -939,12 +1000,28 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 }
                 LRESULT(0)
             }
-            WM_DROPFILES => {
-                // Links in files dropped on Add Links join the list.
-                let paths = dropped_files(HDROP(wparam.0 as *mut _));
-                if let (Some(links), Some(ctx)) = (links_in_files(&paths), with_form(hwnd, |f| f.ctx.clone())) {
-                    add_links(&ctx, links);
+            crate::dragdrop::WM_DROPPED => {
+                // Links dropped on Add Links join the list.
+                let dropped = Box::from_raw(lparam.0 as *mut crate::dragdrop::Dropped);
+                if let Some(ctx) = with_form(hwnd, |f| f.ctx.clone()) {
+                    add_links(&ctx, dropped.links);
                 }
+                LRESULT(0)
+            }
+            WM_SIZE => {
+                layout_links(hwnd);
+                LRESULT(0)
+            }
+            WM_GETMINMAXINFO => {
+                // Add Links: no smaller than the Mac's 560 × 320.
+                if (GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_THICKFRAME.0) == 0 {
+                    return DefWindowProcW(hwnd, msg, wparam, lparam);
+                }
+                let info = &mut *(lparam.0 as *mut MINMAXINFO);
+                let scale = GetDpiForWindow(hwnd).max(96) as i32;
+                let mut rect = RECT { left: 0, top: 0, right: 560 * scale / 96, bottom: 320 * scale / 96 };
+                let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU | WS_THICKFRAME, false, WINDOW_EX_STYLE::default());
+                info.ptMinTrackSize = POINT { x: rect.right - rect.left, y: rect.bottom - rect.top };
                 LRESULT(0)
             }
             WM_CLOSE => {
@@ -952,6 +1029,7 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 LRESULT(0)
             }
             WM_DESTROY => {
+                crate::dragdrop::revoke(hwnd);
                 // Closed without adding: what was fetched is discarded.
                 drop_early(hwnd);
                 FORMS.with(|forms| forms.borrow_mut().remove(&(hwnd.0 as isize)));
@@ -964,6 +1042,52 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
+    }
+}
+
+/// Save to's pop-up, as the Mac's: the folder, then each folder above it, by name.
+fn fill_folder_popup(popup: HWND, folder: &std::path::Path) {
+    unsafe {
+        SendMessageW(popup, CB_RESETCONTENT, None, None);
+        for dir in folder.ancestors() {
+            let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir.display().to_string());
+            let text = wide(&name);
+            SendMessageW(popup, CB_ADDSTRING, None, Some(LPARAM(text.as_ptr() as isize)));
+        }
+        SendMessageW(popup, CB_SETCURSEL, Some(WPARAM(0)), None);
+        crate::a11y::explain(popup, "Save to", &format!("{}: the folder the files are saved to; pick a folder above it here, or Choose… another", folder.display()));
+    }
+}
+
+/// Add Links' controls placed for its size (it resizes, as on the Mac): the list takes the room, the rows under it
+/// keep to the bottom and the buttons to the right. In 96-dpi pixels, as made in `add_links`.
+fn layout_links(hwnd: HWND) {
+    let Some(controls) = with_form(hwnd, |f| (f.kind == FormKind::AddLinks).then(|| f.controls.clone())).flatten() else { return };
+    unsafe {
+        let scale = GetDpiForWindow(hwnd).max(96) as i32;
+        let mut client = RECT::default();
+        let _ = GetClientRect(hwnd, &mut client);
+        let (w, h) = (client.right * 96 / scale, client.bottom * 96 / scale);
+        let px = |v: i32| v * scale / 96;
+        let place = |id: u16, x: i32, y: i32, cw: i32, ch: i32| {
+            if let Some(&c) = controls.get(&id) {
+                let _ = MoveWindow(c, px(x), px(y), px(cw), px(ch), true);
+            }
+        };
+        place(ID_FILTER, 12, 12, w - 252, 26);
+        place(ID_CHECK_ALL, w - 220, 11, 100, 28);
+        place(ID_UNCHECK_ALL, w - 112, 11, 100, 28);
+        place(ID_LIST, 12, 46, w - 24, h - 180);
+        place(ID_MIRRORS, 12, h - 126, 300, 24);
+        place(ID_SOUND, 320, h - 126, 320, 24);
+        place(ID_SAVE_LABEL, 12, h - 90, 60, 20);
+        place(22, 76, h - 94, w - 200, 300);
+        place(ID_CHOOSE, w - 112, h - 96, 100, 28);
+        place(25, 12, h - 42, w - 380, 20);
+        place(ID_CANCEL, w - 290, h - 48, 85, 30);
+        place(ID_ADD, w - 197, h - 48, 85, 30);
+        place(ID_DOWNLOAD, w - 104, h - 48, 92, 30);
+        let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     }
 }
 

@@ -241,6 +241,12 @@ pub fn control(hwnd: HWND) {
                 if !header.is_invalid() {
                     let _ = SetWindowTheme(header, if p.dark { w!("DarkMode_ItemsView") } else { w!("ItemsView") }, PCWSTR::null());
                 }
+                // The dark items view leaves the column titles' text black: they get the mode's text colour. The main
+                // list draws its own titles (chrome.rs).
+                let main = GetParent(hwnd).is_ok_and(|parent| class_of(parent) == "HerbsDownloadManager");
+                if !main {
+                    let _ = SetWindowSubclass(hwnd, Some(header_text_proc), 0x4844_4854, 0);
+                }
             }
             "SysTreeView32" => {
                 let _ = SetWindowTheme(hwnd, explorer, PCWSTR::null());
@@ -250,8 +256,13 @@ pub fn control(hwnd: HWND) {
             "Edit" | "ComboBox" | "SysDateTimePick32" => {
                 let _ = SetWindowTheme(hwnd, cfd, PCWSTR::null());
             }
-            "ComboLBox" | "ListBox" | "ScrollBar" | "tooltips_class32" | "SysHeader32" => {
+            "ComboLBox" | "ListBox" | "ScrollBar" | "tooltips_class32" => {
                 let _ = SetWindowTheme(hwnd, explorer, PCWSTR::null());
+            }
+            // A list's column titles (found again among the window's children after their list): the items view's
+            // theme, the one that has a dark look; the Explorer theme draws them light.
+            "SysHeader32" => {
+                let _ = SetWindowTheme(hwnd, if p.dark { w!("DarkMode_ItemsView") } else { w!("ItemsView") }, PCWSTR::null());
             }
             "Button" => {
                 let style = GetWindowLongW(hwnd, GWL_STYLE) as u32 & 0xf;
@@ -280,7 +291,13 @@ pub fn ctl_color(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
             WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLORDLG => {
                 // Read-only fields (WM_CTLCOLORSTATIC comes from those too) are plain text on the window's colour.
                 let back = p.chrome;
-                SetTextColor(dc, if IsWindowEnabled(control).as_bool() { p.text } else { p.disabled });
+                let color = match GetPropW(control, w!("hdm-tone")).0 as usize {
+                    _ if !IsWindowEnabled(control).as_bool() => p.disabled,
+                    1 => p.secondary,
+                    2 => p.red,
+                    _ => p.text,
+                };
+                SetTextColor(dc, color);
                 SetBkColor(dc, back);
                 SetBkMode(dc, TRANSPARENT);
                 Some(LRESULT(brush(back).0 as isize))
@@ -295,6 +312,20 @@ pub fn ctl_color(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
     }
 }
 
+/// A label's text colour, other than the mode's text: the Mac's secondary grey (help and previews), or red (a mistake).
+#[derive(Clone, Copy)]
+pub enum Tone {
+    Secondary = 1,
+    Red = 2,
+}
+
+pub fn set_tone(control: HWND, tone: Tone) {
+    unsafe {
+        let _ = SetPropW(control, w!("hdm-tone"), Some(HANDLE(tone as usize as *mut _)));
+        let _ = InvalidateRect(Some(control), None, true);
+    }
+}
+
 /// Paints a window's background in the chrome colour (WM_ERASEBKGND).
 pub fn erase(hwnd: HWND, dc: HDC) -> LRESULT {
     unsafe {
@@ -303,6 +334,26 @@ pub fn erase(hwnd: HWND, dc: HDC) -> LRESULT {
         FillRect(dc, &rect, brush(palette().chrome));
     }
     LRESULT(1)
+}
+
+/// A list's column titles in the mode's text colour (see `control`).
+unsafe extern "system" fn header_text_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _: usize, _: usize) -> LRESULT {
+    unsafe {
+        if msg == WM_NOTIFY {
+            let draw = &*(lparam.0 as *const NMCUSTOMDRAW);
+            let header = HWND(SendMessageW(hwnd, LVM_GETHEADER, None, None).0 as *mut _);
+            if draw.hdr.code == NM_CUSTOMDRAW && draw.hdr.hwndFrom == header {
+                if draw.dwDrawStage == CDDS_PREPAINT {
+                    return LRESULT(CDRF_NOTIFYITEMDRAW as isize);
+                }
+                if draw.dwDrawStage == CDDS_ITEMPREPAINT {
+                    SetTextColor(draw.hdc, palette().text);
+                    return LRESULT(CDRF_DODEFAULT as isize);
+                }
+            }
+        }
+        DefSubclassProc(hwnd, msg, wparam, lparam)
+    }
 }
 
 /// Check boxes and radio buttons with the mode's text colour: the box from the theme, the text drawn here.
@@ -437,6 +488,23 @@ pub fn fonts(dpi: u32) -> Fonts {
         bold: HFONT(made.1 as *mut _),
         small: HFONT(made.2 as *mut _),
     }
+}
+
+/// The Mac's small monospaced font (11 points) for previews of links.
+pub fn mono(dpi: u32) -> HFONT {
+    thread_local! {
+        static MADE: RefCell<HashMap<u32, isize>> = RefCell::new(HashMap::new());
+    }
+    let made = MADE.with(|m| {
+        *m.borrow_mut().entry(dpi).or_insert_with(|| unsafe {
+            let face = if font_exists("Cascadia Mono") { "Cascadia Mono" } else { "Consolas" };
+            let mut lf = LOGFONTW { lfHeight: -(11 * dpi as i32 / 96), lfWeight: 400, lfQuality: CLEARTYPE_QUALITY, ..Default::default() };
+            let f: Vec<u16> = face.encode_utf16().collect();
+            lf.lfFaceName[..f.len().min(31)].copy_from_slice(&f[..f.len().min(31)]);
+            CreateFontIndirectW(&lf).0 as isize
+        })
+    });
+    HFONT(made as *mut _)
 }
 
 fn font_exists(face: &str) -> bool {

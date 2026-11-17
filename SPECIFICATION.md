@@ -219,8 +219,8 @@ Z (case aside, numbers by value: "part 2" before "part 10"), sizes by bytes, sma
 Checkboxes, the filter and Check All / Uncheck All work on the sorted rows as before. Each link is checked as it arrives, four at a time: its
 row gets the file's real name and size, a web page's row gives way to the files on it (§15), and a link that doesn't
 answer as a file is unchecked and says why: "Offline (404 Not Found)", "Offline (The server didn't answer)" or
-"Needs a sign-in". Ticking it again adds it all the same. The Linux and Windows lists
-show Name, Size and Link. **Treat as mirrors of
+"Needs a sign-in". Ticking it again adds it all the same. The Linux list
+shows Name, Size and Link. **Treat as mirrors of
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
 **Only the sound of streamed videos** (offered when a checked link is a stream) saves just the sound of each checked
 stream (§15); other files are added as they are. Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same
@@ -231,8 +231,10 @@ more rows (several mirrors of one file at once, say); a link already listed is s
 
 ### 5.4 Drag and drop
 
-Links, text, and text-based files (§5.7) dropped on the window or the Dock icon open the Add Links window with
-every link they contain. On Windows, files handed to the `.exe` (Open with, a drop on its icon or shortcut) open
+Links, text, a web page's HTML (the addresses of its links), and text-based files (§5.7) dropped on the window or
+the Dock icon open the Add Links window with every link they contain. The pointer shows the copy sign only when what
+is dragged holds links. Copied web pages count too: Add from Clipboard and Watch the clipboard read their HTML as well
+as their text. On Windows, files handed to the `.exe` (Open with, a drop on its icon or shortcut) open
 Import Links the same way, in the copy already running if there is one.
 
 ### 5.6 A name in use

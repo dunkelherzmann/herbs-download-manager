@@ -135,11 +135,14 @@ fn create(ctx: &Ctx, kind: Kind, title: &str, size: (i32, i32), controls: &[Spec
         RegisterClassW(&class);
         let scale = GetDpiForWindow(ctx.owner).max(96) as i32;
         let px = |v: i32| v * scale / 96;
+        // The Download window resizes, as on the Mac.
+        let resizable = matches!(kind, Kind::Download { .. });
+        let frame = if resizable { WS_THICKFRAME | WS_MAXIMIZEBOX } else { WINDOW_STYLE(0) };
         let mut rect = RECT { left: 0, top: 0, right: px(size.0), bottom: px(size.1) };
-        let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU, false, WINDOW_EX_STYLE::default());
+        let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU | frame, false, WINDOW_EX_STYLE::default());
         let t = wide(title);
         // No icon in the title bar, as the Mac's windows have none.
-        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
+        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | frame,
                                    CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, Some(ctx.owner), None,
                                    Some(instance.into()), None)
             .unwrap_or_default();
@@ -261,7 +264,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_MAKE_MAIN, w!("BUTTON"), "Make Main Link", BUTTON, 248, 408, 130, 28),
         (D_REMOVE, w!("BUTTON"), "Remove", BUTTON, 386, 408, 90, 28),
         (D_CONN_LABEL, w!("STATIC"), "Connections:", LABEL, 22, 124, 110, 20),
-        (D_CONN_COUNT, w!("EDIT"), "", EDIT | ES_NUMBER as u32, 140, 120, 60, 24),
+        (D_CONN_COUNT, w!("COMBOBOX"), "", combo_style, 140, 120, 70, 400),
         (D_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 22, 160, 110, 24),
         (D_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 140, 160, 90, 24),
         (D_UNIT, w!("COMBOBOX"), "", combo_style, 238, 160, 80, 120),
@@ -278,7 +281,10 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
     let hwnd = create(ctx, Kind::Download { id, detail: None }, &d.row.name, (680, 458), &specs);
     with_win(hwnd, |w| unsafe {
         columns(w.controls[&D_CONNS], &[("Source", 150), ("Range", 170), ("Downloaded", 90), ("Speed", 90), ("State", 120)], false);
-        columns(w.controls[&D_SOURCES], &[("Source", 300), ("State", 110), ("Active", 60), ("Speed", 80), ("Served", 80)], true);
+        // The Mac's columns: the tick (here beside the address), Address, State, Connections, Speed, Served.
+        columns(w.controls[&D_SOURCES], &[("Address", 300), ("State", 110), ("Connections", 80), ("Speed", 80), ("Served", 80)], true);
+        let numbers: Vec<String> = (1..=32).map(|n| n.to_string()).collect();
+        combo(w.controls[&D_CONN_COUNT], &numbers.iter().map(String::as_str).collect::<Vec<_>>(), d.row.allowed_connections.clamp(1, 32) as usize - 1);
         combo(w.controls[&D_UNIT], &["KB/s", "MB/s"], 0);
         let algo = d.checksum.as_ref().map(|c| 1 + hd_core::checksum::Algorithm::ALL.iter().position(|a| *a == c.algorithm).unwrap_or(0)).unwrap_or(0);
         combo(w.controls[&D_ALGO], &ALGORITHMS, algo);
@@ -292,7 +298,6 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
             SendMessageW(w.controls[&D_UNIT], CB_SETCURSEL, Some(WPARAM(mb as usize)), None);
             set_text(w.controls[&D_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
         }
-        set_text(w.controls[&D_CONN_COUNT], &d.row.allowed_connections.to_string());
     });
     explain_ids(hwnd, &[
         (D_TOGGLE, "", "Pause or resume this download (Ctrl+. / Ctrl+R)"),
@@ -301,12 +306,12 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_CONNS, "Connections", "Each connection: its server, the part it fetches, how much it got, its speed and state"),
         (D_PLUS, "Add a connection", "Add a connection now"),
         (D_MINUS, "Remove a connection", "Remove a connection now"),
-        (D_SOURCES, "Sources", "The link and its mirrors: untick one to stop using it"),
+        (D_SOURCES, "Sources", "The link and its mirrors: untick one to stop using it; right-click one to copy it, make it the main link or remove it"),
         (D_ADD_MIRROR, "", "Add other links to the same file (Ctrl+Alt+M)"),
         (D_MAKE_MAIN, "Make the selected mirror the main link", "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept"),
         (D_REMOVE, "", "Remove the selected mirror (the original link stays)"),
         (D_COPY_LINK, "Copy the selected source's address", "Copy the selected source's address (Ctrl+C)"),
-        (D_CONN_COUNT, "", "Connections for this download (1–32), applied when you leave the field"),
+        (D_CONN_COUNT, "Connections", "Connections: how many parts of the file download at once (1–32)"),
         (D_LIMIT_ON, "", "Limit this download's speed"),
         (D_LIMIT, "Speed limit", "The most this download may fetch each second"),
         (D_UNIT, "Speed limit unit", "Kilobytes or megabytes a second"),
@@ -320,6 +325,45 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
     }
     OPEN.with(|o| o.borrow_mut().insert(id, hwnd));
+}
+
+/// The Download window's controls placed for its size (it resizes, as on the Mac): the bar, lists and fields widen,
+/// the lists take the height, and the buttons keep to the right and the bottom. In 96-dpi pixels, as made in `open`.
+fn layout(hwnd: HWND) {
+    let Some(controls) = with_win(hwnd, |w| matches!(w.kind, Kind::Download { .. }).then(|| w.controls.clone())).flatten() else { return };
+    unsafe {
+        let scale = GetDpiForWindow(hwnd).max(96) as i32;
+        let mut client = RECT::default();
+        let _ = GetClientRect(hwnd, &mut client);
+        let (w, h) = (client.right * 96 / scale, client.bottom * 96 / scale);
+        let px = |v: i32| v * scale / 96;
+        let place = |id: u16, x: i32, y: i32, cw: i32, ch: i32| {
+            if let Some(&c) = controls.get(&id) {
+                let _ = MoveWindow(c, px(x), px(y), px(cw), px(ch), true);
+            }
+        };
+        place(D_BAR, 12, 12, w - 24, 18);
+        place(D_NUMBERS, 76, 42, w - 280, 22);
+        place(D_TOGGLE, w - 190, 36, 85, 30);
+        place(D_CLOSE, w - 97, 36, 85, 30);
+        place(D_TABS, 12, 76, w - 24, 26);
+        for list in [D_CONNS, D_SOURCES] {
+            place(list, 22, 110, w - 44, h - 168);
+        }
+        let bottom = h - 50;
+        place(D_PLUS, 22, bottom, 36, 28);
+        place(D_MINUS, 62, bottom, 36, 28);
+        place(D_ADD_MIRROR, 22, bottom, 110, 28);
+        place(D_COPY_LINK, 140, bottom, 100, 28);
+        place(D_MAKE_MAIN, 248, bottom, 130, 28);
+        place(D_REMOVE, 386, bottom, 90, 28);
+        for i in 0..INFO_KEYS.len() as i32 {
+            place(D_INFO + 10 + i as u16, 140, 113 + 30 * i, w - 170, 24);
+        }
+        place(D_VALUE, 248, 198, w - 270, 24);
+        place(D_NOTE, 140, 230, w - 162, 20);
+        let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+    }
 }
 
 fn show_tab(hwnd: HWND, tab: usize) {
@@ -386,8 +430,9 @@ fn refresh(hwnd: HWND) {
         let _ = EnableWindow(w.controls[&D_PLUS], !finished && r.allowed_connections < 32);
         let _ = EnableWindow(w.controls[&D_MINUS], !finished && r.allowed_connections > 1);
         let count = w.controls[&D_CONN_COUNT];
-        if windows::Win32::UI::Input::KeyboardAndMouse::GetFocus() != count && text_of(count) != r.allowed_connections.to_string() {
-            set_text(count, &r.allowed_connections.to_string());
+        let want = r.allowed_connections.clamp(1, 32) as usize - 1;
+        if SendMessageW(count, CB_GETDROPPEDSTATE, None, None).0 == 0 && selection(count) != want {
+            SendMessageW(count, CB_SETCURSEL, Some(WPARAM(want)), None);
         }
         let host = |u: &str| u.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or(u).to_string();
         let conns: Vec<Vec<String>> = d
@@ -404,12 +449,19 @@ fn refresh(hwnd: HWND) {
             .iter()
             .map(|s| {
                 let original = if s.url == r.url { " (original)" } else { "" };
-                vec![format!("{}{original}", s.url), s.status.text(), s.active.to_string(), format::speed_text(s.speed),
+                vec![format!("{}{original}", s.url), s.status.text(), if s.active > 0 { s.active.to_string() } else { String::new() }, format::speed_text(s.speed),
                      if s.bytes > 0 { format::bytes(s.bytes) } else { String::new() }]
             })
             .collect();
         let list = w.controls[&D_SOURCES];
         fill(list, &sources);
+        // As on the Mac: Copy Link for a selected source; Make Main Link and Remove only for a mirror.
+        let at = SendMessageW(list, LVM_GETNEXTITEM, Some(WPARAM(usize::MAX)), Some(LPARAM(LVNI_SELECTED as isize))).0;
+        let picked = usize::try_from(at).ok().and_then(|i| d.sources.get(i));
+        let _ = EnableWindow(w.controls[&D_COPY_LINK], picked.is_some());
+        let mirror = picked.is_some_and(|s| s.url != r.url);
+        let _ = EnableWindow(w.controls[&D_MAKE_MAIN], mirror);
+        let _ = EnableWindow(w.controls[&D_REMOVE], mirror);
         for (i, s) in d.sources.iter().enumerate() {
             let state = LVITEMW {
                 stateMask: LVIS_STATEIMAGEMASK,
@@ -821,6 +873,19 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                 refresh(hwnd);
                 LRESULT(0)
             }
+            WM_SIZE => {
+                layout(hwnd);
+                LRESULT(0)
+            }
+            WM_GETMINMAXINFO if GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_THICKFRAME.0 != 0 => {
+                // No smaller than the Mac's 560 × 380.
+                let info = &mut *(lparam.0 as *mut MINMAXINFO);
+                let scale = GetDpiForWindow(hwnd).max(96) as i32;
+                let mut rect = RECT { left: 0, top: 0, right: 560 * scale / 96, bottom: 380 * scale / 96 };
+                let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU | WS_THICKFRAME, false, WINDOW_EX_STYLE::default());
+                info.ptMinTrackSize = POINT { x: rect.right - rect.left, y: rect.bottom - rect.top };
+                LRESULT(0)
+            }
             WM_DRAWITEM => {
                 let item = &*(lparam.0 as *const DRAWITEMSTRUCT);
                 if item.CtlID as u16 == D_BAR {
@@ -847,6 +912,29 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                 {
                     // Ctrl+C on the sources: Copy Link.
                     copy_source(hwnd);
+                } else if header.idFrom as u16 == D_SOURCES && header.code == NM_RCLICK {
+                    // Right-clicking a source: Copy Link, and Make Main Link and Remove for a mirror (not the link).
+                    let item = (*(lparam.0 as *const NMITEMACTIVATE)).iItem;
+                    let original = with_win(hwnd, |w| match &w.kind {
+                        Kind::Download { detail: Some(d), .. } => d.sources.get(usize::try_from(item).ok()?).map(|s| s.url == d.row.url),
+                        _ => None,
+                    })
+                    .flatten();
+                    if let Some(original) = original
+                        && let Some(list) = with_win(hwnd, |w| w.controls[&D_SOURCES])
+                    {
+                        let state = LVITEMW { stateMask: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0), state: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0), ..Default::default() };
+                        SendMessageW(list, LVM_SETITEMSTATE, Some(WPARAM(item as usize)), Some(LPARAM(&state as *const _ as isize)));
+                        let menu = CreatePopupMenu().unwrap_or_default();
+                        let mirror_only = if original { MF_STRING | MF_GRAYED } else { MF_STRING };
+                        let _ = AppendMenuW(menu, MF_STRING, D_COPY_LINK as usize, w!("Copy Link"));
+                        let _ = AppendMenuW(menu, mirror_only, D_MAKE_MAIN as usize, w!("Make Main Link"));
+                        let _ = AppendMenuW(menu, mirror_only, D_REMOVE as usize, w!("Remove"));
+                        let mut pt = POINT::default();
+                        let _ = GetCursorPos(&mut pt);
+                        let _ = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON, pt.x, pt.y, None, hwnd, None);
+                        let _ = DestroyMenu(menu);
+                    }
                 } else if header.idFrom as u16 == D_SOURCES && header.code == LVN_ITEMCHANGED {
                     // §7.3: a source's checkbox turns it on or off.
                     let change = &*(lparam.0 as *const NMLISTVIEW);
@@ -885,10 +973,8 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                                 w.ctx.manager.set_connections(did, if id == D_PLUS { (n + 1).min(32) } else { n.saturating_sub(1).max(1) });
                             }
                         })),
-                        D_CONN_COUNT if code == EN_KILLFOCUS => drop(with_win(hwnd, |w| {
-                            if let Ok(n) = text_of(w.controls[&D_CONN_COUNT]).trim().parse::<u32>() {
-                                w.ctx.manager.set_connections(did, n.clamp(1, 32));
-                            }
+                        D_CONN_COUNT if code == CBN_SELCHANGE => drop(with_win(hwnd, |w| {
+                            w.ctx.manager.set_connections(did, selection(w.controls[&D_CONN_COUNT]) as u32 + 1);
                         })),
                         D_LIMIT_ON => apply_limit(hwnd, did),
                         D_LIMIT if code == EN_CHANGE => apply_limit(hwnd, did),

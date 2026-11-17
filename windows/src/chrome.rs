@@ -15,6 +15,7 @@ use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent};
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::{PCWSTR, PWSTR};
 
 use crate::theme::{self, Palette};
 
@@ -471,6 +472,8 @@ thread_local! {
     /// The rows as the list shows them, in order, for drawing (kept apart from the window's state, which may be busy
     /// while the list paints).
     pub static ROWS: RefCell<Vec<Row>> = const { RefCell::new(Vec::new()) };
+    /// The row links are being dragged over, framed (dragdrop.rs).
+    pub static DROP_ROW: Cell<Option<usize>> = const { Cell::new(None) };
     /// The system's small file icons, and which column is sorted which way.
     pub static IMAGES: Cell<isize> = const { Cell::new(0) };
     pub static SORT: Cell<(usize, bool)> = const { Cell::new((7, false)) };
@@ -606,6 +609,16 @@ pub fn list_draw(lparam: LPARAM, columns: usize) -> LRESULT {
             let color = if column == 1 && matches!(row.status, Status::Failed(_)) && !(selected && focused) { p.red } else { fore };
             theme::text(dc, &text, cell, fonts.text, color, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         }
+        // Links dragged over an unfinished download: its row is framed in the accent colour, as the Mac's list does.
+        if DROP_ROW.get() == Some(index) {
+            let pen = CreatePen(PS_SOLID, s(2), p.accent);
+            let old_pen = SelectObject(dc, pen.into());
+            let old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            let _ = RoundRect(dc, row_rect.left + s(2), row_rect.top + s(1), row_rect.right - s(2), row_rect.bottom, s(8), s(8));
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            let _ = DeleteObject(pen.into());
+        }
         LRESULT(CDRF_SKIPDEFAULT as isize)
     }
 }
@@ -617,7 +630,8 @@ unsafe extern "system" fn list_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
         match msg {
             WM_NOTIFY => {
                 let header = &*(lparam.0 as *const NMHDR);
-                if header.code == NM_CUSTOMDRAW {
+                // The column titles' own drawing; the cell tooltip's goes on as usual.
+                if header.code == NM_CUSTOMDRAW && header.hwndFrom.0 == SendMessageW(hwnd, LVM_GETHEADER, None, None).0 as *mut _ {
                     return header_draw(hwnd, lparam);
                 }
                 DefSubclassProc(hwnd, msg, wparam, lparam)
@@ -634,6 +648,17 @@ unsafe extern "system" fn list_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                 paint_below_rows(hwnd, HDC(wparam.0 as *mut _));
                 r
             }
+            // Hover texts on cells, as on the Mac's list: the name shows the link; Status, Location and Note their text.
+            WM_MOUSEMOVE => {
+                cell_tip(hwnd, Some(POINT { x: (lparam.0 & 0xffff) as i16 as i32, y: ((lparam.0 >> 16) & 0xffff) as i16 as i32 }));
+                let mut track = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+                let _ = TrackMouseEvent(&mut track);
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+            WM_MOUSELEAVE => {
+                cell_tip(hwnd, None);
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
             // The selection's colour follows whether the list has the keyboard, as on the Mac.
             WM_SETFOCUS | WM_KILLFOCUS => {
                 let r = DefSubclassProc(hwnd, msg, wparam, lparam);
@@ -642,6 +667,69 @@ unsafe extern "system" fn list_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             }
             _ => DefSubclassProc(hwnd, msg, wparam, lparam),
         }
+    }
+}
+
+thread_local! {
+    /// The list's cell hover texts: their tooltip control, and the cell (row, column) its one tool is on.
+    static CELL_TIPS: Cell<isize> = const { Cell::new(0) };
+    static CELL: Cell<Option<(usize, usize)>> = const { Cell::new(None) };
+}
+
+/// The hover text of a cell, as the Mac's list has them: the name shows the link; Status, Location and Note show
+/// their own text (often cut short in the column).
+fn cell_tip_text(column: usize, row: &Row) -> String {
+    match column {
+        0 => row.url.clone(),
+        1 => row.status_text.clone(),
+        9 => row.folder.display().to_string(),
+        10 => row.note.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Puts the cell tooltip's tool on the cell under `point` (list pixels), or takes it away. While the pointer is over
+/// a row, the list's own hover text (for the empty space under the rows) waits.
+fn cell_tip(list: HWND, point: Option<POINT>) {
+    unsafe {
+        let mut tips = HWND(CELL_TIPS.get() as *mut _);
+        if tips.is_invalid() || !IsWindow(Some(tips)).as_bool() {
+            let instance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap_or_default();
+            tips = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, PCWSTR::null(), WINDOW_STYLE(TTS_ALWAYSTIP | TTS_NOPREFIX),
+                                   CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, Some(list), None, Some(instance.into()), None)
+                .unwrap_or_default();
+            SendMessageW(tips, TTM_SETMAXTIPWIDTH, None, Some(LPARAM(420)));
+            theme::control(tips);
+            CELL_TIPS.set(tips.0 as isize);
+        }
+        let mut hit = LVHITTESTINFO { pt: point.unwrap_or_default(), ..Default::default() };
+        let cell = point.and_then(|_| {
+            let item = SendMessageW(list, LVM_SUBITEMHITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
+            (item >= 0 && hit.iSubItem >= 0).then_some((item as usize, hit.iSubItem as usize))
+        });
+        crate::a11y::pause(list, cell.is_some());
+        if cell == CELL.get() {
+            return;
+        }
+        CELL.set(cell);
+        let mut info = TTTOOLINFOW { cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32, hwnd: list, uId: 1, ..Default::default() };
+        SendMessageW(tips, TTM_POP, None, None);
+        SendMessageW(tips, TTM_DELTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
+        let Some((index, column)) = cell else { return };
+        let Some(row) = ROWS.with(|r| r.borrow().get(index).cloned()) else { return };
+        let text = cell_tip_text(column, &row);
+        let header = HWND(SendMessageW(list, LVM_GETHEADER, None, None).0 as *mut _);
+        let mut bounds = RECT { left: LVIR_BOUNDS as i32, ..Default::default() };
+        SendMessageW(list, LVM_GETITEMRECT, Some(WPARAM(index)), Some(LPARAM(&mut bounds as *mut _ as isize)));
+        let Some((left, right)) = column_edges(list, header, column) else { return };
+        if text.is_empty() {
+            return;
+        }
+        let text: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        info.uFlags = TTF_SUBCLASS;
+        info.rect = RECT { left, top: bounds.top, right, bottom: bounds.bottom };
+        info.lpszText = PWSTR(text.as_ptr() as *mut _);
+        SendMessageW(tips, TTM_ADDTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
     }
 }
 
@@ -745,7 +833,7 @@ unsafe fn header_draw(list: HWND, lparam: LPARAM) -> LRESULT {
             theme::fill(draw.hdc, RECT { left: r.right - 1, top: r.top + s(6), right: r.right, bottom: r.bottom - s(6) }, p.header_line);
         }
         let mut buffer = [0u16; 64];
-        let mut item = HDITEMW { mask: HDI_TEXT, pszText: windows::core::PWSTR(buffer.as_mut_ptr()), cchTextMax: 64, ..Default::default() };
+        let mut item = HDITEMW { mask: HDI_TEXT, pszText: PWSTR(buffer.as_mut_ptr()), cchTextMax: 64, ..Default::default() };
         SendMessageW(header, HDM_GETITEMW, Some(WPARAM(column)), Some(LPARAM(&mut item as *mut _ as isize)));
         let n = buffer.iter().position(|&c| c == 0).unwrap_or(0);
         let title = String::from_utf16_lossy(&buffer[..n]);

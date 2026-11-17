@@ -477,7 +477,7 @@ pub fn run() {
         let list = child(WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS, Default::default(), ID_LIST);
         set_font(list, text_font);
         SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, Some(WPARAM(0)),
-                     Some(LPARAM((LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP | LVS_EX_INFOTIP) as isize)));
+                     Some(LPARAM((LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP) as isize)));
         // Rows are drawn in chrome.rs, 30 pixels high, with the system's small file icons.
         let mut file_info = SHFILEINFOW::default();
         let images = SHGetFileInfoW(w!(".txt"), FILE_ATTRIBUTE_NORMAL, Some(&mut file_info), std::mem::size_of::<SHFILEINFOW>() as u32,
@@ -560,7 +560,7 @@ pub fn run() {
         load_layout(hwnd);
         theme::apply(hwnd);
         // Links and files dropped on the window, or on a download in it (§5.4, §7.1 M4).
-        crate::dragdrop::register(hwnd);
+        crate::dragdrop::register(hwnd, true, "Drop links here");
         // S16: told of every clipboard change (used only while Watch the clipboard is on).
         let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(hwnd);
         layout(hwnd);
@@ -1051,6 +1051,11 @@ fn checks() -> Vec<(u16, bool)> {
 /// §4.1: the menu for right-clicked downloads; right-clicking the column titles shows which columns to show.
 unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
     let (sel, rows, checks) = (selected(), with(|s| s.rows.clone()).unwrap_or_default(), checks());
+    // Connections ▸ for one download: how many are in use, then each live connection, as on the Mac.
+    let live: Vec<String> = match sel.as_slice() {
+        [r] => std::iter::once(format!("{} of {} connections in use", r.active_connections, r.allowed_connections)).chain(r.live.iter().cloned()).collect(),
+        _ => Vec::new(),
+    };
     let items: Vec<(&str, u16)> = if on_header {
         COLUMNS.iter().enumerate().skip(1).map(|(i, (name, _, _))| (*name, C_COLUMN + i as u16)).collect()
     } else {
@@ -1060,7 +1065,7 @@ unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
         // As on the Mac: Rename and Move To only for one finished download, Note for one, Connections while unfinished.
         let one = sel.len() == 1;
         let finished_one = one && sel[0].status == Status::Finished;
-        let unfinished = sel.iter().any(|r| r.status != Status::Finished);
+        let unfinished = sel.iter().all(|r| r.status != Status::Finished);
         let mut v: Vec<(&str, u16)> = vec![("Open", C_OPEN), ("Open With", 0)];
         let apps = OPEN_WITH.with(|o| {
             *o.borrow_mut() = sel.first().and_then(|r| r.path.clone()).filter(|_| one).map(|p| crate::openwith::handlers(&p)).unwrap_or_default();
@@ -1082,7 +1087,13 @@ unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
         }
         v.extend_from_slice(&[("-", 0), ("Resume", C_RESUME), ("Pause", C_PAUSE), ("Restart…", C_RESTART), ("-", 0), ("Add Mirror…", C_ADD_MIRROR)]);
         if unfinished {
-            v.extend_from_slice(&[("Connections", 0), ("Add Connection", C_ADD_CONNECTION), ("Remove Connection", C_REMOVE_CONNECTION), (")", 0)]);
+            v.extend_from_slice(&[("Connections", 0), ("Add Connection", C_ADD_CONNECTION), ("Remove Connection", C_REMOVE_CONNECTION)]);
+            if !live.is_empty() {
+                v.push(("-", 0));
+                // 1: lines that only say something, greyed.
+                v.extend(live.iter().map(|l| (l.as_str(), 1)));
+            }
+            v.push((")", 0));
         }
         v.extend_from_slice(&[("-", 0), ("Copy Link", C_COPY_LINK), ("Properties", C_PROPERTIES), ("-", 0), ("Delete…", C_DELETE)]);
         v
@@ -1303,6 +1314,31 @@ thread_local! {
     static OPEN_WITH: RefCell<Vec<crate::openwith::App>> = const { RefCell::new(Vec::new()) };
 }
 
+/// The list row under a screen point, when it is an unfinished download (links dropped there become its mirrors,
+/// §7.1 M4).
+pub(crate) fn mirror_row_at(x: i32, y: i32) -> Option<usize> {
+    let list = with(|s| s.list)?;
+    unsafe {
+        let mut hit = LVHITTESTINFO { pt: POINT { x, y }, ..Default::default() };
+        let _ = ScreenToClient(list, &mut hit.pt);
+        let i = SendMessageW(list, LVM_HITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
+        let row = chrome::ROWS.with(|r| r.borrow().get(usize::try_from(i).ok()?).cloned())?;
+        (row.status != Status::Finished).then_some(i as usize)
+    }
+}
+
+/// Frames the row links are dragged over (or none).
+pub(crate) fn set_drop_row(row: Option<usize>) {
+    if chrome::DROP_ROW.get() != row {
+        chrome::DROP_ROW.set(row);
+        if let Some(list) = with(|s| s.list) {
+            unsafe {
+                let _ = InvalidateRect(Some(list), None, false);
+            }
+        }
+    }
+}
+
 /// Import Links (§5.7) from these files: Add Links with every link in them, or an alert saying they have none. Also
 /// for files handed to the .exe ("Open with", a drop on its icon).
 fn import_paths(hwnd: HWND, paths: &[std::path::PathBuf]) {
@@ -1498,9 +1534,9 @@ fn command(hwnd: HWND, id: u16) {
             C_RENAME => {
                 if let Some(r) = sel.first().filter(|r| r.status == Status::Finished)
                     && let Some(ctx) = add_ctx()
-                    && let Some((v, _)) = crate::signins::form(&ctx, hwnd, "Rename", &format!("Rename “{}”. The file keeps its folder and stays in the list.", r.name),
+                    && let Some((v, _)) = crate::signins::form_selecting(&ctx, hwnd, "Rename", &format!("Rename “{}”. The file keeps its folder and stays in the list.", r.name),
                                                                &[crate::signins::Field { label: "New name", value: &r.name, secret: false, help: "The file's new name" }],
-                                                               None, "Rename")
+                                                               None, "Rename", true)
                     && v[0] != r.name
                     && let Err(e) = ctx.manager.rename_file(r.id, &v[0])
                 {
@@ -1794,14 +1830,6 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                         }
                     }
                     (ID_LIST, LVN_ITEMCHANGED) => refresh(),
-                    // A row's hover text is its link, as the Mac's name column shows.
-                    (ID_LIST, LVN_GETINFOTIPW) => {
-                        let tip = &mut *(lparam.0 as *mut NMLVGETINFOTIPW);
-                        if let Some(r) = chrome::ROWS.with(|r| r.borrow().get(tip.iItem as usize).cloned()) {
-                            let text: Vec<u16> = r.url.encode_utf16().take(tip.cchTextMax.max(1) as usize - 1).chain(std::iter::once(0)).collect();
-                            std::ptr::copy_nonoverlapping(text.as_ptr(), tip.pszText.0, text.len());
-                        }
-                    }
                     _ => {}
                 }
                 LRESULT(0)
@@ -1854,26 +1882,18 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             crate::dragdrop::WM_DROPPED => {
                 let dropped = Box::from_raw(lparam.0 as *mut crate::dragdrop::Dropped);
-                let links = hd_core::links::find(&dropped.text);
-                if links.is_empty() {
-                    added(Some("No links found in what was dropped".into()));
-                    return LRESULT(0);
-                }
-                // On a download in the list: its mirrors (§7.1 M4); anywhere else: Add Links.
-                let list = with(|s| s.list).unwrap_or_default();
-                let mut hit = LVHITTESTINFO { pt: POINT { x: dropped.x, y: dropped.y }, ..Default::default() };
-                let _ = ScreenToClient(list, &mut hit.pt);
-                let i = SendMessageW(list, LVM_HITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
-                let id = (i >= 0).then(|| with(|s| s.shown.get(i as usize).copied()).flatten()).flatten();
-                match id {
+                let links = dropped.links;
+                // On an unfinished download in the list: its mirrors (§7.1 M4); anywhere else, finished downloads
+                // included: Add Links.
+                match mirror_row_at(dropped.x, dropped.y).and_then(|i| with(|s| s.shown.get(i).copied()).flatten()) {
                     Some(id) => {
                         let note = with(|s| {
                             let n = s.manager.add_mirrors(id, &links);
                             let name = s.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_default();
                             match n {
-                                0 => format!("{name} already has those links"),
-                                1 => format!("Added 1 mirror to {name}"),
-                                n => format!("Added {n} mirrors to {name}"),
+                                0 => format!("“{name}” already has those links"),
+                                1 => format!("Added as a mirror of “{name}”"),
+                                n => format!("Added {n} mirrors of “{name}”"),
                             }
                         });
                         added(note);
