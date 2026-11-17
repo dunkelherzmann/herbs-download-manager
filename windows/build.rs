@@ -11,7 +11,9 @@ fn main() {
         println!("cargo:rerun-if-changed=../version.txt");
         println!("cargo:rerun-if-changed=icons/app.ico");
         let version = std::fs::read_to_string("../version.txt").ok().map(|v| v.trim().to_string()).unwrap_or_default();
-        let mut parts: Vec<u32> = version.split('.').filter_map(|p| p.parse().ok()).collect();
+        // The file details' numbers take only 0.1.157: a branch build's "+branch.2" stays in the text fields.
+        let numbers_only = version.split(['+', '-']).next().unwrap_or_default();
+        let mut parts: Vec<u32> = numbers_only.split('.').filter_map(|p| p.parse().ok()).collect();
         parts.resize(4, 0);
         let numbers = parts.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
         let icon = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("icons").join("app.ico");

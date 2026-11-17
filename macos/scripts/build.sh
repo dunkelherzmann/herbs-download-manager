@@ -8,6 +8,7 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VERSION="$(sh "$ROOT/scripts/version.sh")"
+NUMBER="$(sh "$ROOT/scripts/version.sh" --number)"  # bundle versions take only numbers
 # The same version for the core (About's "core" line), read by core/build.rs.
 printf '%s\n' "$VERSION" > "$ROOT/version.txt"
 NAME="Herb's Download Manager"
@@ -67,8 +68,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key><string>HerbsDownloadManager</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleVersion</key><string>$VERSION</string>
+    <key>CFBundleShortVersionString</key><string>$NUMBER</string>
+    <key>CFBundleVersion</key><string>$NUMBER</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
