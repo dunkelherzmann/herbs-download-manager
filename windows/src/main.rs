@@ -1,15 +1,23 @@
 //! Herb's Download Manager for Windows (SPECIFICATION.md §1): a Win32 window over the shared core, laid out as the
-//! Mac's, with the window controls on the right and the Main Menu (☰) in the top-left corner.
+//! Mac's, with the window controls on the right after the toolbar and the Main Menu (☰).
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
 mod a11y;
+#[cfg(windows)]
+mod alert;
 #[cfg(windows)]
 mod dragdrop;
 mod proxy;
 mod add;
 #[cfg(windows)]
 mod app;
+#[cfg(windows)]
+mod chrome;
+#[cfg(windows)]
+mod openwith;
+#[cfg(windows)]
+mod theme;
 #[cfg(windows)]
 mod detail;
 mod signins;

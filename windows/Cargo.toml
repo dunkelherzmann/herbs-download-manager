@@ -17,6 +17,9 @@ path = "src/main.rs"
 name = "hdm"
 path = "src/hdm.rs"
 
+[build-dependencies]
+embed-resource = "3"
+
 [dependencies]
 hd-core = { path = "../core" }
 
@@ -24,6 +27,8 @@ hd-core = { path = "../core" }
 windows-core = "0.62.2"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Storage_FileSystem",
     "Win32_System_DataExchange",
@@ -31,7 +36,9 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Com",
     "Win32_System_Ole",
     "Win32_System_Power",
+    "Win32_System_Registry",
     "Win32_Networking_WinHttp",
+    "Win32_Security",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_System_Time",

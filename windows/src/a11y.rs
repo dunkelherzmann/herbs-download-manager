@@ -38,6 +38,7 @@ fn tooltips_for(control: HWND) -> HWND {
             .unwrap_or_default();
         // Long hover texts wrap instead of running off the screen.
         SendMessageW(t, TTM_SETMAXTIPWIDTH, None, Some(LPARAM(420)));
+        crate::theme::control(t);
         TIPS.with(|m| m.borrow_mut().insert(top.0 as isize, t));
         t
     }
@@ -166,7 +167,7 @@ pub fn report() -> Vec<String> {
                 // Group boxes, separators and owner-drawn bars (style 0x7, 0x10, 0xD on a static) aren't controls.
                 "button" => style & 0xF != 0x7,
                 "edit" => style & ES_READONLY as u32 == 0,
-                "combobox" | "syslistview32" | "systreeview32" | "systabcontrol32" => true,
+                "combobox" | "syslistview32" | "systreeview32" | "systabcontrol32" | "herbsdmsegments" => true,
                 _ => false,
             };
             if !interactive || unsafe { GetParent(h) }.ok() != Some(window) && class != "edit" {

@@ -47,6 +47,9 @@ pub struct Field<'a> {
 
 extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
+        if let Some(r) = crate::theme::dialog(hwnd, msg, wparam, lparam) {
+            return r;
+        }
         match msg {
             WM_COMMAND => {
                 match (wparam.0 & 0xffff) as u16 {
@@ -163,30 +166,22 @@ pub fn form(ctx: &Ctx, owner: HWND, title: &str, note: &str, fields: &[Field], c
     }
 }
 
-/// A Task Dialog with these buttons (the first is the default); returns the pressed button's id (2 when cancelled).
+/// An alert with these buttons (the first is the default, the last cancels); returns the pressed button's id (2 when
+/// cancelled).
 fn choose(owner: HWND, heading: &str, body: &str, buttons: &[(i32, &str)], default: i32) -> i32 {
-    let heading = wide(heading);
-    let body = wide(body);
-    let labels: Vec<Vec<u16>> = buttons.iter().map(|b| wide(b.1)).collect();
-    let list: Vec<TASKDIALOG_BUTTON> =
-        buttons.iter().zip(&labels).map(|(b, l)| TASKDIALOG_BUTTON { nButtonID: b.0, pszButtonText: PCWSTR(l.as_ptr()) }).collect();
-    let config = TASKDIALOGCONFIG {
-        cbSize: std::mem::size_of::<TASKDIALOGCONFIG>() as u32,
-        hwndParent: owner,
-        dwFlags: TDF_ALLOW_DIALOG_CANCELLATION,
-        pszWindowTitle: w!("Herb's Download Manager"),
-        pszMainInstruction: PCWSTR(heading.as_ptr()),
-        pszContent: PCWSTR(body.as_ptr()),
-        cButtons: list.len() as u32,
-        pButtons: list.as_ptr(),
-        nDefaultButton: default,
-        ..Default::default()
-    };
-    let mut pressed = 2i32;
-    unsafe {
-        let _ = TaskDialogIndirect(&config, Some(&mut pressed), None, None);
+    // Two buttons sit side by side with the default at the right, as on the Mac; more stack, the default on top.
+    let mut order: Vec<(i32, &str)> = buttons.to_vec();
+    if order.len() == 2 && order[0].0 == default {
+        order.reverse();
     }
-    pressed
+    let labels: Vec<&str> = order.iter().map(|b| b.1).collect();
+    let default = order.iter().position(|b| b.0 == default).unwrap_or(0);
+    let cancel = order.iter().position(|b| b.0 == 2).unwrap_or(order.len() - 1);
+    let alert = crate::alert::Alert::new(heading, body, &labels, default, Some(cancel));
+    match crate::alert::run(owner, alert).0 {
+        Some(i) => order[i].0,
+        None => 2,
+    }
 }
 
 fn tell(owner: HWND, text: &str) {
@@ -609,6 +604,9 @@ fn edit_form(hwnd: HWND, ctx: &Ctx, existing: Option<Listed>) {
 
 extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
+        if let Some(r) = crate::theme::dialog(hwnd, msg, wparam, lparam) {
+            return r;
+        }
         match msg {
             WM_CTLCOLORSTATIC => {
                 SetBkMode(HDC(wparam.0 as *mut _), TRANSPARENT);

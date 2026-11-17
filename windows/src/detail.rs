@@ -138,14 +138,17 @@ fn create(ctx: &Ctx, kind: Kind, title: &str, size: (i32, i32), controls: &[Spec
         let mut rect = RECT { left: 0, top: 0, right: px(size.0), bottom: px(size.1) };
         let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU, false, WINDOW_EX_STYLE::default());
         let t = wide(title);
-        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
+        // No icon in the title bar, as the Mac's windows have none.
+        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
                                    CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, Some(ctx.owner), None,
                                    Some(instance.into()), None)
             .unwrap_or_default();
         let mut map = HashMap::new();
         for &(id, class, text, style, x, y, w, h) in controls {
             let text = wide(text);
-            let ex = if class == WC_LISTVIEWW || class == w!("EDIT") { WS_EX_CLIENTEDGE } else { WINDOW_EX_STYLE::default() };
+            // Read-only values (Info) are plain text, as on the Mac; fields to type in keep their frame.
+            let read_only = class == w!("EDIT") && style & ES_READONLY as u32 != 0;
+            let ex = if class == WC_LISTVIEWW || (class == w!("EDIT") && !read_only) { WS_EX_CLIENTEDGE } else { WINDOW_EX_STYLE::default() };
             let c = CreateWindowExW(ex, class, PCWSTR(text.as_ptr()), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | WINDOW_STYLE(style),
                                     px(x), px(y), px(w), px(h), Some(hwnd), Some(HMENU(id as usize as *mut _)), Some(instance.into()), None)
                 .unwrap_or_default();
@@ -239,6 +242,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         return;
     }
     let Some(d) = ctx.manager.detail(id) else { return };
+    crate::chrome::register_segments();
     let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
     let mut specs: Vec<Spec> = vec![
         (D_BAR, w!("STATIC"), "", 0xD /* SS_OWNERDRAW */, 12, 12, 656, 18),
@@ -247,7 +251,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_TOGGLE, w!("BUTTON"), "Pause", BUTTON, 490, 36, 85, 30),
         (D_CLOSE, w!("BUTTON"), "Close", BUTTON, 583, 36, 85, 30),
         // Just the strip of tabs: the pages sit below it, so nothing overlaps (WM_PRINT pictures and the screen agree).
-        (D_TABS, WC_TABCONTROLW, "", 0, 12, 76, 656, 28),
+        (D_TABS, w!("HerbsDMSegments"), "Info|Connections|Mirrors|Options", 0, 12, 76, 656, 26),
         (D_CONNS, WC_LISTVIEWW, "", LVS_REPORT | LVS_NOSORTHEADER, 22, 110, 636, 290),
         (D_PLUS, w!("BUTTON"), "+", BUTTON, 22, 408, 36, 28),
         (D_MINUS, w!("BUTTON"), "−", BUTTON, 62, 408, 36, 28),
@@ -273,11 +277,6 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
     }
     let hwnd = create(ctx, Kind::Download { id, detail: None }, &d.row.name, (680, 458), &specs);
     with_win(hwnd, |w| unsafe {
-        for (i, name) in ["Info", "Connections", "Mirrors", "Options"].iter().enumerate() {
-            let t = wide(name);
-            let item = TCITEMW { mask: TCIF_TEXT, pszText: PWSTR(t.as_ptr() as *mut _), ..Default::default() };
-            SendMessageW(w.controls[&D_TABS], TCM_INSERTITEMW, Some(WPARAM(i)), Some(LPARAM(&item as *const _ as isize)));
-        }
         columns(w.controls[&D_CONNS], &[("Source", 150), ("Range", 170), ("Downloaded", 90), ("Speed", 90), ("State", 120)], false);
         columns(w.controls[&D_SOURCES], &[("Source", 300), ("State", 110), ("Active", 60), ("Speed", 80), ("Served", 80)], true);
         combo(w.controls[&D_UNIT], &["KB/s", "MB/s"], 0);
@@ -432,7 +431,10 @@ fn draw_bar(item: &DRAWITEMSTRUCT, d: &Detail) {
     unsafe {
         let r = item.rcItem;
         let brush = |rgb: (u8, u8, u8)| CreateSolidBrush(COLORREF(rgb.0 as u32 | (rgb.1 as u32) << 8 | (rgb.2 as u32) << 16));
-        let (grey, blue, green) = (brush((220, 220, 220)), brush((61, 133, 227)), brush((77, 179, 102)));
+        // The track and the accent colour of the current look (theme.rs); green for parts still being fetched.
+        let p = crate::theme::palette();
+        let rgb = |c: COLORREF| ((c.0 & 0xff) as u8, ((c.0 >> 8) & 0xff) as u8, ((c.0 >> 16) & 0xff) as u8);
+        let (grey, blue, green) = (brush(rgb(p.track)), brush(rgb(p.accent)), brush((77, 179, 102)));
         FillRect(item.hDC, &r, grey);
         let w = (r.right - r.left) as f64;
         let size = d.row.size.unwrap_or(0);
@@ -522,60 +524,63 @@ pub fn settings(ctx: &Ctx) {
     let sign_ins = crate::signins::summary(ctx);
     let start_text = schedule::time_text(s.schedule.start.unwrap_or(60));
     let stop_text = schedule::time_text(s.schedule.stop.unwrap_or(7 * 60));
-    let hwnd = create(ctx, Kind::Settings, "Settings", (560, 888), &[
-        (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 18, 170, 20),
-        (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 18, 350, 20),
-        (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 190, 44, 100, 28),
-        (S_RESET, w!("BUTTON"), "Use Downloads", BUTTON, 298, 44, 130, 28),
-        (0, w!("STATIC"), "Downloads at once:", LABEL, 12, 92, 170, 20),
-        (S_AT_ONCE, w!("EDIT"), &s.downloads_at_once.to_string(), EDIT | ES_NUMBER as u32, 190, 88, 60, 24),
-        (0, w!("STATIC"), "Speed limit (all):", LABEL, 12, 126, 170, 20),
-        (S_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 190, 124, 90, 24),
-        (S_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 284, 122, 90, 24),
-        (S_UNIT, w!("COMBOBOX"), "", combo_style, 382, 122, 80, 120),
-        (0, w!("STATIC"), "Connections per download:", LABEL, 12, 166, 170, 20),
-        (S_CONNECTIONS, w!("EDIT"), &s.connections.to_string(), EDIT | ES_NUMBER as u32, 190, 162, 60, 24),
-        (0, w!("STATIC"), "Connections per server:", LABEL, 12, 200, 170, 20),
-        (S_PER_SERVER, w!("EDIT"), &s.connections_per_server.to_string(), EDIT | ES_NUMBER as u32, 190, 196, 60, 24),
-        (0, w!("STATIC"), "Retries per source:", LABEL, 12, 234, 170, 20),
-        (S_RETRIES, w!("EDIT"), &s.retries.to_string(), EDIT | ES_NUMBER as u32, 190, 230, 60, 24),
-        (0, w!("STATIC"), "When a file exists:", LABEL, 12, 270, 170, 20),
-        (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 266, 230, 160),
-        (0, w!("STATIC"), "Scheduler:", LABEL, 12, 306, 170, 20),
-        (S_START_ON, w!("BUTTON"), "Start the queue at", BS_AUTOCHECKBOX as u32, 190, 302, 146, 24),
-        (S_START, w!("EDIT"), &start_text, EDIT, 338, 300, 64, 24),
-        (S_STOP_ON, w!("BUTTON"), "Stop the queue at", BS_AUTOCHECKBOX as u32, 190, 332, 146, 24),
-        (S_STOP, w!("EDIT"), &stop_text, EDIT, 338, 330, 64, 24),
-        (0, w!("STATIC"), "On:", LABEL, 12, 366, 170, 20),
-        (S_DAY, w!("BUTTON"), DAYS[0], BS_AUTOCHECKBOX as u32, 190, 362, 50, 24),
-        (S_DAY + 1, w!("BUTTON"), DAYS[1], BS_AUTOCHECKBOX as u32, 240, 362, 50, 24),
-        (S_DAY + 2, w!("BUTTON"), DAYS[2], BS_AUTOCHECKBOX as u32, 290, 362, 50, 24),
-        (S_DAY + 3, w!("BUTTON"), DAYS[3], BS_AUTOCHECKBOX as u32, 340, 362, 50, 24),
-        (S_DAY + 4, w!("BUTTON"), DAYS[4], BS_AUTOCHECKBOX as u32, 390, 362, 50, 24),
-        (S_DAY + 5, w!("BUTTON"), DAYS[5], BS_AUTOCHECKBOX as u32, 440, 362, 50, 24),
-        (S_DAY + 6, w!("BUTTON"), DAYS[6], BS_AUTOCHECKBOX as u32, 490, 362, 50, 24),
-        (0, w!("STATIC"), "When the queue is done:", LABEL, 12, 400, 170, 20),
-        (S_WHEN_DONE, w!("COMBOBOX"), "", combo_style, 190, 396, 160, 160),
-        (0, w!("STATIC"), "Video stream quality:", LABEL, 12, 440, 170, 20),
-        (S_STREAM_QUALITY, w!("COMBOBOX"), "", combo_style, 190, 436, 160, 220),
-        (0, w!("STATIC"), "Sound language:", LABEL, 12, 474, 170, 20),
-        (S_SOUND, w!("COMBOBOX"), "", combo_style, 190, 470, 230, 320),
-        (0, w!("STATIC"), "Subtitles:", LABEL, 12, 508, 170, 20),
-        (S_SUBTITLES, w!("COMBOBOX"), "", combo_style, 190, 504, 230, 320),
-        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 540, 340, 24),
-        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 568, 340, 24),
-        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 596, 340, 24),
-        (S_WATCH, w!("BUTTON"), "Watch the clipboard for links", BS_AUTOCHECKBOX as u32, 190, 624, 340, 24),
-        (0, w!("STATIC"), "Server limits:", LABEL, 12, 660, 170, 20),
-        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 660, 250, 20),
-        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 654, 95, 28),
-        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 694, 170, 20),
-        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 694, 250, 20),
-        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 688, 95, 28),
-        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 728, 170, 20),
-        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 722, 190, 28),
-        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 756, 350, 72),
-        (S_CLOSE, w!("BUTTON"), "Close", DEFAULT, 455, 844, 85, 30),
+    // The Mac's order and controls: lists for the numbers, the times as lists in quarter hours that also take any time
+    // typed, the check boxes last; no Close button (changes are saved as they're made).
+    let list = combo_style;
+    let time_list = (CBS_DROPDOWN | WS_VSCROLL.0 as i32) as u32;
+    let hwnd = create(ctx, Kind::Settings, "Settings", (592, 764), &[
+        (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 20, 170, 20),
+        (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 20, 164, 20),
+        (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 360, 15, 96, 28),
+        (S_RESET, w!("BUTTON"), "Use Downloads", BUTTON, 462, 15, 118, 28),
+        (0, w!("STATIC"), "Connections per download:", LABEL, 12, 56, 170, 20),
+        (S_CONNECTIONS, w!("COMBOBOX"), "", list, 190, 52, 70, 400),
+        (0, w!("STATIC"), "Connections per server:", LABEL, 12, 86, 170, 20),
+        (S_PER_SERVER, w!("COMBOBOX"), "", list, 190, 82, 70, 400),
+        (0, w!("STATIC"), "Downloads at once:", LABEL, 12, 116, 170, 20),
+        (S_AT_ONCE, w!("COMBOBOX"), "", list, 190, 112, 70, 300),
+        (0, w!("STATIC"), "Speed limit:", LABEL, 12, 148, 170, 20),
+        (S_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 190, 146, 80, 24),
+        (S_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 274, 144, 80, 24),
+        (S_UNIT, w!("COMBOBOX"), "", combo_style, 362, 144, 80, 120),
+        (0, w!("STATIC"), "Retries per source:", LABEL, 12, 180, 170, 20),
+        (S_RETRIES, w!("COMBOBOX"), "", list, 190, 176, 70, 400),
+        (0, w!("STATIC"), "When a file exists:", LABEL, 12, 212, 170, 20),
+        (S_EXISTS, w!("COMBOBOX"), "", combo_style, 190, 208, 230, 160),
+        (0, w!("STATIC"), "Scheduler:", LABEL, 12, 248, 170, 20),
+        (S_START_ON, w!("BUTTON"), "Start the queue at", BS_AUTOCHECKBOX as u32, 190, 246, 150, 24),
+        (S_START, w!("COMBOBOX"), &start_text, time_list, 344, 244, 84, 300),
+        (S_STOP_ON, w!("BUTTON"), "Stop the queue at", BS_AUTOCHECKBOX as u32, 190, 278, 150, 24),
+        (S_STOP, w!("COMBOBOX"), &stop_text, time_list, 344, 276, 84, 300),
+        (0, w!("STATIC"), "On:", LABEL, 12, 312, 170, 20),
+        (S_DAY, w!("BUTTON"), DAYS[0], BS_AUTOCHECKBOX as u32, 190, 310, 54, 24),
+        (S_DAY + 1, w!("BUTTON"), DAYS[1], BS_AUTOCHECKBOX as u32, 244, 310, 54, 24),
+        (S_DAY + 2, w!("BUTTON"), DAYS[2], BS_AUTOCHECKBOX as u32, 298, 310, 54, 24),
+        (S_DAY + 3, w!("BUTTON"), DAYS[3], BS_AUTOCHECKBOX as u32, 352, 310, 54, 24),
+        (S_DAY + 4, w!("BUTTON"), DAYS[4], BS_AUTOCHECKBOX as u32, 406, 310, 54, 24),
+        (S_DAY + 5, w!("BUTTON"), DAYS[5], BS_AUTOCHECKBOX as u32, 460, 310, 54, 24),
+        (S_DAY + 6, w!("BUTTON"), DAYS[6], BS_AUTOCHECKBOX as u32, 514, 310, 54, 24),
+        (0, w!("STATIC"), "When the queue is done:", LABEL, 12, 346, 170, 20),
+        (S_WHEN_DONE, w!("COMBOBOX"), "", combo_style, 190, 342, 160, 160),
+        (0, w!("STATIC"), "Video stream quality:", LABEL, 12, 384, 170, 20),
+        (S_STREAM_QUALITY, w!("COMBOBOX"), "", combo_style, 190, 380, 160, 220),
+        (0, w!("STATIC"), "Sound language:", LABEL, 12, 414, 170, 20),
+        (S_SOUND, w!("COMBOBOX"), "", combo_style, 190, 410, 230, 320),
+        (0, w!("STATIC"), "Subtitles:", LABEL, 12, 444, 170, 20),
+        (S_SUBTITLES, w!("COMBOBOX"), "", combo_style, 190, 440, 230, 320),
+        (0, w!("STATIC"), "Server limits:", LABEL, 12, 482, 170, 20),
+        (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 482, 250, 20),
+        (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 476, 95, 28),
+        (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 514, 170, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 514, 250, 20),
+        (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 508, 95, 28),
+        (0, w!("STATIC"), "Browser extension:", LABEL, 12, 546, 170, 20),
+        (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 540, 190, 28),
+        (0, w!("STATIC"), "Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.", 0, 190, 574, 390, 66),
+        (S_CHECKSUM_FILES, w!("BUTTON"), "Look for checksum files next to the link", BS_AUTOCHECKBOX as u32, 190, 648, 380, 24),
+        (S_SERVER_DATE, w!("BUTTON"), "Keep the server's date for finished files", BS_AUTOCHECKBOX as u32, 190, 674, 380, 24),
+        (S_NOTIFY, w!("BUTTON"), "Show a notification when a download finishes", BS_AUTOCHECKBOX as u32, 190, 700, 380, 24),
+        (S_WATCH, w!("BUTTON"), "Watch the clipboard for links", BS_AUTOCHECKBOX as u32, 190, 726, 380, 24),
     ]);
     explain_ids(hwnd, &[
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
@@ -611,9 +616,33 @@ pub fn settings(ctx: &Ctx) {
         (S_STREAM_QUALITY, "", "The quality a streamed video is downloaded in: the best one up to this size, or the smallest when every one is bigger. The browser extension can choose another for each video"),
         (S_SOUND, "", "For a stream with sound in several languages: the one to download. When the stream doesn't have it, its own sound is taken"),
         (S_SUBTITLES, "", "Subtitles a streamed video's file keeps, as tracks a player can turn on: none, every language the stream has, or one language"),
-        (S_CLOSE, "", "Close Settings; changes are already saved"),
     ]);
     with_win(hwnd, |w| {
+        let numbers = |from: u32, to: u32| (from..=to).map(|n| n.to_string()).collect::<Vec<_>>();
+        let fill = |id: u16, items: Vec<String>, value: u32, from: u32| {
+            combo(w.controls[&id], &items.iter().map(String::as_str).collect::<Vec<_>>(), value.saturating_sub(from) as usize);
+        };
+        fill(S_CONNECTIONS, numbers(1, 32), s.connections.clamp(1, 32), 1);
+        fill(S_PER_SERVER, numbers(1, 32), s.connections_per_server.clamp(1, 32), 1);
+        fill(S_AT_ONCE, numbers(1, 10), s.downloads_at_once.clamp(1, 10), 1);
+        fill(S_RETRIES, numbers(0, 20), s.retries.min(20), 0);
+        // Quarter hours to pick from; any other time can be typed.
+        let times: Vec<String> = (0..96).map(|q| schedule::time_text(q * 15)).collect();
+        for (id, value) in [(S_START, &start_text), (S_STOP, &stop_text)] {
+            let c = w.controls[&id];
+            for t in &times {
+                let wt = wide(t);
+                unsafe { SendMessageW(c, CB_ADDSTRING, None, Some(LPARAM(wt.as_ptr() as isize))) };
+            }
+            set_text(c, value);
+            // The list's own text field explains itself too.
+            if let Ok(field) = unsafe { GetWindow(c, GW_CHILD) } {
+                let (name, help) = if id == S_START { ("Time to start the queue", "Hours and minutes, such as 01:30") } else { ("Time to stop the queue", "Hours and minutes, such as 07:00") };
+                crate::a11y::explain(field, name, help);
+            }
+            // No selected text in the time fields.
+            unsafe { SendMessageW(c, CB_SETEDITSEL, None, Some(LPARAM(0xFFFF_FFFFu32 as isize))) };
+        }
         combo(w.controls[&S_UNIT], &["KB/s", "MB/s"], 0);
         combo(w.controls[&S_EXISTS], &EXISTS.map(|e| e.0), EXISTS.iter().position(|e| e.1 == s.when_file_exists).unwrap_or(0));
         if let Some(l) = s.speed_limit {
@@ -784,6 +813,9 @@ fn apply_limit(hwnd: HWND, id: u64) {
 
 extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
+        if let Some(r) = crate::theme::dialog(hwnd, msg, wparam, lparam) {
+            return r;
+        }
         match msg {
             WM_TIMER if wparam.0 == TIMER_REFRESH => {
                 refresh(hwnd);
@@ -924,7 +956,13 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                             w.ctx.manager.set_settings(Settings { save_to: None, ..w.ctx.manager.settings() });
                             set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
                         })),
-                        S_AT_ONCE | S_LIMIT | S_CONNECTIONS | S_PER_SERVER | S_RETRIES | S_START | S_STOP if code == EN_KILLFOCUS => save_settings(hwnd),
+                        S_LIMIT if code == EN_KILLFOCUS => save_settings(hwnd),
+                        S_AT_ONCE | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == CBN_SELCHANGE => save_settings(hwnd),
+                        S_START | S_STOP if code == CBN_KILLFOCUS => save_settings(hwnd),
+                        // The picked time is in the field only after this message: save once it is.
+                        S_START | S_STOP if code == CBN_SELCHANGE => {
+                            let _ = PostMessageW(Some(hwnd), WM_COMMAND, WPARAM(id as usize | ((CBN_KILLFOCUS as usize) << 16)), LPARAM(0));
+                        }
                         S_LIMIT_ON | S_NOTIFY | S_WATCH | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
                         id if (S_DAY..S_DAY + 7).contains(&id) => save_settings(hwnd),
                         S_EXTENSION => match hd_core::browser::extension_folder(&crate::data_folder()) {
