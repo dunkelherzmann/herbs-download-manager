@@ -455,6 +455,13 @@ fn refresh(hwnd: HWND) {
             .collect();
         let list = w.controls[&D_SOURCES];
         fill(list, &sources);
+        // As on the Mac: Copy Link for a selected source; Make Main Link and Remove only for a mirror.
+        let at = SendMessageW(list, LVM_GETNEXTITEM, Some(WPARAM(usize::MAX)), Some(LPARAM(LVNI_SELECTED as isize))).0;
+        let picked = usize::try_from(at).ok().and_then(|i| d.sources.get(i));
+        let _ = EnableWindow(w.controls[&D_COPY_LINK], picked.is_some());
+        let mirror = picked.is_some_and(|s| s.url != r.url);
+        let _ = EnableWindow(w.controls[&D_MAKE_MAIN], mirror);
+        let _ = EnableWindow(w.controls[&D_REMOVE], mirror);
         for (i, s) in d.sources.iter().enumerate() {
             let state = LVITEMW {
                 stateMask: LVIS_STATEIMAGEMASK,
