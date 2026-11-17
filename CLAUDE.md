@@ -16,6 +16,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   returns tail's status (#89 merged with Linux and Windows failing, 2026-11-10).
   Merge only when `gh pr checks` shows that every GitHub Actions job passed too: a failing Actions job was missed
   on #101 (2026-11-10).
+  Every merge to main raises the version (`scripts/version.sh`), a docs-only one too: merge bookkeeping PRs (bugs.md
+  ticks, notes) before building the installs, or the installed copies are one behind main (2026-11-17). A build from
+  anything but main shows main's number plus `+branch.N`.
   After `gh pr merge`, confirm the PR says MERGED before removing its worktree or branch: a merge refused for a
   conflict, then the branch deleted, closed #100 unmerged and the installs built main without it (2026-11-10).
 - Other sessions often work in this same folder: do your own work in a worktree of your own from the start (`git
@@ -93,6 +96,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   The installer: `windows\scripts\installer.ps1` after `build.ps1` (Inno Setup 6, in `~/.agents/config/tools.json`).
   To see SmartScreen, mark the file as downloaded (a `Zone.Identifier` stream with ZoneId=3) and double-click it in
   Explorer: started from a terminal, Windows shows the older "unknown publisher" warning instead.
+  To update his installed copy, run the setup with `/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+  /RESTARTAPPLICATIONS` and check its exit code (5 = it couldn't close the app, and the old files stay). Started from
+  master-control's `exec` the installer runs elevated and so does the copy it reopens: close that copy (WM_QUERYENDSESSION
+  then WM_ENDSESSION to its window) and open it again with `explorer.exe "<path>"`, which starts it as him.
 
 ## The browser extension
 
