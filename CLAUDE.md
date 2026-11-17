@@ -100,6 +100,9 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   /RESTARTAPPLICATIONS` and check its exit code (5 = it couldn't close the app, and the old files stay). Started from
   master-control's `exec` the installer runs elevated and so does the copy it reopens: close that copy (WM_QUERYENDSESSION
   then WM_ENDSESSION to its window) and open it again with `explorer.exe "<path>"`, which starts it as him.
+  A screenshot taken right after a menu opens catches Windows' fade-in, and a dark menu looks pale: wait a second
+  before judging its colours (a "light tray menu" bug was logged by mistake that way, 2026-11-17). To open the tray
+  menu without the overflow flyout, post `WM_TRAY` (WM_APP + 21) with lparam WM_RBUTTONUP to the test copy's window.
 
 ## The browser extension
 
