@@ -250,8 +250,13 @@ pub fn control(hwnd: HWND) {
             "Edit" | "ComboBox" | "SysDateTimePick32" => {
                 let _ = SetWindowTheme(hwnd, cfd, PCWSTR::null());
             }
-            "ComboLBox" | "ListBox" | "ScrollBar" | "tooltips_class32" | "SysHeader32" => {
+            "ComboLBox" | "ListBox" | "ScrollBar" | "tooltips_class32" => {
                 let _ = SetWindowTheme(hwnd, explorer, PCWSTR::null());
+            }
+            // A list's column titles (found again among the window's children after their list): the items view's
+            // theme, the one that has a dark look; the Explorer theme draws them light.
+            "SysHeader32" => {
+                let _ = SetWindowTheme(hwnd, if p.dark { w!("DarkMode_ItemsView") } else { w!("ItemsView") }, PCWSTR::null());
             }
             "Button" => {
                 let style = GetWindowLongW(hwnd, GWL_STYLE) as u32 & 0xf;
@@ -301,10 +306,9 @@ pub fn ctl_color(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
     }
 }
 
-/// A label's text colour: the mode's text, the Mac's secondary grey (help and previews), or red (a mistake).
+/// A label's text colour, other than the mode's text: the Mac's secondary grey (help and previews), or red (a mistake).
 #[derive(Clone, Copy)]
 pub enum Tone {
-    Text = 0,
     Secondary = 1,
     Red = 2,
 }

@@ -630,7 +630,8 @@ unsafe extern "system" fn list_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
         match msg {
             WM_NOTIFY => {
                 let header = &*(lparam.0 as *const NMHDR);
-                if header.code == NM_CUSTOMDRAW {
+                // The column titles' own drawing; the cell tooltip's goes on as usual.
+                if header.code == NM_CUSTOMDRAW && header.hwndFrom.0 == SendMessageW(hwnd, LVM_GETHEADER, None, None).0 as *mut _ {
                     return header_draw(hwnd, lparam);
                 }
                 DefSubclassProc(hwnd, msg, wparam, lparam)

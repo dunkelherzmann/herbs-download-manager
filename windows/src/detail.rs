@@ -339,7 +339,7 @@ fn layout(hwnd: HWND) {
         let px = |v: i32| v * scale / 96;
         let place = |id: u16, x: i32, y: i32, cw: i32, ch: i32| {
             if let Some(&c) = controls.get(&id) {
-                let _ = MoveWindow(c, px(x), px(y), px(cw), px(ch), false);
+                let _ = MoveWindow(c, px(x), px(y), px(cw), px(ch), true);
             }
         };
         place(D_BAR, 12, 12, w - 24, 18);
@@ -362,7 +362,7 @@ fn layout(hwnd: HWND) {
         }
         place(D_VALUE, 248, 198, w - 270, 24);
         place(D_NOTE, 140, 230, w - 162, 20);
-        let _ = InvalidateRect(Some(hwnd), None, true);
+        let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     }
 }
 

@@ -1071,7 +1071,7 @@ fn layout_links(hwnd: HWND) {
         let px = |v: i32| v * scale / 96;
         let place = |id: u16, x: i32, y: i32, cw: i32, ch: i32| {
             if let Some(&c) = controls.get(&id) {
-                let _ = MoveWindow(c, px(x), px(y), px(cw), px(ch), false);
+                let _ = MoveWindow(c, px(x), px(y), px(cw), px(ch), true);
             }
         };
         place(ID_FILTER, 12, 12, w - 252, 26);
@@ -1087,7 +1087,7 @@ fn layout_links(hwnd: HWND) {
         place(ID_CANCEL, w - 290, h - 48, 85, 30);
         place(ID_ADD, w - 197, h - 48, 85, 30);
         place(ID_DOWNLOAD, w - 104, h - 48, 92, 30);
-        let _ = InvalidateRect(Some(hwnd), None, true);
+        let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     }
 }
 
