@@ -12,7 +12,8 @@ server or from several mirrors of the same file, and pauses and resumes without 
   quality and sound track you choose. DRM-protected streams are refused.
 - **Find the files on a web page**: paste or drop a page's address and pick from what it holds.
 - **A browser extension** that hands the browser's downloads to the app and lists the media a page plays.
-- A simple window: menu bar, toolbar, status filters, the download list.
+- A simple window, light or dark to match your system: a toolbar, status filters and the download list, with every
+  menu under one ☰ button.
 - **A command line and an MCP server**, `hdm`, so scripts and AI assistants can list, add, pause, resume and remove
   downloads while the app runs.
 
@@ -22,7 +23,17 @@ How it works is described in [SPECIFICATION.md](SPECIFICATION.md).
 
 A testing app in active development, working on macOS, Linux and Windows. Prebuilt files for all three systems are on the
 [Releases](https://github.com/dunkelherzmann/herbs-download-manager/releases) page; they aren't signed or notarized, and the notes there say how to open
-each. Or build it yourself (below). What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
+each. Or build it yourself (below).
+
+### Installing on Windows
+
+Download `Herbs-Download-Manager-<version>-Windows-Setup.exe` from the Releases page and open it. The installer
+isn't signed, so the first time Windows SmartScreen stops it with "Windows protected your PC". Click **More info**,
+then **Run anyway**. It installs the app for your account only, so it needs no administrator password, and adds it to
+the Start menu. You can remove it in Settings ▸ Apps like any other app.
+
+If you'd rather not install anything, the `…-Windows.zip` file holds the same app. Keep `HerbsDownloadManager.exe` and
+`hdm.exe` in the same folder. What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
 [windows/pending.md](windows/pending.md).
 
 ## Command line and MCP server
@@ -80,10 +91,12 @@ scripts/check.sh                   # a pushed branch on the Mac, Linux and Windo
 sh linux/scripts/build.sh --install   # then: flatpak run org.herbsdownloadmanager.app
 ```
 
-**Windows** (the Visual Studio Build Tools): one portable `.exe`, put in `dist\` and on the Desktop.
+**Windows** (the Visual Studio Build Tools): `build.ps1` puts the app and `hdm.exe` in `dist\` and on the Desktop,
+and `installer.ps1` turns them into the installer (it needs Inno Setup 6: `winget install JRSoftware.InnoSetup`).
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1
+powershell -ExecutionPolicy Bypass -File windows\scripts\installer.ps1
 ```
 
 ## Support

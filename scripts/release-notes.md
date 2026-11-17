@@ -33,7 +33,9 @@ flatpak run org.herbsdownloadmanager.app
 
 This installs the GNOME runtime from Flathub if you don't already have it.
 
-**Windows** (10 or 11, 64-bit): download `Herbs-Download-Manager-VERSION-Windows.zip` and extract it. Keep `HerbsDownloadManager.exe` and `hdm.exe` in the same folder, because `hdm.exe` is what the browser extension talks to. It isn't signed, so if SmartScreen stops it, click **More info ▸ Run anyway**.
+**Windows** (10 or 11, 64-bit): download `Herbs-Download-Manager-VERSION-Windows-Setup.exe` and open it. The installer isn't signed, so the first time Windows SmartScreen stops it with "Windows protected your PC": click **More info**, then **Run anyway**. It installs the app for your account only (no administrator password) and adds it to the Start menu; Settings ▸ Apps removes it.
+
+To use it without installing, download `Herbs-Download-Manager-VERSION-Windows.zip` instead and extract it. Keep `HerbsDownloadManager.exe` and `hdm.exe` in the same folder, because `hdm.exe` is what the browser extension talks to. SmartScreen may stop it the same way.
 
 ## Browser extension (EXTENSION)
 
