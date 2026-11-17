@@ -93,6 +93,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   The installer: `windows\scripts\installer.ps1` after `build.ps1` (Inno Setup 6, in `~/.agents/config/tools.json`).
   To see SmartScreen, mark the file as downloaded (a `Zone.Identifier` stream with ZoneId=3) and double-click it in
   Explorer: started from a terminal, Windows shows the older "unknown publisher" warning instead.
+  To update his installed copy, run the setup with `/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+  /RESTARTAPPLICATIONS` and check its exit code (5 = it couldn't close the app, and the old files stay). Started from
+  master-control's `exec` the installer runs elevated and so does the copy it reopens: close that copy (WM_QUERYENDSESSION
+  then WM_ENDSESSION to its window) and open it again with `explorer.exe "<path>"`, which starts it as him.
 
 ## The browser extension
 
