@@ -916,7 +916,7 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                     if let Some(original) = original
                         && let Some(list) = with_win(hwnd, |w| w.controls[&D_SOURCES])
                     {
-                        let state = LVITEMW { stateMask: LVIS_SELECTED | LVIS_FOCUSED, state: LVIS_SELECTED | LVIS_FOCUSED, ..Default::default() };
+                        let state = LVITEMW { stateMask: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0), state: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0), ..Default::default() };
                         SendMessageW(list, LVM_SETITEMSTATE, Some(WPARAM(item as usize)), Some(LPARAM(&state as *const _ as isize)));
                         let menu = CreatePopupMenu().unwrap_or_default();
                         let mirror_only = if original { MF_STRING | MF_GRAYED } else { MF_STRING };
