@@ -49,6 +49,8 @@ thread_local! {
     static HOT_CAPTION: Cell<Option<Caption>> = const { Cell::new(None) };
     static PRESSED_CAPTION: Cell<Option<Caption>> = const { Cell::new(None) };
     static HOT_TOOL: Cell<isize> = const { Cell::new(0) };
+    /// What had the keyboard before a toolbar button was pressed: it gets it back once the click is done.
+    static FOCUS_BEFORE_TOOL: Cell<isize> = const { Cell::new(0) };
 }
 
 /// The window controls' rectangles, right to left in the title row (client coordinates).
@@ -279,13 +281,19 @@ unsafe extern "system" fn tool_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             }
             // No background flash under the drawn button.
             WM_ERASEBKGND => return LRESULT(1),
-            // A toolbar button never keeps the keyboard, as on the Mac: it goes back to where it was.
-            WM_SETFOCUS => {
-                let previous = HWND(wparam.0 as *mut _);
-                if !previous.is_invalid() && IsWindow(Some(previous)).as_bool() {
+            // A toolbar button never keeps the keyboard, as on the Mac: it goes back to where it was once the click is
+            // done. Not before: a button that loses the keyboard while pressed lets go and never reports the click.
+            WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+                FOCUS_BEFORE_TOOL.set(GetFocus().0 as isize);
+            }
+            WM_LBUTTONUP => {
+                let r = DefSubclassProc(hwnd, msg, wparam, lparam);
+                // Unless the command put the keyboard somewhere itself (Search's find field).
+                let previous = HWND(FOCUS_BEFORE_TOOL.replace(0) as *mut _);
+                if GetFocus() == hwnd && !previous.is_invalid() && previous != hwnd && IsWindow(Some(previous)).as_bool() {
                     let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(previous));
-                    return LRESULT(0);
                 }
+                return r;
             }
             _ => {}
         }
