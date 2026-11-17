@@ -6,12 +6,32 @@ param([switch]$NoDesktop)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
-# The app's version for About, as scripts/version.sh counts it: VERSION, then the commits since VERSION last changed
-# (core/build.rs reads version.txt).
+# The app's version for About, as scripts/version.sh counts it: VERSION, then the commits on main since VERSION last
+# changed; a build with commits main hasn't got adds the branch and how many (0.1.157+windows-parity-drop.10), so a
+# branch build never outranks main (core/build.rs reads version.txt).
 $base = (Get-Content (Join-Path $root 'VERSION') -Raw).Trim()
 $since = git -C $root log -1 --format=%H -- VERSION 2>$null
-$patch = if ($since) { (git -C $root rev-list --count "$since..HEAD").Trim() } else { '0' }
-Set-Content -Path (Join-Path $root 'version.txt') -Value "$base.$patch" -NoNewline
+$patch = '0'; $extra = '0'
+if ($since) {
+    $point = 'HEAD'
+    foreach ($ref in 'origin/main', 'main') {
+        git -C $root rev-parse --verify -q "$ref^{commit}" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $mb = git -C $root merge-base HEAD $ref 2>$null; if ($mb) { $point = $mb.Trim() }; break }
+    }
+    git -C $root merge-base --is-ancestor $since $point 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $patch = (git -C $root rev-list --count "$since..$point").Trim()
+        $extra = (git -C $root rev-list --count "$point..HEAD").Trim()
+    } else { $extra = (git -C $root rev-list --count "$since..HEAD").Trim() }
+}
+$version = "$base.$patch"
+if ($extra -ne '0') {
+    $branch = ((git -C $root rev-parse --abbrev-ref HEAD 2>$null) -replace '[^A-Za-z0-9-]', '-').Trim('-')
+    if (-not $branch -or $branch -eq 'HEAD') { $branch = 'dev' }
+    $version = "$version+$branch.$extra"
+}
+$global:LASTEXITCODE = 0
+Set-Content -Path (Join-Path $root 'version.txt') -Value $version -NoNewline
 Push-Location (Join-Path $root 'windows')
 try {
     cargo build --release
