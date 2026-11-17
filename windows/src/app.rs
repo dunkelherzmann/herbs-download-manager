@@ -1523,9 +1523,9 @@ fn command(hwnd: HWND, id: u16) {
             C_RENAME => {
                 if let Some(r) = sel.first().filter(|r| r.status == Status::Finished)
                     && let Some(ctx) = add_ctx()
-                    && let Some((v, _)) = crate::signins::form(&ctx, hwnd, "Rename", &format!("Rename “{}”. The file keeps its folder and stays in the list.", r.name),
+                    && let Some((v, _)) = crate::signins::form_selecting(&ctx, hwnd, "Rename", &format!("Rename “{}”. The file keeps its folder and stays in the list.", r.name),
                                                                &[crate::signins::Field { label: "New name", value: &r.name, secret: false, help: "The file's new name" }],
-                                                               None, "Rename")
+                                                               None, "Rename", true)
                     && v[0] != r.name
                     && let Err(e) = ctx.manager.rename_file(r.id, &v[0])
                 {

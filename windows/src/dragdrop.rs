@@ -195,13 +195,17 @@ pub(crate) fn html_fragment(data: &[u8]) -> String {
     String::from_utf8_lossy(&data[start..end]).into_owned()
 }
 
+extern "system" fn overlay_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> windows::Win32::Foundation::LRESULT {
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
 /// The dimmed layer over a window while links are dragged over it, with its message in the middle (the Mac's: black
 /// at 45 %, white semibold text). A layered window the pointer and the drop pass through.
 fn show_overlay(owner: HWND, message: &str) -> HWND {
     unsafe {
         let instance = GetModuleHandleW(None).unwrap_or_default();
         let class = WNDCLASSW {
-            lpfnWndProc: Some(DefWindowProcW),
+            lpfnWndProc: Some(overlay_proc),
             hInstance: instance.into(),
             lpszClassName: w!("HerbsDMDropOverlay"),
             ..Default::default()

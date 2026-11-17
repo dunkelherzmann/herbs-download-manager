@@ -75,6 +75,13 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
 /// Shows a form over `owner` and waits: the fields' texts and the checkbox, or `None` when cancelled.
 pub fn form(ctx: &Ctx, owner: HWND, title: &str, note: &str, fields: &[Field], check: Option<(&str, bool, &str)>, ok: &str)
     -> Option<(Vec<String>, bool)> {
+    form_selecting(ctx, owner, title, note, fields, check, ok, false)
+}
+
+/// `form`, with `stem`: the first field's text selected up to its extension (Rename, as on the Mac and in Explorer).
+#[allow(clippy::too_many_arguments)]
+pub fn form_selecting(ctx: &Ctx, owner: HWND, title: &str, note: &str, fields: &[Field], check: Option<(&str, bool, &str)>, ok: &str,
+                      stem: bool) -> Option<(Vec<String>, bool)> {
     unsafe {
         let instance = GetModuleHandleW(None).unwrap_or_default();
         let class = WNDCLASSW {
@@ -145,6 +152,15 @@ pub fn form(ctx: &Ctx, owner: HWND, title: &str, note: &str, fields: &[Field], c
         let _ = EnableWindow(owner, false);
         let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
         let _ = SetFocus(edits.iter().find(|&&e| text_of(e).is_empty()).or(edits.first()).copied());
+        if stem && let (Some(&edit), Some(field)) = (edits.first(), fields.first()) {
+            // The name without its extension ("report" of "report.pdf"; all of ".profile" or "README").
+            let name = field.value;
+            let end = match name.rfind('.') {
+                Some(dot) if dot > 0 => name[..dot].encode_utf16().count(),
+                _ => name.encode_utf16().count(),
+            };
+            SendMessageW(edit, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(end as isize)));
+        }
         let mut msg = MSG::default();
         while FORM_DONE.get().is_none() {
             if !GetMessageW(&mut msg, None, 0, 0).as_bool() {

@@ -46,6 +46,10 @@ const ID_PATTERN: u16 = 11;
 /// "Only the sound" (New Download) and "Only the sound of streamed videos" (Add Links).
 const ID_SOUND: u16 = 12;
 const ID_SAVE_LABEL: u16 = 28;
+const ID_BATCH_HELP: u16 = 26;
+/// Save to, as the Mac's folder pop-up.
+const FOLDER_POPUP: u32 = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
+const ID_BATCH_PREVIEW: u16 = 27;
 const ID_NEXT: u16 = ID_DOWNLOAD;
 
 pub(crate) fn wide(s: &str) -> Vec<u16> {
@@ -385,6 +389,9 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 batch: Vec::new(),
             })
         });
+        if let Some(&popup) = FORMS.with(|forms| forms.borrow().get(&(hwnd.0 as isize)).and_then(|f| f.controls.get(&22).copied())) {
+            fill_folder_popup(popup, &crate::save_folder(&ctx.manager));
+        }
         hwnd
     }
 }
@@ -405,7 +412,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (0, w!("STATIC"), "Name:", LABEL, 12, 132, 90, 20),
         (21, w!("EDIT"), "", EDIT, 110, 128, 430, 24),
         (0, w!("STATIC"), "Save to:", LABEL, 12, 168, 90, 20),
-        (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000 /* SS_PATHELLIPSIS */, 110, 168, 330, 20),
+        (22, w!("COMBOBOX"), "", FOLDER_POPUP, 110, 164, 330, 300),
         (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 450, 162, 90, 28),
         (0, w!("STATIC"), "Connections:", LABEL, 12, 206, 90, 20),
         (23, w!("COMBOBOX"), "", (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32, 110, 202, 70, 400),
@@ -473,7 +480,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_MIRRORS, w!("BUTTON"), "Treat as mirrors of one file", BS_AUTOCHECKBOX as u32, 12, 334, 300, 24),
                 (ID_SOUND, w!("BUTTON"), "Only the sound of streamed videos", BS_AUTOCHECKBOX as u32, 320, 334, 320, 24),
                 (ID_SAVE_LABEL, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
-                (22, w!("STATIC"), &crate::save_folder(&ctx.manager).display().to_string(), 0x4000, 76, 370, 560, 20),
+                (22, w!("COMBOBOX"), "", FOLDER_POPUP, 76, 366, 560, 300),
                 (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 648, 364, 100, 28),
                 (25, w!("STATIC"), "", 0, 12, 418, 380, 20),
                 (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 470, 412, 85, 30),
@@ -627,25 +634,50 @@ fn update_summary(hwnd: HWND) {
     });
 }
 
-/// Batch Download (§5.5).
+/// Batch Download (§5.5), as the Mac's: the link, the help on ranges, and a preview of the count with the first and
+/// last links (a mistake in red).
 pub fn batch(ctx: &Ctx) {
-    let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (560, 160), &[
-        (ID_PATTERN, w!("EDIT"), "", EDIT, 12, 14, 536, 26),
-        (26, w!("STATIC"), "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters.", 0, 12, 50, 536, 40),
-        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 370, 112, 85, 30),
-        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 463, 112, 85, 30),
+    let hwnd = open_form(ctx, FormKind::Batch, "Batch Download", (600, 226), &[
+        (ID_PATTERN, w!("EDIT"), "", EDIT, 20, 20, 560, 26),
+        (ID_BATCH_HELP, w!("STATIC"), BATCH_HELP, 0, 20, 56, 560, 32),
+        (ID_BATCH_PREVIEW, w!("STATIC"), "", SS_NOPREFIX.0, 20, 98, 560, 54),
+        (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 402, 176, 85, 30),
+        (ID_NEXT, w!("BUTTON"), "Continue…", DEFAULT, 495, 176, 85, 30),
     ]);
     explain_ids(hwnd, &[
-        (ID_PATTERN, "Link pattern", "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters"),
+        (ID_PATTERN, "Batch link", "Batch link: a link with a range placeholder"),
         (ID_CANCEL, "", "Close without adding anything (Esc)"),
-        (ID_NEXT, "", "Show these links in Add Links (Enter)"),
+        (ID_NEXT, "", "Show the links in the Add Links window (Enter)"),
     ]);
     with_form(hwnd, |f| unsafe {
         SendMessageW(f.controls[&ID_PATTERN], EM_SETCUEBANNER, Some(WPARAM(1)),
                      Some(LPARAM(w!("https://example.com/img^(###1-100).jpg").0 as isize)));
+        let dpi = GetDpiForWindow(hwnd);
+        SendMessageW(f.controls[&ID_BATCH_HELP], WM_SETFONT, Some(WPARAM(crate::theme::fonts(dpi).small.0 as usize)), Some(LPARAM(1)));
+        crate::theme::set_tone(f.controls[&ID_BATCH_HELP], crate::theme::Tone::Secondary);
+        SendMessageW(f.controls[&ID_BATCH_PREVIEW], WM_SETFONT, Some(WPARAM(crate::theme::mono(dpi).0 as usize)), Some(LPARAM(1)));
+        crate::theme::set_tone(f.controls[&ID_BATCH_PREVIEW], crate::theme::Tone::Secondary);
         let _ = EnableWindow(f.controls[&ID_NEXT], false);
         let _ = SetFocus(Some(f.controls[&ID_PATTERN]));
     });
+}
+
+/// The Batch window's help on ranges (the Mac's words).
+const BATCH_HELP: &str = "Put a range where the number or letters change: ^(###1-100) pads to 3 digits, ^(0-ffH) counts in \
+                          hexadecimal, ^(a-z) or ^(AA-BZ) in letters. Separate several ranges with commas.";
+
+/// Batch's preview for a pattern: the count with the first and last links, or what is wrong (true), or nothing.
+fn batch_preview(pattern: &str) -> (String, bool, Vec<String>) {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return (String::new(), false, Vec::new());
+    }
+    match hd_core::links::expand_batch(pattern) {
+        Ok(l) if l.len() == 1 => (format!("1 link: {}", l[0]), false, l),
+        Ok(l) if !l.is_empty() => (format!("{} links\r\nFirst: {}\r\nLast:  {}", l.len(), l[0], l[l.len() - 1]), false, l),
+        Ok(_) => (String::new(), false, Vec::new()),
+        Err(e) => (e, true, Vec::new()),
+    }
 }
 
 fn submit(hwnd: HWND, start: bool) {
@@ -750,7 +782,7 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     (ID_CHOOSE, _) => {
                         if let Some(dir) = choose_folder(hwnd, "Save to") {
                             let links = with_form(hwnd, |f| {
-                                set_text(f.controls[&22], &dir.display().to_string());
+                                fill_folder_popup(f.controls[&22], &dir);
                                 f.folder = dir;
                                 f.kind == FormKind::AddLinks
                             });
@@ -774,6 +806,21 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         SetTimer(Some(hwnd), TIMER_PROBE, 500, None);
                     }
                     (ID_FILTER, EN_CHANGE) => show_items(hwnd),
+                    // Save to's pop-up: the folder, or one of the folders above it.
+                    (22, CBN_SELCHANGE) => {
+                        let links = with_form(hwnd, |f| {
+                            let popup = f.controls[&22];
+                            let at = SendMessageW(popup, CB_GETCURSEL, None, None).0;
+                            if let Some(dir) = f.folder.ancestors().nth(at.max(0) as usize).map(PathBuf::from) {
+                                fill_folder_popup(popup, &dir);
+                                f.folder = dir;
+                            }
+                            f.kind == FormKind::AddLinks
+                        });
+                        if links == Some(true) {
+                            show_items(hwnd);
+                        }
+                    }
                     (ID_MIRRORS, _) => update_summary(hwnd),
                     (ID_SOUND, _) => {}
                     (ID_CHECK_ALL | ID_UNCHECK_ALL, _) => {
@@ -786,17 +833,13 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         show_items(hwnd);
                     }
                     (ID_PATTERN, EN_CHANGE) => {
-                        with_form(hwnd, |f| match hd_core::links::expand_batch(text_of(f.controls[&ID_PATTERN]).trim()) {
-                            Ok(l) if !l.is_empty() => {
-                                set_text(f.controls[&26], &format!("{} links: {} … {}", l.len(), l[0], l[l.len() - 1]));
-                                let _ = EnableWindow(f.controls[&ID_NEXT], true);
-                                f.batch = l;
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                set_text(f.controls[&26], &e);
-                                let _ = EnableWindow(f.controls[&ID_NEXT], false);
-                            }
+                        with_form(hwnd, |f| {
+                            let (text, mistake, links) = batch_preview(&text_of(f.controls[&ID_PATTERN]));
+                            let preview = f.controls[&ID_BATCH_PREVIEW];
+                            set_text(preview, &text);
+                            crate::theme::set_tone(preview, if mistake { crate::theme::Tone::Red } else { crate::theme::Tone::Secondary });
+                            let _ = EnableWindow(f.controls[&ID_NEXT], !links.is_empty());
+                            f.batch = links;
                         });
                     }
                     _ => {}
@@ -1002,6 +1045,20 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
     }
 }
 
+/// Save to's pop-up, as the Mac's: the folder, then each folder above it, by name.
+fn fill_folder_popup(popup: HWND, folder: &std::path::Path) {
+    unsafe {
+        SendMessageW(popup, CB_RESETCONTENT, None, None);
+        for dir in folder.ancestors() {
+            let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir.display().to_string());
+            let text = wide(&name);
+            SendMessageW(popup, CB_ADDSTRING, None, Some(LPARAM(text.as_ptr() as isize)));
+        }
+        SendMessageW(popup, CB_SETCURSEL, Some(WPARAM(0)), None);
+        crate::a11y::explain(popup, "Save to", &format!("{}: the folder the files are saved to; pick a folder above it here, or Choose… another", folder.display()));
+    }
+}
+
 /// Add Links' controls placed for its size (it resizes, as on the Mac): the list takes the room, the rows under it
 /// keep to the bottom and the buttons to the right. In 96-dpi pixels, as made in `add_links`.
 fn layout_links(hwnd: HWND) {
@@ -1024,7 +1081,7 @@ fn layout_links(hwnd: HWND) {
         place(ID_MIRRORS, 12, h - 126, 300, 24);
         place(ID_SOUND, 320, h - 126, 320, 24);
         place(ID_SAVE_LABEL, 12, h - 90, 60, 20);
-        place(22, 76, h - 90, w - 200, 20);
+        place(22, 76, h - 94, w - 200, 300);
         place(ID_CHOOSE, w - 112, h - 96, 100, 28);
         place(25, 12, h - 42, w - 380, 20);
         place(ID_CANCEL, w - 290, h - 48, 85, 30);

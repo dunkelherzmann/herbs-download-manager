@@ -280,7 +280,13 @@ pub fn ctl_color(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
             WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLORDLG => {
                 // Read-only fields (WM_CTLCOLORSTATIC comes from those too) are plain text on the window's colour.
                 let back = p.chrome;
-                SetTextColor(dc, if IsWindowEnabled(control).as_bool() { p.text } else { p.disabled });
+                let color = match GetPropW(control, w!("hdm-tone")).0 as usize {
+                    _ if !IsWindowEnabled(control).as_bool() => p.disabled,
+                    1 => p.secondary,
+                    2 => p.red,
+                    _ => p.text,
+                };
+                SetTextColor(dc, color);
                 SetBkColor(dc, back);
                 SetBkMode(dc, TRANSPARENT);
                 Some(LRESULT(brush(back).0 as isize))
@@ -292,6 +298,21 @@ pub fn ctl_color(msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
             }
             _ => None,
         }
+    }
+}
+
+/// A label's text colour: the mode's text, the Mac's secondary grey (help and previews), or red (a mistake).
+#[derive(Clone, Copy)]
+pub enum Tone {
+    Text = 0,
+    Secondary = 1,
+    Red = 2,
+}
+
+pub fn set_tone(control: HWND, tone: Tone) {
+    unsafe {
+        let _ = SetPropW(control, w!("hdm-tone"), Some(HANDLE(tone as usize as *mut _)));
+        let _ = InvalidateRect(Some(control), None, true);
     }
 }
 
@@ -437,6 +458,23 @@ pub fn fonts(dpi: u32) -> Fonts {
         bold: HFONT(made.1 as *mut _),
         small: HFONT(made.2 as *mut _),
     }
+}
+
+/// The Mac's small monospaced font (11 points) for previews of links.
+pub fn mono(dpi: u32) -> HFONT {
+    thread_local! {
+        static MADE: RefCell<HashMap<u32, isize>> = RefCell::new(HashMap::new());
+    }
+    let made = MADE.with(|m| {
+        *m.borrow_mut().entry(dpi).or_insert_with(|| unsafe {
+            let face = if font_exists("Cascadia Mono") { "Cascadia Mono" } else { "Consolas" };
+            let mut lf = LOGFONTW { lfHeight: -(11 * dpi as i32 / 96), lfWeight: 400, lfQuality: CLEARTYPE_QUALITY, ..Default::default() };
+            let f: Vec<u16> = face.encode_utf16().collect();
+            lf.lfFaceName[..f.len().min(31)].copy_from_slice(&f[..f.len().min(31)]);
+            CreateFontIndirectW(&lf).0 as isize
+        })
+    });
+    HFONT(made as *mut _)
 }
 
 fn font_exists(face: &str) -> bool {
