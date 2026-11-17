@@ -85,6 +85,14 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   left "Only the sound" dimmed (#78).
   Don't let sibling controls overlap (a tab control's body under its pages): WM_PRINT paints siblings in its own
   order, so the pictures showed empty pages. Make the tab control just the strip and put the pages below it.
+  The look lives in `theme.rs` (light and dark, Windows' app mode, the Mac's colours) and `chrome.rs` (the title row,
+  toolbar, sidebar and list, all drawn). Every dialog procedure calls `theme::dialog` first; a window created visible
+  calls `theme::apply` once its controls exist (its WM_SHOWWINDOW comes before them). Never pass an empty slice to
+  `DrawTextW`: it reads the slice's dangling pointer and the app dies in user32 with 0xC000041D (`theme::text` skips
+  empty text). Questions and messages go through `alert.rs`, never TaskDialog or MessageBox, which stay light.
+  The installer: `windows\scripts\installer.ps1` after `build.ps1` (Inno Setup 6, in `~/.agents/config/tools.json`).
+  To see SmartScreen, mark the file as downloaded (a `Zone.Identifier` stream with ZoneId=3) and double-click it in
+  Explorer: started from a terminal, Windows shows the older "unknown publisher" warning instead.
 
 ## The browser extension
 
