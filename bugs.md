@@ -123,3 +123,7 @@ No bugs reported yet.
   - [x] Windows
 - [x] **The Windows installer couldn't update a running copy** (*found while installing*, 2026-11-17). Windows. Run over a copy that was open (in the window or in the tray), the installer stopped with exit code 5 and left the old files, because the app hid itself when Windows asked it to close. The app now quits when Windows signs out, shuts down or an installer closes it for an update, and asks Windows to open it again afterwards. Checked on Windows: with 0.1.164 open, its installer ran silently, closed it and opened it again (exit code 0).
   - [x] Windows
+- [x] **The schedule test failed just before midnight** (*found in testing*, 2026-11-20). All three systems (the shared core's tests). Run at 23:59, the start time two minutes on fell the next day, so the queue text rightly read "starts Fri at 00:01" while `the_schedule_starts_and_stops_the_queue_and_says_when_its_done` expected "starts at ". The test now moves its clock on to the next noon before setting the schedule, so none of its times cross midnight.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
