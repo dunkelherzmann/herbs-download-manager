@@ -52,13 +52,19 @@ fn the_schedule_starts_and_stops_the_queue_and_says_when_its_done() {
 
     // Times as the scheduler's clock reads them: the start of this minute, and the minute of day `ahead` minutes on.
     // The clock is moved to exact times, so however long a step takes, it lands between the same two events.
+    // It first moves on to the next noon, so the events never cross midnight (run at 23:59, the start read
+    // "starts Fri at 00:01"). Forward only, before the schedule is set, so nothing fires on the way.
+    let go_to = |t: i64| m.advance_clock(t - m.scheduler_now());
+    let today = Local.timestamp_opt(m.scheduler_now(), 0).unwrap().date_naive();
+    let noon = |d: chrono::NaiveDate| Local.from_local_datetime(&d.and_hms_opt(12, 0, 0).unwrap()).unwrap().timestamp();
+    let next_noon = if noon(today) > m.scheduler_now() { noon(today) } else { noon(today.succ_opt().unwrap()) };
+    go_to(next_noon);
     let base = m.scheduler_now();
     let minute = base - base.rem_euclid(60);
     let at = |ahead: i64| {
         let t = Local.timestamp_opt(minute + ahead * 60, 0).unwrap();
         t.hour() * 60 + t.minute()
     };
-    let go_to = |t: i64| m.advance_clock(t - m.scheduler_now());
     let mut settings = m.settings();
     settings.schedule = Schedule { start: Some(at(2)), stop: Some(at(4)), when_done: WhenDone::Sleep, ..Schedule::default() };
     m.set_settings(settings);
