@@ -5,7 +5,7 @@
 
 mod common;
 
-use hd_core::browser::{self, CHROME_ID, FIREFOX_ID, HOST};
+use hd_core::browser::{self, CHROME_ID, EDGE_STORE_ID, FIREFOX_ID, HOST};
 
 #[test]
 fn hdm_is_registered_with_the_browsers_found_and_only_those() {
@@ -25,6 +25,7 @@ fn hdm_is_registered_with_the_browsers_found_and_only_those() {
     let read = |path: std::path::PathBuf| -> serde_json::Value { serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap() };
     let edge = read(home.join(chrome).join("NativeMessagingHosts").join(format!("{HOST}.json")));
     assert_eq!(edge["allowed_origins"][0], format!("chrome-extension://{CHROME_ID}/"));
+    assert_eq!(edge["allowed_origins"][1], format!("chrome-extension://{EDGE_STORE_ID}/"));
     let firefox_hosts = if cfg!(target_os = "macos") { "Library/Application Support/Mozilla/NativeMessagingHosts" } else { ".mozilla/native-messaging-hosts" };
     let fox = read(home.join(firefox_hosts).join(format!("{HOST}.json")));
     assert_eq!(fox["allowed_extensions"][0], FIREFOX_ID);
