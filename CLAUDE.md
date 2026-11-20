@@ -132,6 +132,12 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   drive the worker and pages over the DevTools protocol (Node's `WebSocket`). Its native-messaging host is still the
   user's real `hdm`, so anything that adds (a Download, the page's button) reaches his running app: check up to the
   click, and test adding with the Node harness or a stand-in page (2026-11-14).
+- Edge's store registration (§13) is tested the same way: on the Mac and Linux its per-user `External Extensions`
+  folder lives in the user-data-dir, so a scratch profile's own folder tests it. Run the profile once first: Edge
+  turns on, with no prompt, what it installs in a brand-new profile. Never test with uBlock Origin: his Mac and
+  Windows Edge force-install it by policy, which looks like a pass (Dark Reader `ifoakfbpdcdoeenechcleahebpibofpc` is
+  live and in no policy). On Windows Edge reads and watches `HKCU\Software\Microsoft\Edge\Extensions`, so a key
+  there reaches his running Edge at once: test with an id he wouldn't mind getting, and remove the key after (2026-11-20).
 - **YouTube never plays in a headless browser,** and YouTube accepts its token only from a playing player (stream
   protection status 2 = pending, then it stops after about 60 s). Test YouTube in a windowed test Edge started
   off-screen in the background: on the Mac `open -g -n --env HD_DATA_DIR=<test data> -a "Microsoft Edge" --args
