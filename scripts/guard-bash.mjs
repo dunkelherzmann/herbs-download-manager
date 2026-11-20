@@ -244,7 +244,7 @@ export function check(command, cwd, home = os.homedir(), depth = 0) {
     return null;
 }
 
-const herbsReason = "an unquoted \"Herb's\" in an ssh command is blocked: the apostrophe ends the shell's quoting and vanishes (a command made a new \"Herbs Download Manager\" folder). Put the step in a .ps1/.sh (Join-Path $env:LOCALAPPDATA \"Herb's Download Manager\"), copy it over with scp and run that (CLAUDE.md)";
+const herbsReason = "an unquoted \"Herb's\" in an ssh command is blocked: the apostrophe ends the shell's quoting and vanishes (a command made a new \"Herbs Download Manager\" folder). Put the step in a .ps1/.sh (Join-Path $env:LOCALAPPDATA \"Herb's Download Manager\"), copy it over with scp and run that (docs/agents/linux-windows.md)";
 
 if (process.argv[1] && realish(process.argv[1]) === realish(fileURLToPath(import.meta.url))) {
     let input = "";

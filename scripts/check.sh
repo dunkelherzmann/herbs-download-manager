@@ -10,7 +10,7 @@
 #   origin/BRANCH (/tmp/hdm-check-BRANCH, %TEMP%\hdm-check-BRANCH), so their own checkouts stay on main; builds are cached in
 #   ~/.cache/hdm-check-target.
 # - First, without running anything: if the branch changed extension/, it must raise "version" in
-#   extension/manifest.json too (CLAUDE.md), or the install steps never copy the new extension to his Downloads.
+#   extension/manifest.json too (docs/agents/extension.md), or the install steps never copy the new extension to his Downloads.
 # Prints one line per machine and exits non-zero if any failed. Logs go to .build/check/<machine>.log.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -45,7 +45,7 @@ if ! git -C "$ROOT" diff --quiet "$BASE" HEAD -- extension/; then
     OLD_EXT="$(ext_version "$BASE")"
     NEW_EXT="$(ext_version HEAD)"
     if [ "$OLD_EXT" = "$NEW_EXT" ]; then
-        echo "extension: FAILED ($COMMIT), extension/ changed but its manifest's version is still ${NEW_EXT:-unknown}: raise it (CLAUDE.md)"
+        echo "extension: FAILED ($COMMIT), extension/ changed but its manifest's version is still ${NEW_EXT:-unknown}: raise it (docs/agents/extension.md)"
         exit 1
     fi
 fi
