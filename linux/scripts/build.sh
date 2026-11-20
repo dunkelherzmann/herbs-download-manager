@@ -19,11 +19,11 @@ cd "$ROOT/linux"
 flatpak info --user org.flatpak.Builder >/dev/null 2>&1 || flatpak install --user -y --noninteractive flathub org.flatpak.Builder
 STATE="$ROOT/linux/.flatpak-builder"
 builder() { flatpak run org.flatpak.Builder --state-dir="$STATE" --disable-rofiles-fuse "$@"; }
-# The built app's --self-check. `--run` takes no --disable-rofiles-fuse, and its own exit status is 1 even for
-# `true`, so the check is judged by what the app prints when it passes.
+# The built app's --self-check, run in the build folder's sandbox by `flatpak build`. (flatpak-builder's `--run` can
+# no longer start rofiles-fuse with the host's fusermount3 3.18 and takes no --disable-rofiles-fuse, 2026-11-20.) The
+# check is judged by what the app prints when it passes.
 self_check() {
-    out="$(flatpak run org.flatpak.Builder --state-dir="$STATE" --run build org.herbsdownloadmanager.app.yml \
-        sh -c 'herbs-download-manager --self-check && echo SELF-CHECK-PASSED' 2>&1 || true)"
+    out="$(flatpak build build sh -c 'herbs-download-manager --self-check && echo SELF-CHECK-PASSED' 2>&1 || true)"
     printf '%s\n' "$out" | grep -v SELF-CHECK-PASSED
     printf '%s\n' "$out" | grep -q SELF-CHECK-PASSED || { echo "build.sh: the self-check failed" >&2; exit 1; }
 }
