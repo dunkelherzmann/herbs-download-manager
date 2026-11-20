@@ -1,6 +1,7 @@
 #!/bin/sh
-# Checks a pushed branch on Herbert's three machines, in place of GitHub Actions: the repo is private, and GitHub
-# charges for private repos' minutes (asked 2026-11-09: "If we need to pay to use CI then stop using it").
+# Checks a pushed branch on Herbert's three machines before merging, as well as GitHub Actions: the repo is public,
+# and Actions checks every pull request on GitHub's runners again (since 2026-11-10, .github/workflows/build.yml).
+# Merge only on this script's exit status 0 and a "passed" line per machine, never judged through `| tail` (#89).
 #
 #   scripts/check.sh [BRANCH]    (default: the current branch, which must be pushed)
 #
@@ -8,6 +9,8 @@
 # - Linux and Windows, over ssh: `cargo test --workspace` in a throwaway worktree of
 #   origin/BRANCH (/tmp/hdm-check-BRANCH, %TEMP%\hdm-check-BRANCH), so their own checkouts stay on main; builds are cached in
 #   ~/.cache/hdm-check-target.
+# - First, without running anything: if the branch changed extension/, it must raise "version" in
+#   extension/manifest.json too (CLAUDE.md), or the install steps never copy the new extension to his Downloads.
 # Prints one line per machine and exits non-zero if any failed. Logs go to .build/check/<machine>.log.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,6 +36,19 @@ if [ "$(git -C "$ROOT" rev-parse HEAD)" != "$(git -C "$ROOT" rev-parse "origin/$
     exit 2
 fi
 COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
+
+# Every change to extension/ raises its manifest's version: compared with where the branch left main.
+git -C "$ROOT" fetch -q origin main || { echo "check.sh: can't fetch origin/main" >&2; exit 2; }
+BASE="$(git -C "$ROOT" merge-base HEAD origin/main)"
+if ! git -C "$ROOT" diff --quiet "$BASE" HEAD -- extension/; then
+    ext_version() { git -C "$ROOT" show "$1:extension/manifest.json" 2>/dev/null | sed -n 's/^ *"version" *: *"\([^"]*\)".*/\1/p'; }
+    OLD_EXT="$(ext_version "$BASE")"
+    NEW_EXT="$(ext_version HEAD)"
+    if [ "$OLD_EXT" = "$NEW_EXT" ]; then
+        echo "extension: FAILED ($COMMIT), extension/ changed but its manifest's version is still ${NEW_EXT:-unknown}: raise it (CLAUDE.md)"
+        exit 1
+    fi
+fi
 # Each branch checks in its own folder: sessions check their branches at the same time, and one run deleting the
 # shared folder under another's tests failed them (2026-11-10).
 DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"

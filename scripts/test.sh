@@ -22,11 +22,12 @@ rm -f "$LOG"
 
 # The browser extension's background, run in Node with a stand-in browser (tests/extension).
 if command -v node >/dev/null 2>&1; then
-    printf 'Extension tests…\n'
+    printf 'Extension and guard tests…\n'
     # The files by name: older Node (as on GitHub's runners) doesn't take a folder.
-    if ! OUT="$(node --test tests/extension/*.test.js 2>&1)"; then
+    # tests/guard: scripts/guard-bash.mjs, the Claude Code hook that blocks commands CLAUDE.md forbids.
+    if ! OUT="$(node --test tests/extension/*.test.js tests/guard/*.test.mjs 2>&1)"; then
         printf '%s\n' "$OUT" | tail -40 >&2
-        echo "Extension tests failed (run: node --test tests/extension/*.test.js)" >&2
+        echo "Extension tests failed (run: node --test tests/extension/*.test.js tests/guard/*.test.mjs)" >&2
         exit 1
     fi
     printf '%s\n' "$OUT" | grep -E '^ℹ (pass|fail)|^# (pass|fail)' || true
