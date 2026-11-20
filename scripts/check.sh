@@ -9,6 +9,8 @@
 # - Linux and Windows, over ssh: `cargo test --workspace` in a throwaway worktree of
 #   origin/BRANCH (/tmp/hdm-check-BRANCH, %TEMP%\hdm-check-BRANCH), so their own checkouts stay on main; builds are cached in
 #   ~/.cache/hdm-check-target.
+# - On every machine, after the tests: `cargo clippy --workspace --all-targets`. It fails only on clippy's deny-level
+#   lints (real bugs); warnings are left alone, so there is no `-D warnings`.
 # - First, without running anything: if the branch changed extension/, it must raise "version" in
 #   extension/manifest.json too (CLAUDE.md), or the install steps never copy the new extension to his Downloads.
 # Prints one line per machine and exits non-zero if any failed. Logs go to .build/check/<machine>.log.
@@ -59,7 +61,8 @@ DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"
 (ssh "$LINUX_HOST" "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH \
     && (find /tmp -maxdepth 1 -name 'hdm-check-*' -mmin +1440 -exec rm -rf {} + || true) && rm -rf /tmp/$DIR \
     && git worktree prune && git worktree add -q --detach /tmp/$DIR FETCH_HEAD && cd /tmp/$DIR \
-    && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo test --workspace 2>&1" \
+    && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo test --workspace 2>&1 \
+    && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo clippy --workspace --all-targets 2>&1" \
     >"$LOGS/linux.log" 2>&1; echo $? >"$LOGS/linux.status") &
 
 # Windows' ssh shell is cmd. Rust goes in with rustup, into %USERPROFILE%\.cargo\bin.
@@ -67,10 +70,11 @@ DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"
     && (forfiles /p %TEMP% /m hdm-check-* /d -1 /c \"cmd /c if @isdir==TRUE rmdir /s /q @path\" >nul 2>&1) \
     & (if exist %TEMP%\\$DIR rmdir /s /q %TEMP%\\$DIR) & git worktree prune \
     && git worktree add -q --detach %TEMP%\\$DIR FETCH_HEAD && cd /d %TEMP%\\$DIR \
-    && set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& set CARGO_TARGET_DIR=%USERPROFILE%\\.cache\\hdm-check-target&& cargo test --workspace 2>&1" \
+    && set PATH=%USERPROFILE%\\.cargo\\bin;%PATH%&& set CARGO_TARGET_DIR=%USERPROFILE%\\.cache\\hdm-check-target&& cargo test --workspace 2>&1 \
+    && cargo clippy --workspace --all-targets 2>&1" \
     >"$LOGS/windows.log" 2>&1; echo $? >"$LOGS/windows.status") &
 
-(cd "$ROOT" && macos/scripts/build.sh && scripts/test.sh) >"$LOGS/mac.log" 2>&1
+(cd "$ROOT" && macos/scripts/build.sh && scripts/test.sh && cargo clippy --workspace --all-targets 2>&1) >"$LOGS/mac.log" 2>&1
 echo $? >"$LOGS/mac.status"
 wait
 

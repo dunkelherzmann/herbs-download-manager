@@ -306,3 +306,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **`scripts/check.sh` runs clippy on every machine:** after the tests, `cargo clippy --workspace --all-targets` on the Mac, Linux and Windows, failing only on clippy's deny-level lints (warnings are left alone, no `-D warnings`). *Requested 2026-11-20.* Developer tooling, all platforms. Shipped in #39.
