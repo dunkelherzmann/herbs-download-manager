@@ -12,6 +12,9 @@ pub const FIREFOX_ID: &str = "hdm@herbsdownloadmanager.org";
 pub const CHROME_ID: &str = "clhikpnhhffblbcgfcpebhiholmchidg";
 /// The extension's id when installed from Microsoft Edge Add-ons, which gives a listed extension an id of its own.
 pub const EDGE_STORE_ID: &str = "claljmehooppmcegokpkiffgknfdknao";
+/// Where Edge fetches extensions from Edge Add-ons. Registered with this address, the listed extension is installed
+/// by Edge itself, which then asks the user to turn it on.
+pub const EDGE_UPDATE_URL: &str = "https://edge.microsoft.com/extensionwebstorebase/v1/crx";
 
 const FILES: [(&str, &[u8]); 21] = [
     ("manifest.json", include_bytes!("../../extension/manifest.json")),
@@ -73,12 +76,20 @@ fn manifest(host: &Path, firefox: bool) -> Vec<u8> {
     serde_json::to_vec_pretty(&m).unwrap_or_default()
 }
 
+/// Edge's "External Extensions" file for the store extension (the Mac and Linux): Edge installs the extension from
+/// Edge Add-ons at its next start, turned off until the user turns it on.
+fn edge_external(edge_data: &Path) -> (PathBuf, Vec<u8>) {
+    let content = serde_json::json!({ "external_update_url": EDGE_UPDATE_URL });
+    (edge_data.join("External Extensions").join(format!("{EDGE_STORE_ID}.json")), serde_json::to_vec_pretty(&content).unwrap_or_default())
+}
+
 fn home() -> Option<PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
 }
 
-/// Registers `hdm` (at `hdm`) as the native messaging host with every browser found for this user. A browser
-/// installed later is found at the app's next launch. Returns the problems, if any (the app goes on without them).
+/// Registers `hdm` (at `hdm`) as the native messaging host with every browser found for this user, and the extension
+/// from Edge Add-ons with Edge, which installs it and asks to turn it on. A browser installed later is found at the
+/// app's next launch. Returns the problems, if any (the app goes on without them).
 pub fn register(hdm: &Path, data_dir: &Path) -> Vec<String> {
     let Some(home) = home() else { return vec!["No home folder".into()] };
     let mut problems = Vec::new();
@@ -97,6 +108,10 @@ pub fn register(hdm: &Path, data_dir: &Path) -> Vec<String> {
             if support.join(browser).is_dir() {
                 put(support.join(browser).join("NativeMessagingHosts").join(&file), manifest(hdm, false));
             }
+        }
+        if support.join("Microsoft Edge").is_dir() {
+            let (path, content) = edge_external(&support.join("Microsoft Edge"));
+            put(path, content);
         }
         if support.join("Firefox").is_dir() {
             put(support.join("Mozilla/NativeMessagingHosts").join(&file), manifest(hdm, true));
@@ -123,6 +138,10 @@ pub fn register(hdm: &Path, data_dir: &Path) -> Vec<String> {
                 put(config.join(browser).join("NativeMessagingHosts").join(&file), manifest(hdm, false));
             }
         }
+        if config.join("microsoft-edge").is_dir() {
+            let (path, content) = edge_external(&config.join("microsoft-edge"));
+            put(path, content);
+        }
         if home.join(".mozilla").is_dir() {
             put(home.join(".mozilla/native-messaging-hosts").join(&file), manifest(hdm, true));
         }
@@ -135,22 +154,34 @@ pub fn register(hdm: &Path, data_dir: &Path) -> Vec<String> {
         let firefox = data_dir.join("native-host-firefox.json");
         put(chromium.clone(), manifest(hdm, false));
         put(firefox.clone(), manifest(hdm, true));
-        for (key, path) in [
-            (r"Software\Google\Chrome\NativeMessagingHosts", &chromium),
-            (r"Software\Chromium\NativeMessagingHosts", &chromium),
-            (r"Software\Microsoft\Edge\NativeMessagingHosts", &chromium),
-            (r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts", &chromium),
-            (r"Software\Mozilla\NativeMessagingHosts", &firefox),
+        let chromium = chromium.display().to_string();
+        let firefox = firefox.display().to_string();
+        // Edge reads the per-user Extensions key as well as the machine-wide one Microsoft documents, so the store
+        // extension needs no administrator rights either.
+        for (key, value, data) in [
+            (format!(r"Software\Google\Chrome\NativeMessagingHosts\{HOST}"), None, chromium.as_str()),
+            (format!(r"Software\Chromium\NativeMessagingHosts\{HOST}"), None, chromium.as_str()),
+            (format!(r"Software\Microsoft\Edge\NativeMessagingHosts\{HOST}"), None, chromium.as_str()),
+            (format!(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\{HOST}"), None, chromium.as_str()),
+            (format!(r"Software\Mozilla\NativeMessagingHosts\{HOST}"), None, firefox.as_str()),
+            (format!(r"Software\Microsoft\Edge\Extensions\{EDGE_STORE_ID}"), Some("update_url"), EDGE_UPDATE_URL),
         ] {
             use std::os::windows::process::CommandExt;
+            let key = format!(r"HKCU\{key}");
+            let mut args = vec!["add", key.as_str()];
+            match value {
+                Some(name) => args.extend(["/v", name]),
+                None => args.push("/ve"), // the key's default value
+            }
+            args.extend(["/t", "REG_SZ", "/d", data, "/f"]);
             let status = std::process::Command::new("reg")
-                .args(["add", &format!(r"HKCU\{key}\{HOST}"), "/ve", "/t", "REG_SZ", "/d", &path.display().to_string(), "/f"])
+                .args(&args)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
                 .status();
             if !status.is_ok_and(|s| s.success()) {
-                problems.push(format!(r"HKCU\{key}: couldn't be written"));
+                problems.push(format!("{key}: couldn't be written"));
             }
         }
     }
