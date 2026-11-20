@@ -692,9 +692,21 @@ downloads to the app. The browser keeps a download the app doesn't take.
   `native-messaging-hosts`), or in the registry under `HKCU\Software\…\NativeMessagingHosts` on Windows. The Linux
   Flatpak points them at a small script that runs its `hdm` through `flatpak run`. A browser installed later is
   found at the next launch; a test copy registers nothing.
+- **Edge installs the extension itself.** At each launch the app also tells Edge where to get the extension from
+  Edge Add-ons (id `claljmehooppmcegokpkiffgknfdknao`), the way Microsoft documents for apps that bring an
+  extension: on the Mac and Linux a file `External Extensions/claljmehooppmcegokpkiffgknfdknao.json` in Edge's folder
+  (`~/Library/Application Support/Microsoft Edge`, `~/.config/microsoft-edge`) whose `external_update_url` is
+  `https://edge.microsoft.com/extensionwebstorebase/v1/crx`; on Windows the same address as `update_url` under
+  `HKCU\Software\Microsoft\Edge\Extensions\claljmehooppmcegokpkiffgknfdknao`, the user's own key, so no
+  administrator rights are needed. At its next start Edge downloads the extension from Edge Add-ons. On the Mac and
+  Windows it arrives turned off, and Edge asks whether to turn it on; on Linux Edge turns it on at once. Only when
+  Edge is installed (on Windows, always). Uninstalling the app on Windows removes the key, and Edge then removes the
+  extension. Chrome, Brave and Vivaldi take an extension this way only from the Chrome Web Store, where it isn't
+  listed, so in them it's loaded unpacked.
 - Settings ▸ Browser extension ▸ **Show Extension Folder** writes the extension to `Browser Extension` in the app's
   data folder and shows it, with how to load it: Chrome, Edge, Brave and Vivaldi load it unpacked (Extensions ▸
-  Developer mode ▸ Load Unpacked), with the id `clhikpnhhffblbcgfcpebhiholmchidg` that its manifest's key fixes;
+  Developer mode ▸ Load Unpacked, for a version newer than Edge Add-ons has, or in Chrome, Brave and Vivaldi), with
+  the id `clhikpnhhffblbcgfcpebhiholmchidg` that its manifest's key fixes;
   Firefox loads it as a temporary add-on (about:debugging), until it's signed by Mozilla. Edge can also install it
   from Microsoft Edge Add-ons, where it has the id `claljmehooppmcegokpkiffgknfdknao`; the host manifest lets in
   both ids.

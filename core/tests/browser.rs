@@ -5,7 +5,7 @@
 
 mod common;
 
-use hd_core::browser::{self, CHROME_ID, EDGE_STORE_ID, FIREFOX_ID, HOST};
+use hd_core::browser::{self, CHROME_ID, EDGE_STORE_ID, EDGE_UPDATE_URL, FIREFOX_ID, HOST};
 
 #[test]
 fn hdm_is_registered_with_the_browsers_found_and_only_those() {
@@ -32,4 +32,13 @@ fn hdm_is_registered_with_the_browsers_found_and_only_those() {
     // Outside the Flatpak (as here) the browsers start hdm itself.
     assert_eq!(edge["path"], hdm.display().to_string());
     assert!(!home.join(missing).exists(), "a browser that isn't there gets no folder");
+    // Edge is told where to get the extension from Edge Add-ons; it installs it and asks to turn it on.
+    let external = read(home.join(chrome).join("External Extensions").join(format!("{EDGE_STORE_ID}.json")));
+    assert_eq!(external, serde_json::json!({ "external_update_url": EDGE_UPDATE_URL }));
+    // Only Edge: the other browsers' store is the Chrome Web Store, where the extension isn't listed.
+    let chromium = if cfg!(target_os = "macos") { "Library/Application Support/Chromium" } else { ".config/chromium" };
+    std::fs::create_dir_all(home.join(chromium)).unwrap();
+    assert!(browser::register(&hdm, &home.join("data")).is_empty());
+    assert!(home.join(chromium).join("NativeMessagingHosts").join(format!("{HOST}.json")).is_file());
+    assert!(!home.join(chromium).join("External Extensions").exists());
 }

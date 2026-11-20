@@ -64,7 +64,8 @@ Filename: "{app}\{#AppExe}"; Description: "Open {#AppName}"; Flags: nowait posti
 
 [Code]
 { The app tells the browsers where hdm.exe is each time it starts (SPECIFICATION.md §13): registry entries that name a
-  manifest in the data folder, which names hdm.exe. Uninstalling removes those entries only when they lead to this
+  manifest in the data folder, which names hdm.exe, and Edge's entry for the extension from Edge Add-ons.
+  Uninstalling removes those entries only when they lead to this
   installed copy, so a portable copy that registered itself later keeps working. The download list and settings in
   %LOCALAPPDATA%\Herb's Download Manager stay, so a reinstall finds them. }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -83,4 +84,6 @@ begin
            'Software\BraveSoftware\Brave-Browser', 'Software\Mozilla'];
   for I := 0 to GetArrayLength(Keys) - 1 do
     RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, Keys[I] + '\NativeMessagingHosts\org.herbsdownloadmanager.hdm');
+  { The extension from Edge Add-ons, which Edge installed because the app named it: Edge removes it too. }
+  RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Edge\Extensions\claljmehooppmcegokpkiffgknfdknao');
 end;
