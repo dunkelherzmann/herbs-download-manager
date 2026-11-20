@@ -10,6 +10,8 @@ pub const HOST: &str = "org.herbsdownloadmanager.hdm";
 pub const FIREFOX_ID: &str = "hdm@herbsdownloadmanager.org";
 /// The extension's id in Chrome and its kin, fixed by the public key in its manifest.
 pub const CHROME_ID: &str = "clhikpnhhffblbcgfcpebhiholmchidg";
+/// The extension's id when installed from Microsoft Edge Add-ons, which gives a listed extension an id of its own.
+pub const EDGE_STORE_ID: &str = "claljmehooppmcegokpkiffgknfdknao";
 
 const FILES: [(&str, &[u8]); 21] = [
     ("manifest.json", include_bytes!("../../extension/manifest.json")),
@@ -65,7 +67,8 @@ fn manifest(host: &Path, firefox: bool) -> Vec<u8> {
     if firefox {
         m["allowed_extensions"] = serde_json::json!([FIREFOX_ID]);
     } else {
-        m["allowed_origins"] = serde_json::json!([format!("chrome-extension://{CHROME_ID}/")]);
+        m["allowed_origins"] =
+            serde_json::json!([format!("chrome-extension://{CHROME_ID}/"), format!("chrome-extension://{EDGE_STORE_ID}/")]);
     }
     serde_json::to_vec_pretty(&m).unwrap_or_default()
 }

@@ -680,7 +680,9 @@ downloads to the app. The browser keeps a download the app doesn't take.
 - Settings ▸ Browser extension ▸ **Show Extension Folder** writes the extension to `Browser Extension` in the app's
   data folder and shows it, with how to load it: Chrome, Edge, Brave and Vivaldi load it unpacked (Extensions ▸
   Developer mode ▸ Load Unpacked), with the id `clhikpnhhffblbcgfcpebhiholmchidg` that its manifest's key fixes;
-  Firefox loads it as a temporary add-on (about:debugging), until it's signed by Mozilla.
+  Firefox loads it as a temporary add-on (about:debugging), until it's signed by Mozilla. Edge can also install it
+  from Microsoft Edge Add-ons, where it has the id `claljmehooppmcegokpkiffgknfdknao`; the host manifest lets in
+  both ids.
 - Firefox from a Snap (Ubuntu's) starts `hdm` through the desktop's portal, which asks once whether to allow it.
 - Not yet: Safari, which only keeps extensions signed by an Apple developer; browsers in a Flatpak sandbox, which
   can't start `hdm`.

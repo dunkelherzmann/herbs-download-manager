@@ -2,23 +2,19 @@ A download manager for macOS, Linux and Windows. It downloads a file over many c
 
 This is a testing app in early development (0.x), shared as is: no support is promised or given. What's reported and what's done is tracked in [bugs.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/bugs.md) and [enhancements.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/enhancements.md).
 
-## What's new since 0.1.113
+## What's new since 0.1.132
 
-- **Proxies:** the app follows the system's proxy settings, automatic setup scripts (PAC) on the Mac and Windows
-  included. On Linux it asks the desktop for each address. SOCKS proxies work too.
-- **Streams that refused the app:** a stream's pieces are asked for with the same headers the page's player sent, so
-  servers that check them no longer refuse. A stream whose link fails tries its mirrors, and **Make Main Link** works
-  for streams.
-- **Watch the clipboard for links** (Settings, off by default): a copied link opens Add Links.
-- **Keep the computer awake** while downloads run.
-- **File names every system takes:** characters and names that macOS, Linux or Windows refuse are replaced before the
-  file is made. A download stops when less than 128 MB of disk space is left.
-- **Add Links** marks a link that fails as Offline or Needs a sign-in, and leaves it unchecked.
-- **Mirrors:** **Copy Link** in the Mirrors tab. On Linux and Windows, links dropped on a download become its
-  mirrors, and Windows takes links dragged from a browser.
-- **The extension** opens the app in the background when its right-click menu or its Download button is used while
-  the app is closed.
-- **About** shows the app's version on every platform.
+- **Windows looks and works like the Mac app:** the title row, toolbar, sidebar and list, light and dark, drag and
+  drop, Add Links, Batch Download, the Download window, and a finish notification with **Open** and **Show in
+  Folder**. A per-user installer (no administrator password) comes beside the zip, and it can update a running copy.
+- **YouTube:** videos, Shorts included, download through the extension, which streams them in YouTube's own page
+  while the app joins the pieces.
+- **The extension's list** shows a thumbnail for every picture and video, and has **Select All**, **Delete All**,
+  **Reload** and a size threshold. A download button sits on the files a page shows, embedded ones included, and finds
+  Instagram stories and feed reels.
+- **A name in use:** Keep Both names the new file "name 2.ext".
+- **Connections and Mirrors** show what a download used, also when it isn't running.
+- The extension can also come from Microsoft Edge Add-ons once it's listed there; the app accepts both copies.
 
 ## Install
 

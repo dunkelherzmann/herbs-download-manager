@@ -12,7 +12,7 @@ const HOST = "org.herbsdownloadmanager.hdm";
 // old background script from its cache after the extension's files were replaced by a newer version: the page's
 // button and the list then got no answer (bugs.md, 2026-11-16). The extension's pages and the page's button ask
 // "hello" first, and restart the extension (fresh.js) when no answer comes or it names another version.
-const SCRIPT_VERSION = "1.34";
+const SCRIPT_VERSION = "1.35";
 const NAME = "Herb's Download Manager";
 
 async function isOn() {
