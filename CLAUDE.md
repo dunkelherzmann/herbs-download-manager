@@ -12,7 +12,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 
 - GitHub Actions checks every pull request again (free since the repo went public, 2026-11-10;
   `.github/workflows/build.yml`). Before merging, also check a pushed branch with `scripts/check.sh`, which runs the Mac build and tests here and `cargo test --workspace` on the Linux and Windows machines (their ssh names come from the untracked `scripts/hosts.env`; see `scripts/hosts.env.example`), then merge.
-  Merge only on its exit status 0 and an `ok` line for every machine: never judge it through `| tail`, which
+  Merge only on its exit status 0 and a `passed` line for every machine: never judge it through `| tail`, which
   returns tail's status (#89 merged with Linux and Windows failing, 2026-11-10).
   Merge only when `gh pr checks` shows that every GitHub Actions job passed too: a failing Actions job was missed
   on #101 (2026-11-10).
@@ -27,6 +27,12 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   tested the other session's commit (#64).
 - Never run `cargo fmt`: there is no `rustfmt.toml` and the code isn't rustfmt-formatted (about 120-column lines);
   it rewrites the whole workspace.
+- These rules are hard stops too: `scripts/guard-bash.mjs`, a PreToolUse hook in `.claude/settings.json`, blocks
+  `cargo fmt`, `scripts/check.sh` piped into tail or head, `pkill -f` inside `ssh host '…'`, commits, PR merges and
+  branch switches (other than back to `main`) in the shared checkout, and ssh commands with an unquoted "Herb's"
+  (tests in `tests/guard`, run by `scripts/test.sh`). It applies to sessions opened in this folder or a worktree of
+  it; a session started elsewhere (`~/Projects`) doesn't load it. `scripts/check.sh` also fails a branch that
+  changed `extension/` without raising the manifest's version.
 
 ## Trying the app
 
