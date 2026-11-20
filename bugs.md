@@ -127,3 +127,4 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [ ] **The guard test misses commits in the shared checkout given as a Windows path** (*found in testing*, 2026-11-20). Windows (`tests/guard/guard-bash.test.mjs`). `check` lets `git -C C:\Users\…\Projects\herbs-download-manager commit -m x` through, so "commit, PR merge and branch switch in the shared checkout" fails; the backslash path isn't matched as the shared checkout.

@@ -45,12 +45,12 @@ test("check.sh through tail or head", () => {
 });
 
 test("pkill -f inside ssh", () => {
-    blocked("ssh herbs-linux 'pkill -f hd-mock; cargo test'");
-    blocked('ssh -p 22 herbs-linux "cd /tmp && pkill -9 -f hd-mock"');
-    blocked("rtk ssh herbs-linux 'pkill -fx hd-mock'");
-    allowed("ssh herbs-linux 'pkill -f [h]d-mock'");
-    allowed("ssh herbs-linux 'kill $(cat /tmp/mock.pid)'");
-    allowed("ssh herbs-linux 'pkill -x hd-mock'");
+    blocked("ssh linux-box 'pkill -f hd-mock; cargo test'");
+    blocked('ssh -p 22 linux-box "cd /tmp && pkill -9 -f hd-mock"');
+    blocked("rtk ssh linux-box 'pkill -fx hd-mock'");
+    allowed("ssh linux-box 'pkill -f [h]d-mock'");
+    allowed("ssh linux-box 'kill $(cat /tmp/mock.pid)'");
+    allowed("ssh linux-box 'pkill -x hd-mock'");
     allowed("pkill -f hd-mock");
 });
 
@@ -74,17 +74,17 @@ test("commit, PR merge and branch switch in the shared checkout", () => {
     allowed("git checkout main", shared);
     allowed("git checkout -- README.md", shared);
     allowed(`git -C ${shared} worktree add ~/Projects/wt-hdm-x -b x origin/main`, shared);
-    allowed("ssh herbs-linux 'cd ~/Projects/herbs-download-manager && git checkout main'", shared);
+    allowed("ssh linux-box 'cd ~/Projects/herbs-download-manager && git checkout main'", shared);
 });
 
 test('an unquoted "Herb\'s" in ssh', () => {
-    blocked(`ssh herbs-windows 'dir "%LOCALAPPDATA%\\Herb's Download Manager"'`);
-    blocked(`ssh herbs-linux "ls ~/.local/share/Herb's\\ DM"`);
-    blocked(`rtk ssh herbs-linux "rm -rf /tmp/Herb's"`);
-    allowed(`ssh herbs-linux "ls \\"$HOME/Herb's Download Manager\\""`);
-    allowed(`ssh herbs-windows "powershell -ExecutionPolicy Bypass -File C:\\t\\step.ps1"`);
+    blocked(`ssh windows-box 'dir "%LOCALAPPDATA%\\Herb's Download Manager"'`);
+    blocked(`ssh linux-box "ls ~/.local/share/Herb's\\ DM"`);
+    blocked(`rtk ssh linux-box "rm -rf /tmp/Herb's"`);
+    allowed(`ssh linux-box "ls \\"$HOME/Herb's Download Manager\\""`);
+    allowed(`ssh windows-box "powershell -ExecutionPolicy Bypass -File C:\\t\\step.ps1"`);
     allowed(`ls "$HOME/Library/Application Support/Herb's Download Manager"`);
-    allowed(`scp step.ps1 herbs-windows:step.ps1`);
+    allowed(`scp step.ps1 windows-box:step.ps1`);
 });
 
 test("the hook: exit 2 with a reason, 0 otherwise", () => {
