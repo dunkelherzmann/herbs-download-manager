@@ -37,7 +37,7 @@ ssh "$LINUX_HOST" "D=\"\$(xdg-user-dir DOWNLOAD 2>/dev/null)\"; [ -n \"\$D\" ] &
     && mkdir -p \"\$D\" && mv \$W/extension \"\$T\" && rm -rf \$W && echo 'linux: $VERSION copied'; fi; rm -f /tmp/hdm-extension.tar" \
     || { echo "linux: FAILED"; failed=1; }
 
-# Windows: the shell's Downloads folder. The name has an apostrophe, so the steps go in a .ps1 (CLAUDE.md).
+# Windows: the shell's Downloads folder. The name has an apostrophe, so the steps go in a .ps1 (docs/agents/linux-windows.md).
 PS1="$(mktemp -t hdm-extension).ps1"
 cat >"$PS1" <<PS
 \$downloads = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
