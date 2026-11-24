@@ -57,6 +57,22 @@ Still different from the Mac, in build order:
 - [x] The context menu's Connections ▸ with the live connections. (§4.1) #25
 - [x] Hover text on the Status, Location and Note cells (the row shows its link). (§2.2) #25
 
+## Parity with the Mac (checked 2026-11-24)
+
+A code audit against the Mac source, and a test copy driven on Windows, found these still different. Done in #43:
+
+- [x] Speed limits: one decimal, number and unit dimmed while off, 500 when ticked empty; a finished download's
+  Connections and Speed limit dimmed. (§6, §9)
+- [x] Download window: the segments bar's hover text, Pause/Resume's hover text following its state, Failed /
+  Different file / File changed in red, every cell's text as its hover text, the Mac's Add Mirror text. (§6, §7.3)
+- [x] Add Links: cell hover texts and the summary's. Settings: the folder's and Sign-ins line's hover text, the Mac's
+  Show Extension Folder hover text, an alert when the extension can't be written. (§5.3, §9)
+- [x] Sign-ins resizable without a Close button. (§9.1)
+- [x] Alerts: arrows and Tab move the highlight, Return presses it. (§4)
+- [x] Edit: Redo after Undo; Undo, Redo, Cut, Copy in text fields only (no Ctrl+C copying links). Hide/Show Sidebar
+  without a check mark. About with the core's version; no Export footer note; "Replace". (§4, §5.6, §5.8)
+- [x] A second launch with the same data folder hands over to the running copy again (found in testing). (§2)
+
 ## Bugs to fix
 
 - [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.
