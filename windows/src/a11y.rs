@@ -94,6 +94,87 @@ pub fn explain(control: HWND, label: &str, help: &str) {
     tip(control, help);
 }
 
+thread_local! {
+    /// Each list with cell hover texts: its own tooltip control and the cell (row, column) its one tool is on.
+    static CELL_TIPS: RefCell<HashMap<isize, (HWND, Option<(i32, i32)>)>> = RefCell::new(HashMap::new());
+}
+
+/// Every cell of a report-view list shows its own text as its hover text, as the Mac's lists do (a long link cut
+/// short in its column can still be read). While the pointer is on a cell, the list's own hover text waits.
+pub fn cell_tips(list: HWND) {
+    unsafe {
+        let _ = windows::Win32::UI::Shell::SetWindowSubclass(list, Some(cell_tip_proc), 0x4844_4354, 0);
+    }
+}
+
+unsafe extern "system" fn cell_tip_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _: usize, _: usize) -> LRESULT {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent};
+    unsafe {
+        match msg {
+            WM_MOUSEMOVE => {
+                cell_tip(hwnd, Some(POINT { x: (lparam.0 & 0xffff) as i16 as i32, y: ((lparam.0 >> 16) & 0xffff) as i16 as i32 }));
+                let mut track = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+                let _ = TrackMouseEvent(&mut track);
+            }
+            WM_MOUSELEAVE => cell_tip(hwnd, None),
+            WM_DESTROY => {
+                if let Some((tips, _)) = CELL_TIPS.with(|c| c.borrow_mut().remove(&(hwnd.0 as isize))) {
+                    let _ = DestroyWindow(tips);
+                }
+            }
+            _ => {}
+        }
+        windows::Win32::UI::Shell::DefSubclassProc(hwnd, msg, wparam, lparam)
+    }
+}
+
+/// Puts the list's cell tooltip on the cell under `point` (list pixels), with that cell's text, or takes it away.
+fn cell_tip(list: HWND, point: Option<POINT>) {
+    unsafe {
+        let key = list.0 as isize;
+        let (tips, shown) = match CELL_TIPS.with(|c| c.borrow().get(&key).copied()) {
+            Some(entry) if IsWindow(Some(entry.0)).as_bool() => entry,
+            _ => {
+                let instance = GetModuleHandleW(None).unwrap_or_default();
+                let t = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, PCWSTR::null(), WINDOW_STYLE(TTS_ALWAYSTIP | TTS_NOPREFIX),
+                                        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, Some(list), None, Some(instance.into()), None)
+                    .unwrap_or_default();
+                SendMessageW(t, TTM_SETMAXTIPWIDTH, None, Some(LPARAM(420)));
+                crate::theme::control(t);
+                (t, None)
+            }
+        };
+        let mut hit = LVHITTESTINFO { pt: point.unwrap_or_default(), ..Default::default() };
+        let cell = point.and_then(|_| {
+            let item = SendMessageW(list, LVM_SUBITEMHITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
+            (item >= 0 && hit.iSubItem >= 0).then_some((item as i32, hit.iSubItem))
+        });
+        pause(list, cell.is_some());
+        CELL_TIPS.with(|c| c.borrow_mut().insert(key, (tips, cell)));
+        if cell == shown {
+            return;
+        }
+        let mut info = TTTOOLINFOW { cbSize: std::mem::size_of::<TTTOOLINFOW>() as u32, hwnd: list, uId: 1, ..Default::default() };
+        SendMessageW(tips, TTM_POP, None, None);
+        SendMessageW(tips, TTM_DELTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
+        let Some((row, column)) = cell else { return };
+        let mut buffer = [0u16; 2048];
+        let get = LVITEMW { iSubItem: column, pszText: PWSTR(buffer.as_mut_ptr()), cchTextMax: buffer.len() as i32, ..Default::default() };
+        let n = SendMessageW(list, LVM_GETITEMTEXTW, Some(WPARAM(row as usize)), Some(LPARAM(&get as *const _ as isize))).0.max(0) as usize;
+        if n == 0 {
+            return;
+        }
+        // The cell's own rectangle (column 0's label, not the whole row).
+        let mut rect = RECT { top: column, left: if column == 0 { LVIR_LABEL as i32 } else { LVIR_BOUNDS as i32 }, ..Default::default() };
+        SendMessageW(list, LVM_GETSUBITEMRECT, Some(WPARAM(row as usize)), Some(LPARAM(&mut rect as *mut _ as isize)));
+        let text: Vec<u16> = buffer[..n].iter().copied().chain(std::iter::once(0)).collect();
+        info.uFlags = TTF_SUBCLASS;
+        info.rect = rect;
+        info.lpszText = PWSTR(text.as_ptr() as *mut _);
+        SendMessageW(tips, TTM_ADDTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
+    }
+}
+
 // --- The audit -----------------------------------------------------------------------------------------------------
 
 fn class_of(h: HWND) -> String {

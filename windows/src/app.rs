@@ -324,10 +324,12 @@ pub fn run() {
         };
         let mutex_name = wide(&format!("Local\\HerbsDownloadManager-{key}"));
         let _mutex = windows::Win32::System::Threading::CreateMutexW(None, false, PCWSTR(mutex_name.as_ptr()));
+        // Read at once: the next call may change the thread's last error (a second copy started beside the first).
+        let already_running = GetLastError() == ERROR_ALREADY_EXISTS;
         // An update (the installer, through Windows' Restart Manager) closes this copy and opens it again: without
         // this it stayed closed afterwards. Flags 1 | 2: not after a crash or a hang.
         let _ = windows::Win32::System::Recovery::RegisterApplicationRestart(w!(""), windows::Win32::System::Recovery::REGISTER_APPLICATION_RESTART_FLAGS(1 | 2));
-        if GetLastError() == ERROR_ALREADY_EXISTS {
+        if already_running {
             let class = w!("HerbsDownloadManager");
             let mut after: Option<HWND> = None;
             while let Ok(found) = FindWindowExW(None, after, class, PCWSTR::null()) {
@@ -952,10 +954,22 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
         C_DELETE_MISSING => rows.iter().any(|r| r.status == Status::Finished && !on_disk(r)),
         C_DELETE_ALL | C_EXPORT => !rows.is_empty(),
         C_PROPERTIES | C_DOWNLOAD_WINDOW => !selected.is_empty(),
-        // Edit ▸ Copy copies the selected downloads' links when no text field has the cursor.
-        C_COPY | C_CUT | C_UNDO | C_REDO if typing_field().is_none() => id == C_COPY && !selected.is_empty(),
+        // Edit ▸ Undo, Redo, Cut and Copy work in text fields only, as on the Mac (Copy Link is in the context menu).
+        C_COPY | C_CUT | C_UNDO | C_REDO if typing_field().is_none() => false,
+        C_UNDO => typing_field().is_some_and(|f| !undone(f) && unsafe { SendMessageW(f, EM_CANUNDO, None, None).0 != 0 }),
+        C_REDO => typing_field().is_some_and(undone),
         _ => true,
     }
+}
+
+thread_local! {
+    /// The text field Edit ▸ Undo last undid, and its text right after, so Redo knows there's something to put back.
+    static UNDONE: std::cell::RefCell<Option<(isize, String)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Whether `field` still shows what Undo left in it (nothing typed since).
+fn undone(field: HWND) -> bool {
+    UNDONE.with_borrow(|u| u.as_ref().is_some_and(|(h, text)| *h == field.0 as isize && *text == crate::add::text_of(field)))
 }
 
 /// The text field with the keyboard (the find bar, a list name being edited), if one has it.
@@ -1044,7 +1058,8 @@ unsafe fn show_main_menu(hwnd: HWND, button: HWND) {
 
 fn checks() -> Vec<(u16, bool)> {
     with(|s| {
-        let mut c = vec![(C_KEEP_ON_TOP, s.keep_on_top), (C_SIDEBAR, s.sidebar_shown)];
+        // Hide/Show Sidebar says which by its title, with no check mark, as on the Mac.
+        let mut c = vec![(C_KEEP_ON_TOP, s.keep_on_top)];
         c.extend((1..COLUMNS.len()).map(|i| (C_COLUMN + i as u16, s.columns[i])));
         c
     })
@@ -1379,18 +1394,27 @@ fn command(hwnd: HWND, id: u16) {
     unsafe {
         match id {
             // Edit ▸ Undo, Redo, Cut, Copy, Paste and Select All act on the text field with the cursor; without one,
-            // Copy copies the selected links, Paste adds the clipboard's links and Select All selects every download.
+            // Paste adds the clipboard's links and Select All selects every download.
             C_UNDO | C_REDO | C_CUT | C_COPY | C_PASTE | C_SELECT_ALL if typing_field().is_some() => {
                 let field = typing_field().unwrap_or_default();
                 match id {
-                    C_UNDO | C_REDO => drop(SendMessageW(field, EM_UNDO, None, None)),
+                    // A plain text field keeps one change to undo, and undoing it again puts it back: Redo does
+                    // that only right after Undo, and Undo doesn't take back its own undoing.
+                    C_UNDO if !undone(field) => {
+                        SendMessageW(field, EM_UNDO, None, None);
+                        UNDONE.set(Some((field.0 as isize, crate::add::text_of(field))));
+                    }
+                    C_REDO if undone(field) => {
+                        SendMessageW(field, EM_UNDO, None, None);
+                        UNDONE.set(None);
+                    }
+                    C_UNDO | C_REDO => {}
                     C_CUT => drop(SendMessageW(field, WM_CUT, None, None)),
                     C_COPY => drop(SendMessageW(field, WM_COPY, None, None)),
                     C_PASTE => drop(SendMessageW(field, WM_PASTE, None, None)),
                     _ => drop(SendMessageW(field, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)))),
                 }
             }
-            C_COPY => command(hwnd, C_COPY_LINK),
             C_PASTE => command(hwnd, C_CLIPBOARD),
             // Close Window and the window's close box: the window goes, the app keeps downloading, reached again from
             // its icon in the notification area or the Start menu (the Mac keeps running in the Dock).
@@ -1456,7 +1480,7 @@ fn command(hwnd: HWND, id: u16) {
                     let ids: Vec<u64> = sel.iter().map(|r| r.id).collect();
                     let text = with(|s| s.manager.links_tree(&ids)).unwrap_or_default();
                     match std::fs::write(&path, text) {
-                        Ok(()) => added(Some(format!("Links saved to {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()))),
+                        Ok(()) => {}
                         Err(e) => crate::alert::tell(hwnd, "The links couldn't be saved.", &e.to_string()),
                     }
                 }
@@ -2202,8 +2226,9 @@ fn confirm_pause(hwnd: HWND, rows: &[Row]) -> bool {
 /// About: the name, version, what it is, the author and a link to the project, which opens in the browser.
 fn about(hwnd: HWND) {
     let mut alert = crate::alert::Alert::new(
-        format!("Herb's Download Manager {}", hd_core::version()),
-        "A download manager\nMany connections · Mirrors · Streams\n\nBy dunkelherzmann",
+        "Herb's Download Manager",
+        // As the Mac's About panel: the app's version, then the core's.
+        format!("Version {v} (core {v})\n\nA download manager\nMany connections · Mirrors · Streams\n\nBy dunkelherzmann", v = hd_core::version()),
         &["OK"],
         0,
         Some(0),

@@ -151,7 +151,8 @@ and Paste in text fields included.
 | Help | Herb's Download Manager Help ⌘? (F1 on Linux and Windows): opens the guide, `HELP.md`, on the project's page |
 | (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS; Ctrl+H on Windows, which closes the window to the notification area) · Quit Herb's DM ⌘Q |
 
-**About Herb's Download Manager** shows the app's icon, name and version, "A download manager · Many connections ·
+**About Herb's Download Manager** shows the app's icon, name, version and core version ("Version 0.1.178 (core
+0.1.178)"), "A download manager · Many connections ·
 Mirrors · Streams", "By dunkelherzmann" and the project's address as a link that opens it in the browser.
 
 **Alerts and sheets** (Delete, a name in use, sign-ins, the scheduler's countdown…) answer the keyboard on the Mac as
@@ -159,8 +160,7 @@ on Linux and Windows: the arrow keys and Tab move the highlight (the blue button
 Enter presses the highlighted one, and Esc cancels, whether or not Keyboard navigation is on in System Settings. A
 text field in an alert keeps Tab and the arrows for itself. Linux's dialogs do this on their own. Windows draws its
 alerts as the Mac's (the app's icon above a bold question and its explanation, centred; two buttons side by side with
-the default on the right, more stacked with the default on top), in the light or dark look, Enter pressing the default
-and Esc the cancel button.
+the default on the right, more stacked with the default on top), in the light or dark look, with the same keys.
 
 ### 4.1 Download context menu
 
@@ -308,7 +308,8 @@ Opens for a download from the list (double-click or ⌘O). Its title is the file
     Downloading, Idle, Retrying in 5 s, Failed: reason). Buttons **+** and **−** add or remove a connection now.
   - **Mirrors**: the sources list (§7.3), with **Add Mirror…** and **Remove**.
   - **Options**: connections for this download, speed limit for this download ("Limit to [500] [KB/s ▾]", applied
-    at once and remembered), checksum to verify at the end (algorithm MD5, SHA-1, SHA-256 or SHA-512, and the
+    at once and remembered; the number takes one decimal, such as 1.5 MB/s, and is dimmed while the box is off;
+    ticking the box with no number puts 500 in it; both are dimmed once the download has finished), checksum to verify at the end (algorithm MD5, SHA-1, SHA-256 or SHA-512, and the
     expected value; a pasted value picks its algorithm by its length). The whole file is checked before it gets its
     name; a mismatch fails the download ("The SHA-256 checksum doesn't match…") and keeps its data, so Restart fetches
     it again. A checksum set on a finished download is checked at once. Info shows the result ("SHA-256 matches
@@ -352,7 +353,8 @@ Before a mirror gets connections, a ranged request (`Range: bytes=0-0`) checks i
 ### 7.3 Sources list
 
 The Mirrors tab lists every source: on/off checkbox, address, state (Checking, Working, Idle, Slow, Failed: reason,
-Different file, File changed, No resume support), active connections, speed and bytes served. Unchecking a source
+Different file, File changed, No resume support; Failed, Different file and File changed in red), active
+connections, speed and bytes served; each cell's hover text is its whole text. Unchecking a source
 moves its connections to the others; checking it again makes it available. The original link can be unchecked too,
 as long as one source stays on.
 

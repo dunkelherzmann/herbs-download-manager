@@ -1,7 +1,8 @@
 //! Questions and messages laid out as the Mac's alerts, in the app's light or dark look: the app's icon at the top,
 //! the question in bold and the explanation under it, both centred, an optional check box, and the buttons at the
 //! bottom (side by side when there are two, one above the other otherwise), the default one in the accent colour.
-//! Enter presses the default button, Esc the cancel button. The owner window is disabled while it's open.
+//! As on the Mac, the arrow keys and Tab move the highlight (the blue button) from one button to the next, Return or
+//! Enter presses the highlighted one, and Esc the cancel button. The owner window is disabled while it's open.
 
 use std::cell::RefCell;
 
@@ -205,6 +206,8 @@ pub fn run(owner: HWND, alert: Alert) -> (Option<usize>, bool) {
         }
         let has_tick = alert.tick.is_some();
         let default = alert.default.min(buttons.len().saturating_sub(1));
+        let mut alert = alert;
+        alert.default = default;
         OPEN.with(|o| o.borrow_mut().push((hwnd.0 as isize, Open { alert, pressed: None, checked: false, body, check, seconds: 0 })));
         theme::apply(hwnd);
         if has_tick {
@@ -221,9 +224,34 @@ pub fn run(owner: HWND, alert: Alert) -> (Option<usize>, bool) {
         let mut msg = MSG::default();
         while IsWindow(Some(hwnd)).as_bool() && GetMessageW(&mut msg, None, 0, 0).as_bool() {
             if msg.message == WM_KEYDOWN && GetAncestor(msg.hwnd, GA_ROOT) == hwnd {
-                match VIRTUAL_KEY(msg.wParam.0 as u16) {
+                let key = VIRTUAL_KEY(msg.wParam.0 as u16);
+                let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
+                let step = match key {
+                    VK_RIGHT | VK_DOWN => 1,
+                    VK_LEFT | VK_UP => -1,
+                    VK_TAB if shift => -1,
+                    VK_TAB => 1,
+                    _ => 0,
+                };
+                // The arrows and Tab move the highlight among the buttons (Ctrl and Alt combinations are left alone).
+                if step != 0 && buttons.len() > 1 && GetKeyState(VK_CONTROL.0 as i32) >= 0 && GetKeyState(VK_MENU.0 as i32) >= 0 {
+                    let n = buttons.len() as i32;
+                    let next = with(hwnd, |a| {
+                        a.alert.default = ((a.alert.default as i32 + step + n) % n) as usize;
+                        a.alert.default
+                    });
+                    if let Some(next) = next {
+                        let _ = SetFocus(Some(buttons[next]));
+                        for b in &buttons {
+                            let _ = InvalidateRect(Some(*b), None, false);
+                        }
+                    }
+                    continue;
+                }
+                match key {
                     VK_RETURN => {
-                        finish(hwnd, Some(default));
+                        let highlighted = with(hwnd, |a| a.alert.default).unwrap_or(default);
+                        finish(hwnd, Some(highlighted));
                         continue;
                     }
                     VK_ESCAPE => {

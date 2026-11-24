@@ -443,13 +443,15 @@ pub fn open(ctx: &Ctx) {
         RegisterClassW(&class);
         let scale = GetDpiForWindow(ctx.owner).max(96) as i32;
         let px = |v: i32| v * scale / 96;
-        let mut rect = RECT { left: 0, top: 0, right: px(660), bottom: px(380) };
-        let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU, false, WINDOW_EX_STYLE::default());
-        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, w!("HerbsDMSignIns"), w!("Sign-ins"), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+        // Resizable, with no Close button, as on the Mac (changes are saved as they're made; Esc closes it).
+        let mut rect = RECT { left: 0, top: 0, right: px(660), bottom: px(340) };
+        let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU | WS_THICKFRAME, false, WINDOW_EX_STYLE::default());
+        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, w!("HerbsDMSignIns"), w!("Sign-ins"),
+                                   WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN,
                                    CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, Some(ctx.owner), None,
                                    Some(instance.into()), None)
             .unwrap_or_default();
-        let specs: [(u16, PCWSTR, &str, u32, i32, i32, i32, i32); 8] = [
+        let specs: [(u16, PCWSTR, &str, u32, i32, i32, i32, i32); 7] = [
             (W_ADD, w!("BUTTON"), "Add…", BUTTON, 14, 12, 80, 28),
             (W_EDIT, w!("BUTTON"), "Edit…", BUTTON, 100, 12, 80, 28),
             (W_DELETE, w!("BUTTON"), "Delete", BUTTON, 186, 12, 80, 28),
@@ -457,7 +459,6 @@ pub fn open(ctx: &Ctx) {
             (W_ADMIN, w!("BUTTON"), "Create Administrator Password…", BUTTON, 406, 12, 240, 28),
             (W_LIST, WC_LISTVIEWW, "", (LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS) as u32, 14, 50, 632, 230),
             (W_STATUS, w!("STATIC"), "", 0, 14, 288, 632, 40),
-            (W_CLOSE, w!("BUTTON"), "Close", DEFAULT, 561, 338, 85, 30),
         ];
         for (id, class, text, style, x, y, w_, h) in specs {
             let text = wide(text);
@@ -477,14 +478,34 @@ pub fn open(ctx: &Ctx) {
             (W_LOCK, "", "Unlock saved sign-ins with the Administrator Password, or lock them again"),
             (W_ADMIN, "", "Create, change or remove the Administrator Password that encrypts saved sign-ins"),
             (W_LIST, "Saved sign-ins", "Every site's saved sign-in; double-click one to edit it"),
-            (W_CLOSE, "", "Close Sign-ins; changes are already saved"),
         ] {
             let c = control(hwnd, id);
             if name.is_empty() { crate::a11y::tip(c, help) } else { crate::a11y::explain(c, name, help) }
         }
         WINDOW.with(|w| *w.borrow_mut() = Some((hwnd, ctx.clone())));
         reload(hwnd);
+        layout(hwnd);
         let _ = ShowWindow(hwnd, SW_SHOWNORMAL);
+    }
+}
+
+/// Sign-ins' controls for the window's size: the buttons in a row, Lock and the password's at the right, the list
+/// taking the room left above the status line. In 96-dpi pixels.
+fn layout(hwnd: HWND) {
+    unsafe {
+        let scale = GetDpiForWindow(hwnd).max(96) as i32;
+        let mut client = RECT::default();
+        let _ = GetClientRect(hwnd, &mut client);
+        let (w, h) = (client.right * 96 / scale, client.bottom * 96 / scale);
+        let px = |v: i32| v * scale / 96;
+        let place = |id: u16, x: i32, y: i32, cw: i32, ch: i32| {
+            let _ = MoveWindow(control(hwnd, id), px(x), px(y), px(cw), px(ch), true);
+        };
+        place(W_ADMIN, w - 254, 12, 240, 28);
+        place(W_LOCK, w - 360, 12, 100, 28);
+        place(W_LIST, 14, 50, w - 28, h - 110);
+        place(W_STATUS, 14, h - 52, w - 28, 40);
+        let _ = RedrawWindow(Some(hwnd), None, None, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
     }
 }
 
@@ -627,6 +648,19 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             WM_CTLCOLORSTATIC => {
                 SetBkMode(HDC(wparam.0 as *mut _), TRANSPARENT);
                 LRESULT(GetSysColorBrush(COLOR_BTNFACE).0 as isize)
+            }
+            WM_SIZE => {
+                layout(hwnd);
+                LRESULT(0)
+            }
+            WM_GETMINMAXINFO => {
+                // The Mac's 260 high; wide enough for its row of buttons.
+                let info = &mut *(lparam.0 as *mut MINMAXINFO);
+                let scale = GetDpiForWindow(hwnd).max(96) as i32;
+                let mut rect = RECT { left: 0, top: 0, right: 640 * scale / 96, bottom: 260 * scale / 96 };
+                let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU | WS_THICKFRAME, false, WINDOW_EX_STYLE::default());
+                info.ptMinTrackSize = POINT { x: rect.right - rect.left, y: rect.bottom - rect.top };
+                LRESULT(0)
             }
             WM_NOTIFY => {
                 let header = &*(lparam.0 as *const NMHDR);
