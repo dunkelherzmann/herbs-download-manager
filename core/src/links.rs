@@ -1,14 +1,34 @@
 //! Finding links in pasted or dropped text (SPECIFICATION.md §5.2–§5.4) and expanding batch patterns (§5.5).
 
-/// The text of a dropped or imported file (§5.4, §5.7) for the hosts that read it themselves (Linux, Windows):
-/// plain text, HTML, rich text (its links are plain text inside it) and the like, UTF-8 or UTF-16 (by its byte-order
-/// mark). `None` for a file that isn't text (a NUL in its first 8 KB: a zip, an image) or is over 50 MB.
+mod documents;
+
+/// The text of a dropped or imported file (§5.4, §5.7) for the hosts that read it themselves (Linux, Windows), as the
+/// Mac reads it: plain text, HTML and rich text (UTF-8 or UTF-16, by its byte-order mark); `.docx`, `.odt`, `.doc`,
+/// `.rtfd`, `.webarchive` and `.webloc` files, their hyperlinks' targets included. `None` for a file that isn't text
+/// (a NUL in its first 8 KB: a zip, an image), a folder other than an `.rtfd`, or a file over 50 MB.
 pub fn text_of_file(path: &std::path::Path) -> Option<String> {
     let meta = std::fs::metadata(path).ok()?;
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if meta.is_dir() {
+        // An .rtfd is a folder holding the document as TXT.rtf.
+        return if ext == "rtfd" { text_of_file(&path.join("TXT.rtf")) } else { None };
+    }
     if !meta.is_file() || meta.len() > 50 * 1024 * 1024 {
         return None;
     }
     let bytes = std::fs::read(path).ok()?;
+    match ext.as_str() {
+        "docx" => documents::docx(&bytes),
+        "odt" => documents::odt(&bytes),
+        "doc" => documents::doc(&bytes),
+        "webloc" => documents::webloc(&bytes),
+        "webarchive" => documents::webarchive(&bytes),
+        _ => plain_text(&bytes),
+    }
+}
+
+/// UTF-8 or UTF-16 text (by its byte-order mark); `None` when the first 8 KB hold a NUL byte (a binary file).
+fn plain_text(bytes: &[u8]) -> Option<String> {
     let utf16 = |le: bool| {
         let units: Vec<u16> = bytes[2..]
             .as_chunks::<2>()
@@ -18,11 +38,11 @@ pub fn text_of_file(path: &std::path::Path) -> Option<String> {
             .collect();
         Some(String::from_utf16_lossy(&units))
     };
-    match bytes.as_slice() {
+    match bytes {
         [0xFF, 0xFE, ..] => utf16(true),
         [0xFE, 0xFF, ..] => utf16(false),
         _ if bytes.iter().take(8192).any(|&b| b == 0) => None,
-        _ => Some(String::from_utf8_lossy(&bytes).into_owned()),
+        _ => Some(String::from_utf8_lossy(bytes).into_owned()),
     }
 }
 
