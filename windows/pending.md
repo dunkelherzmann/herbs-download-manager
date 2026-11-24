@@ -72,7 +72,7 @@ The Windows version is ported once the Mac version has each feature, item by ite
 - [x] **Main window, menus, toolbar, context menu**, window controls on the right. (§2–§4) #39, made 1:1 with the Mac
   in the parity PR (above).
 - [x] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11) Checksums and S8 in #45.
-  - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, files dropped on the window (§5) #42. Links and text dragged from a browser (an OLE drop target) and links dropped on a row becoming its mirrors (row-drop PR). Still to do: .doc/.docx/.odt and .webloc files.
+  - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, files dropped on the window (§5) #42. Links and text dragged from a browser (an OLE drop target) and links dropped on a row becoming its mirrors (row-drop PR). Import and drops read .doc, .docx, .odt, .rtfd, web archives and .webloc files as on the Mac (Import Links PR).
   - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #44. The queue works through the toolbar and Tasks menu (§11).
 - [x] **Hover text and accessibility labels on every control.** (§3, §4) #47: `windows\scripts\a11y-audit.ps1` checks every window.
 - [x] **Feature tests** run on Windows. (all) #49: `powershell -File windows\scripts\features.ps1` (after `build.ps1`).

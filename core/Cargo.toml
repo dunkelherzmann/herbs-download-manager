@@ -25,6 +25,9 @@ sha1 = "0.11.0"
 sha2 = "0.11.1"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "time", "sync", "macros"] }
 trash = "5.3.0"
+# Import Links reads .docx and .odt (zip, deflate only) and .webloc and web archives (plists), §5.7.
+plist = { version = "1.10.4", default-features = false }
+zip = { version = "9.8.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target."cfg(unix)".dependencies]
 libc = "0.2"
