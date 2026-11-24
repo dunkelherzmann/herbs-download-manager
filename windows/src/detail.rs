@@ -16,7 +16,7 @@ use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetKeyState, VK_CONTROL};
+use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, GetKeyState, SetFocus, VK_CONTROL};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -248,7 +248,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
     crate::chrome::register_segments();
     let combo_style = (CBS_DROPDOWNLIST | WS_VSCROLL.0 as i32) as u32;
     let mut specs: Vec<Spec> = vec![
-        (D_BAR, w!("STATIC"), "", 0xD /* SS_OWNERDRAW */, 12, 12, 656, 18),
+        (D_BAR, w!("STATIC"), "", 0xD /* SS_OWNERDRAW */ | 0x0100 /* SS_NOTIFY, for its hover text */, 12, 12, 656, 18),
         (D_PERCENT, w!("STATIC"), "", 0, 12, 40, 60, 22),
         (D_NUMBERS, w!("STATIC"), "", 0, 76, 42, 400, 22),
         (D_TOGGLE, w!("BUTTON"), "Pause", BUTTON, 490, 36, 85, 30),
@@ -266,7 +266,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_CONN_LABEL, w!("STATIC"), "Connections:", LABEL, 22, 124, 110, 20),
         (D_CONN_COUNT, w!("COMBOBOX"), "", combo_style, 140, 120, 70, 400),
         (D_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 22, 160, 110, 24),
-        (D_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 140, 160, 90, 24),
+        (D_LIMIT, w!("EDIT"), "", EDIT, 140, 160, 90, 24),
         (D_UNIT, w!("COMBOBOX"), "", combo_style, 238, 160, 80, 120),
         (D_ALGO_LABEL, w!("STATIC"), "Checksum:", LABEL, 22, 202, 110, 20),
         (D_ALGO, w!("COMBOBOX"), "", combo_style, 140, 198, 100, 160),
@@ -292,15 +292,15 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
             set_text(w.controls[&D_VALUE], &c.value);
         }
         SendMessageW(w.controls[&D_VALUE], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("Paste the expected value").0 as isize)));
-        if let Some(l) = d.speed_limit {
-            let mb = l >= 1_000_000 && l % 100_000 == 0;
-            set_checked(w.controls[&D_LIMIT_ON], true);
-            SendMessageW(w.controls[&D_UNIT], CB_SETCURSEL, Some(WPARAM(mb as usize)), None);
-            set_text(w.controls[&D_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
-        }
+        SendMessageW(w.controls[&D_LIMIT], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("500").0 as isize)));
+        // Each cell shows its text as its hover text, as on the Mac (a long address cut short can still be read).
+        crate::a11y::cell_tips(w.controls[&D_CONNS]);
+        crate::a11y::cell_tips(w.controls[&D_SOURCES]);
+        show_limit(w.controls[&D_LIMIT_ON], w.controls[&D_LIMIT], w.controls[&D_UNIT], d.speed_limit);
     });
     explain_ids(hwnd, &[
-        (D_TOGGLE, "", "Pause or resume this download (Ctrl+. / Ctrl+R)"),
+        (D_BAR, "Segments", "The file's ranges: filled parts are downloaded, gaps are still to fetch"),
+        (D_TOGGLE, "", "Pause: stop, keeping what's downloaded (Ctrl+.)"),
         (D_CLOSE, "", "Close this window; the download carries on (Esc)"),
         (D_TABS, "Pages", "Info, Connections, Mirrors and Options"),
         (D_CONNS, "Connections", "Each connection: its server, the part it fetches, how much it got, its speed and state"),
@@ -312,8 +312,8 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         (D_REMOVE, "", "Remove the selected mirror (the original link stays)"),
         (D_COPY_LINK, "Copy the selected source's address", "Copy the selected source's address (Ctrl+C)"),
         (D_CONN_COUNT, "Connections", "Connections: how many parts of the file download at once (1–32)"),
-        (D_LIMIT_ON, "", "Limit this download's speed"),
-        (D_LIMIT, "Speed limit", "The most this download may fetch each second"),
+        (D_LIMIT_ON, "", "Limit the download speed of this download"),
+        (D_LIMIT, "Speed limit", "The most this download may download each second"),
         (D_UNIT, "Speed limit unit", "Kilobytes or megabytes a second"),
         (D_ALGO, "", "The kind of checksum: MD5, SHA-1, SHA-256 or SHA-512"),
         (D_VALUE, "Checksum value", "The value the site publishes for this file; it's checked once every byte is in"),
@@ -407,7 +407,11 @@ fn refresh(hwnd: HWND) {
             .filter(|s| !s.is_empty())
             .collect();
         set_text(w.controls[&D_NUMBERS], &numbers.join("  ·  "));
-        set_text(w.controls[&D_TOGGLE], if r.status.is_running() { "Pause" } else { "Resume" });
+        let running = r.status.is_running();
+        if text_of(w.controls[&D_TOGGLE]) != if running { "Pause" } else { "Resume" } {
+            set_text(w.controls[&D_TOGGLE], if running { "Pause" } else { "Resume" });
+            crate::a11y::tip(w.controls[&D_TOGGLE], if running { "Pause: stop, keeping what's downloaded (Ctrl+.)" } else { "Resume: continue (Ctrl+R)" });
+        }
         let _ = EnableWindow(w.controls[&D_TOGGLE], r.status.is_running() || matches!(r.status, Status::Waiting | Status::Paused | Status::Failed(_)));
         let values = [
             r.url.clone(),
@@ -429,6 +433,15 @@ fn refresh(hwnd: HWND) {
         }
         let _ = EnableWindow(w.controls[&D_PLUS], !finished && r.allowed_connections < 32);
         let _ = EnableWindow(w.controls[&D_MINUS], !finished && r.allowed_connections > 1);
+        // As on the Mac: a finished download's Connections and Speed limit can't be changed.
+        let _ = EnableWindow(w.controls[&D_CONN_COUNT], !finished);
+        enable_limit(w.controls[&D_LIMIT_ON], w.controls[&D_LIMIT], w.controls[&D_UNIT], !finished);
+        if let Kind::Download { detail: Some(old), .. } = &w.kind
+            && old.speed_limit != d.speed_limit
+            && GetFocus() != w.controls[&D_LIMIT]
+        {
+            show_limit(w.controls[&D_LIMIT_ON], w.controls[&D_LIMIT], w.controls[&D_UNIT], d.speed_limit);
+        }
         let count = w.controls[&D_CONN_COUNT];
         let want = r.allowed_connections.clamp(1, 32) as usize - 1;
         if SendMessageW(count, CB_GETDROPPEDSTATE, None, None).0 == 0 && selection(count) != want {
@@ -521,7 +534,7 @@ pub fn show_sign_ins_summary(text: &str) {
 pub fn ask_mirrors(ctx: &Ctx, id: u64) {
     let Some(d) = ctx.manager.detail(id) else { return };
     let multi = (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN) as u32 | WS_VSCROLL.0;
-    let note = format!("Other links to “{}”, one per line. Each is checked before it's used.", d.row.name);
+    let note = "Other servers with the same file, one address per line. A running download starts using them at once.".to_string();
     let hwnd = create(ctx, Kind::Mirror { id }, "Add Mirror", (480, 220), &[
         (0, w!("STATIC"), &note, 0, 12, 12, 456, 36),
         (M_TEXT, w!("EDIT"), "", multi, 12, 52, 456, 110),
@@ -582,7 +595,7 @@ pub fn settings(ctx: &Ctx) {
     let time_list = (CBS_DROPDOWN | WS_VSCROLL.0 as i32) as u32;
     let hwnd = create(ctx, Kind::Settings, "Settings", (592, 764), &[
         (0, w!("STATIC"), "Save downloads to:", LABEL, 12, 20, 170, 20),
-        (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */, 190, 20, 164, 20),
+        (S_FOLDER, w!("STATIC"), &folder, 0x4000 /* SS_PATHELLIPSIS */ | 0x0100 /* SS_NOTIFY */, 190, 20, 164, 20),
         (S_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 360, 15, 96, 28),
         (S_RESET, w!("BUTTON"), "Use Downloads", BUTTON, 462, 15, 118, 28),
         (0, w!("STATIC"), "Connections per download:", LABEL, 12, 56, 170, 20),
@@ -593,7 +606,7 @@ pub fn settings(ctx: &Ctx) {
         (S_AT_ONCE, w!("COMBOBOX"), "", list, 190, 112, 70, 300),
         (0, w!("STATIC"), "Speed limit:", LABEL, 12, 148, 170, 20),
         (S_LIMIT_ON, w!("BUTTON"), "Limit to", BS_AUTOCHECKBOX as u32, 190, 146, 80, 24),
-        (S_LIMIT, w!("EDIT"), "500", EDIT | ES_NUMBER as u32, 274, 144, 80, 24),
+        (S_LIMIT, w!("EDIT"), "", EDIT, 274, 144, 80, 24),
         (S_UNIT, w!("COMBOBOX"), "", combo_style, 362, 144, 80, 120),
         (0, w!("STATIC"), "Retries per source:", LABEL, 12, 180, 170, 20),
         (S_RETRIES, w!("COMBOBOX"), "", list, 190, 176, 70, 400),
@@ -624,7 +637,7 @@ pub fn settings(ctx: &Ctx) {
         (S_LIMITS, w!("STATIC"), &limits_text, 0x0100 /* SS_NOTIFY, for its hover text */, 190, 482, 250, 20),
         (S_FORGET, w!("BUTTON"), "Forget", BUTTON, 445, 476, 95, 28),
         (0, w!("STATIC"), "Sign-ins:", LABEL, 12, 514, 170, 20),
-        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0, 190, 514, 250, 20),
+        (S_SIGN_INS, w!("STATIC"), &sign_ins, 0x0100 /* SS_NOTIFY */, 190, 514, 250, 20),
         (S_MANAGE, w!("BUTTON"), "Manage…", BUTTON, 445, 508, 95, 28),
         (0, w!("STATIC"), "Browser extension:", LABEL, 12, 546, 170, 20),
         (S_EXTENSION, w!("BUTTON"), "Show Extension Folder", BUTTON, 190, 540, 190, 28),
@@ -638,8 +651,8 @@ pub fn settings(ctx: &Ctx) {
         (S_CHOOSE, "", "Choose the folder new downloads are saved to"),
         (S_RESET, "", "Save new downloads to your Downloads folder"),
         (S_AT_ONCE, "", "Downloads the queue runs at the same time (1–10)"),
-        (S_LIMIT_ON, "", "Limit the speed of all downloads together"),
-        (S_LIMIT, "Speed limit", "The most all downloads together may fetch each second"),
+        (S_LIMIT_ON, "", "Limit the download speed of all downloads together"),
+        (S_LIMIT, "Speed limit", "The most all downloads together may download each second"),
         (S_UNIT, "Speed limit unit", "Kilobytes or megabytes a second"),
         (S_CONNECTIONS, "", "The most connections a new download uses (1–32); New Download can choose another number"),
         (S_PER_SERVER, "", "Connections a download opens to any one server (1–32), from its next start"),
@@ -661,9 +674,11 @@ pub fn settings(ctx: &Ctx) {
         (S_DAY + 4, "", "Start the queue on Fridays"),
         (S_DAY + 5, "", "Start the queue on Saturdays"),
         (S_DAY + 6, "", "Start the queue on Sundays"),
-        (S_EXTENSION, "", "Open the folder with the extension that hands Chrome's, Edge's, Brave's and Firefox's downloads to the app"),
+        (S_EXTENSION, "", "Show the extension that hands Chrome's, Edge's, Brave's, Vivaldi's and Firefox's downloads to the app"),
         (S_LIMITS, "Server limits", limits_detail.as_str()),
         (S_FORGET, "", "Forget every server's remembered limit; downloads learn them again"),
+        (S_FOLDER, "Save downloads to", folder.as_str()),
+        (S_SIGN_INS, "Sign-ins", "Sites' user names and passwords, cookies and referers, for links that need a login"),
         (S_MANAGE, "Manage sign-ins", "See, add and change the user names, passwords, cookies and referers saved for sites, and the Administrator Password that encrypts them"),
         (S_STREAM_QUALITY, "", "The quality a streamed video is downloaded in: the best one up to this size, or the smallest when every one is bigger. The browser extension can choose another for each video"),
         (S_SOUND, "", "For a stream with sound in several languages: the one to download. When the stream doesn't have it, its own sound is taken"),
@@ -696,15 +711,12 @@ pub fn settings(ctx: &Ctx) {
             unsafe { SendMessageW(c, CB_SETEDITSEL, None, Some(LPARAM(0xFFFF_FFFFu32 as isize))) };
         }
         combo(w.controls[&S_UNIT], &["KB/s", "MB/s"], 0);
-        combo(w.controls[&S_EXISTS], &EXISTS.map(|e| e.0), EXISTS.iter().position(|e| e.1 == s.when_file_exists).unwrap_or(0));
-        if let Some(l) = s.speed_limit {
-            let mb = l >= 1_000_000 && l % 100_000 == 0;
-            set_checked(w.controls[&S_LIMIT_ON], true);
-            unsafe {
-                SendMessageW(w.controls[&S_UNIT], CB_SETCURSEL, Some(WPARAM(mb as usize)), None);
-            }
-            set_text(w.controls[&S_LIMIT], &(l / if mb { 1_000_000 } else { 1_000 }).to_string());
+        unsafe {
+            SendMessageW(w.controls[&S_LIMIT], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("500").0 as isize)));
         }
+        combo(w.controls[&S_EXISTS], &EXISTS.map(|e| e.0), EXISTS.iter().position(|e| e.1 == s.when_file_exists).unwrap_or(0));
+        show_limit(w.controls[&S_LIMIT_ON], w.controls[&S_LIMIT], w.controls[&S_UNIT], s.speed_limit);
+        enable_limit(w.controls[&S_LIMIT_ON], w.controls[&S_LIMIT], w.controls[&S_UNIT], true);
         set_checked(w.controls[&S_NOTIFY], s.notify_when_finished);
         set_checked(w.controls[&S_WATCH], s.watch_clipboard);
         set_checked(w.controls[&S_CHECKSUM_FILES], s.look_for_checksum_files);
@@ -791,9 +803,7 @@ fn save_settings(hwnd: HWND) {
     with_win(hwnd, |w| {
         let number = |id: u16, fallback: u32| text_of(w.controls[&id]).trim().parse::<u32>().unwrap_or(fallback);
         let current = w.ctx.manager.settings();
-        let limit = checked(w.controls[&S_LIMIT_ON]).then(|| {
-            number(S_LIMIT, 500) as u64 * if selection(w.controls[&S_UNIT]) == 1 { 1_000_000 } else { 1_000 }
-        });
+        let limit = read_limit(w.controls[&S_LIMIT_ON], w.controls[&S_LIMIT], w.controls[&S_UNIT]);
         let s = Settings {
             downloads_at_once: number(S_AT_ONCE, current.downloads_at_once),
             speed_limit: limit,
@@ -855,10 +865,64 @@ fn apply_checksum(hwnd: HWND, id: u64, guess: bool) {
     });
 }
 
+/// A speed limit's number as typed: decimal, one place after the point (1.5 MB/s), from 1 to 1,000,000; `None` when
+/// it's empty or isn't a number (the limit is then off, as on the Mac).
+fn limit_number(edit: HWND) -> Option<f64> {
+    let text = text_of(edit).trim().replace(',', ".");
+    let n = text.parse::<f64>().ok().filter(|n| n.is_finite() && *n > 0.0)?;
+    Some((n.min(1_000_000.0) * 10.0).round().max(10.0) / 10.0)
+}
+
+/// The limit in bytes a second shown by a "Limit to [n] [unit]" row, or `None` for none.
+fn read_limit(box_: HWND, edit: HWND, unit: HWND) -> Option<u64> {
+    if !checked(box_) {
+        return None;
+    }
+    limit_number(edit).map(|n| (n * if selection(unit) == 1 { 1_000_000.0 } else { 1_000.0 }) as u64)
+}
+
+/// Shows a limit in the row: MB/s when it's whole tenths of a megabyte, else KB/s; the number with at most one
+/// decimal. No limit: the box unticked and the number left as it was.
+fn show_limit(box_: HWND, edit: HWND, unit: HWND, limit: Option<u64>) {
+    set_checked(box_, limit.is_some());
+    if let Some(l) = limit {
+        let mb = l >= 1_000_000 && l % 100_000 == 0;
+        unsafe {
+            SendMessageW(unit, CB_SETCURSEL, Some(WPARAM(mb as usize)), None);
+        }
+        let n = l as f64 / if mb { 1_000_000.0 } else { 1_000.0 };
+        let text = if n.fract() == 0.0 { format!("{n:.0}") } else { format!("{n:.1}") };
+        if text_of(edit) != text {
+            set_text(edit, &text);
+        }
+    }
+}
+
+/// The number and unit can be changed only while the box is ticked (and the row itself is on).
+fn enable_limit(box_: HWND, edit: HWND, unit: HWND, on: bool) {
+    unsafe {
+        let _ = EnableWindow(box_, on);
+        let number = on && checked(box_);
+        let _ = EnableWindow(edit, number);
+        let _ = EnableWindow(unit, number);
+    }
+}
+
+/// Ticking "Limit to" with no number puts 500 in it and the cursor there, as on the Mac.
+fn limit_ticked(box_: HWND, edit: HWND, unit: HWND) {
+    enable_limit(box_, edit, unit, true);
+    if checked(box_) && limit_number(edit).is_none() {
+        set_text(edit, "500");
+        unsafe {
+            let _ = SetFocus(Some(edit));
+            SendMessageW(edit, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
+        }
+    }
+}
+
 fn apply_limit(hwnd: HWND, id: u64) {
     with_win(hwnd, |w| {
-        let n = text_of(w.controls[&D_LIMIT]).trim().parse::<u64>().unwrap_or(500);
-        let limit = checked(w.controls[&D_LIMIT_ON]).then(|| n * if selection(w.controls[&D_UNIT]) == 1 { 1_000_000 } else { 1_000 });
+        let limit = read_limit(w.controls[&D_LIMIT_ON], w.controls[&D_LIMIT], w.controls[&D_UNIT]);
         w.ctx.manager.set_speed_limit(id, limit);
     });
 }
@@ -902,6 +966,9 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
             }
             WM_NOTIFY => {
                 let header = &*(lparam.0 as *const NMHDR);
+                if (header.idFrom as u16 == D_SOURCES || header.idFrom as u16 == D_CONNS) && header.code == NM_CUSTOMDRAW {
+                    return state_colors(lparam);
+                }
                 if header.idFrom as u16 == D_TABS && header.code == TCN_SELCHANGE {
                     let tab = with_win(hwnd, |w| SendMessageW(w.controls[&D_TABS], TCM_GETCURSEL, None, None).0 as usize).unwrap_or(0);
                     show_tab(hwnd, tab);
@@ -976,7 +1043,12 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                         D_CONN_COUNT if code == CBN_SELCHANGE => drop(with_win(hwnd, |w| {
                             w.ctx.manager.set_connections(did, selection(w.controls[&D_CONN_COUNT]) as u32 + 1);
                         })),
-                        D_LIMIT_ON => apply_limit(hwnd, did),
+                        D_LIMIT_ON => {
+                            if let Some((b, e, u)) = with_win(hwnd, |w| (w.controls[&D_LIMIT_ON], w.controls[&D_LIMIT], w.controls[&D_UNIT])) {
+                                limit_ticked(b, e, u);
+                            }
+                            apply_limit(hwnd, did)
+                        }
                         D_LIMIT if code == EN_CHANGE => apply_limit(hwnd, did),
                         D_UNIT if code == CBN_SELCHANGE => apply_limit(hwnd, did),
                         D_VALUE if code == EN_CHANGE => apply_checksum(hwnd, did, true),
@@ -1035,12 +1107,15 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                                 with_win(hwnd, |w| {
                                     w.ctx.manager.set_settings(Settings { save_to: Some(dir.display().to_string()), ..w.ctx.manager.settings() });
                                     set_text(w.controls[&S_FOLDER], &dir.display().to_string());
+                                    crate::a11y::tip(w.controls[&S_FOLDER], &dir.display().to_string());
                                 });
                             }
                         }
                         S_RESET => drop(with_win(hwnd, |w| {
                             w.ctx.manager.set_settings(Settings { save_to: None, ..w.ctx.manager.settings() });
-                            set_text(w.controls[&S_FOLDER], &crate::downloads_folder().display().to_string());
+                            let folder = crate::downloads_folder().display().to_string();
+                            set_text(w.controls[&S_FOLDER], &folder);
+                            crate::a11y::tip(w.controls[&S_FOLDER], &folder);
                         })),
                         S_LIMIT if code == EN_KILLFOCUS => save_settings(hwnd),
                         S_AT_ONCE | S_CONNECTIONS | S_PER_SERVER | S_RETRIES if code == CBN_SELCHANGE => save_settings(hwnd),
@@ -1049,11 +1124,17 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                         S_START | S_STOP if code == CBN_SELCHANGE => {
                             let _ = PostMessageW(Some(hwnd), WM_COMMAND, WPARAM(id as usize | ((CBN_KILLFOCUS as usize) << 16)), LPARAM(0));
                         }
-                        S_LIMIT_ON | S_NOTIFY | S_WATCH | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
+                        S_LIMIT_ON => {
+                            if let Some((b, e, u)) = with_win(hwnd, |w| (w.controls[&S_LIMIT_ON], w.controls[&S_LIMIT], w.controls[&S_UNIT])) {
+                                limit_ticked(b, e, u);
+                            }
+                            save_settings(hwnd)
+                        }
+                        S_NOTIFY | S_WATCH | S_CHECKSUM_FILES | S_SERVER_DATE | S_START_ON | S_STOP_ON => save_settings(hwnd),
                         id if (S_DAY..S_DAY + 7).contains(&id) => save_settings(hwnd),
                         S_EXTENSION => match hd_core::browser::extension_folder(&crate::data_folder()) {
                             Ok(folder) => crate::app::open_path(&folder, false),
-                            Err(e) => eprintln!("The extension can't be written: {e}"),
+                            Err(e) => crate::alert::tell(hwnd, "The extension can't be written to the app's folder", &e.to_string()),
                         },
                         S_MANAGE => {
                             if let Some(ctx) = with_win(hwnd, |w| w.ctx.clone()) {
@@ -1096,6 +1177,31 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
+    }
+}
+
+/// The Connections and Mirrors lists: a cell that says Failed…, "Different file" or "File changed" in red, as on
+/// the Mac; every other cell in the mode's text colour.
+unsafe fn state_colors(lparam: LPARAM) -> LRESULT {
+    unsafe {
+        let draw = &mut *(lparam.0 as *mut NMLVCUSTOMDRAW);
+        let stage = draw.nmcd.dwDrawStage;
+        if stage == CDDS_PREPAINT {
+            return LRESULT(CDRF_NOTIFYITEMDRAW as isize);
+        }
+        if stage == CDDS_ITEMPREPAINT {
+            return LRESULT(CDRF_NOTIFYSUBITEMDRAW as isize);
+        }
+        if stage == (CDDS_ITEMPREPAINT | CDDS_SUBITEM) {
+            let mut buffer = [0u16; 128];
+            let get = LVITEMW { iSubItem: draw.iSubItem, pszText: PWSTR(buffer.as_mut_ptr()), cchTextMax: buffer.len() as i32, ..Default::default() };
+            let n = SendMessageW(draw.nmcd.hdr.hwndFrom, LVM_GETITEMTEXTW, Some(WPARAM(draw.nmcd.dwItemSpec)), Some(LPARAM(&get as *const _ as isize))).0.max(0) as usize;
+            let text = String::from_utf16_lossy(&buffer[..n]);
+            let p = crate::theme::palette();
+            draw.clrText = if text.starts_with("Failed") || text == "Different file" || text == "File changed" { p.red } else { p.text };
+            return LRESULT(CDRF_NEWFONT as isize);
+        }
+        LRESULT(CDRF_DODEFAULT as isize)
     }
 }
 

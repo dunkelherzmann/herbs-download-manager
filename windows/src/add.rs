@@ -80,7 +80,7 @@ pub fn add_all(owner: HWND, manager: &Manager, links: Vec<PendingLink>, folder: 
             Step::Done(summary) => return summary.text(),
             Step::Ask(q) => {
                 let mut alert = crate::alert::Alert::new(q.title(), q.body(),
-                                                         &["Keep Both", "Skip", "Replace (the old file goes to the Recycle Bin)"], 0, Some(1));
+                                                         &["Keep Both", "Skip", "Replace"], 0, Some(1));
                 if q.more {
                     alert.checkbox = Some("Do the same for the rest".into());
                 }
@@ -482,7 +482,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_SAVE_LABEL, w!("STATIC"), "Save to:", 0, 12, 370, 60, 20),
                 (22, w!("COMBOBOX"), "", FOLDER_POPUP, 76, 366, 560, 300),
                 (ID_CHOOSE, w!("BUTTON"), "Choose…", BUTTON, 648, 364, 100, 28),
-                (25, w!("STATIC"), "", 0, 12, 418, 380, 20),
+                (25, w!("STATIC"), "", 0x0100 /* SS_NOTIFY, for its hover text */, 12, 418, 380, 20),
                 (ID_CANCEL, w!("BUTTON"), "Cancel", BUTTON, 470, 412, 85, 30),
                 (ID_ADD, w!("BUTTON"), "Add", BUTTON, 563, 412, 85, 30),
                 (ID_DOWNLOAD, w!("BUTTON"), "Download", DEFAULT, 656, 412, 92, 30),
@@ -498,6 +498,8 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                     SendMessageW(list, LVM_INSERTCOLUMNW, Some(WPARAM(i)), Some(LPARAM(&column as *const _ as isize)));
                 }
                 SendMessageW(f.controls[&ID_FILTER], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("Filter").0 as isize)));
+                // Each cell shows its text as its hover text, as on the Mac.
+                crate::a11y::cell_tips(list);
             });
             // Links dropped on the window while it's open join the list; while dragging, it dims and says so.
             crate::dragdrop::register(h, false, "Drop links to add them");
@@ -512,6 +514,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
                 (ID_CANCEL, "", "Close without adding anything (Esc)"),
                 (ID_ADD, "", "Add: put them in the queue; they start when the queue runs"),
                 (ID_DOWNLOAD, "", "Download: start now (Enter)"),
+                (25, "", "Links to the same file (same name and size) are added as one download and its mirrors"),
             ]);
             OPEN_LINKS.with(|o| *o.borrow_mut() = Some(h));
             // Test hook: `--sort-links name|size|link [desc]` sorts as clicks on that header do.
