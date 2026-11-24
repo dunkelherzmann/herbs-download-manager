@@ -206,7 +206,11 @@ what was fetched.
 
 ### 5.2 Add from Clipboard (⇧⌘V, or ⌘V in the main window)
 
-Every link in the clipboard's text opens the Add Links window (§5.3). Pasting in the main window does the same: ⌘V
+Every link in the clipboard's text opens the Add Links window (§5.3), where each is checked and a web page gives way
+to the files on it. Links are read from a paste the way JDownloader reads one: `hxxp://` and `h**p://` count as
+`http://`; links run together (`…a.ziphttps://…b.zip`) are split; a link carried in another's query
+(`?u=https%3A%2F%2F…`) is listed too, after it; `www.` addresses count without `http://`, and so does a paste that is
+only one `example.com/path`. Pasting in the main window does the same: ⌘V
 (Edit ▸ Paste) on the Mac, Ctrl+V on Linux and Windows, whenever no text field (the find bar's) has the cursor; one
 that has takes the paste as usual.
 
@@ -990,7 +994,11 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
   kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). A page with nothing on it stays as an unchecked row
-  saying "Web page: no files found". `hdm scan PAGE [--json] [--add]`, the MCP tool `scan_page` and the extension's
+  saying "Web page: no files found". A server's folder listing ("Index of /…", Python's "Directory listing for /…",
+  IIS's "[To Parent Directory]") gives every file in it, whatever its type or size, and its subfolders' files, three
+  levels down and at most 40 folders. On any page, archives split in parts (`.001`, `.7z.002`, `.r00`, `.z01`),
+  subtitles, e-books and model files count as files, and checksum, recovery and info files (`.sfv`, `.md5`, `.par2`,
+  `.nfo`, `.srt`) are kept however small. `hdm scan PAGE [--json] [--add]`, the MCP tool `scan_page` and the extension's
   **Find Files on This Page** do the same. A link that is itself a file or a stream (a playlist, even one whose
   address names no type) is listed as that one item.
   - **From the browser:** the extension's list looks through the page as soon as it opens (and in the side panel,
