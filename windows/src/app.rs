@@ -324,10 +324,12 @@ pub fn run() {
         };
         let mutex_name = wide(&format!("Local\\HerbsDownloadManager-{key}"));
         let _mutex = windows::Win32::System::Threading::CreateMutexW(None, false, PCWSTR(mutex_name.as_ptr()));
+        // Read at once: the next call may change the thread's last error (a second copy started beside the first).
+        let already_running = GetLastError() == ERROR_ALREADY_EXISTS;
         // An update (the installer, through Windows' Restart Manager) closes this copy and opens it again: without
         // this it stayed closed afterwards. Flags 1 | 2: not after a crash or a hang.
         let _ = windows::Win32::System::Recovery::RegisterApplicationRestart(w!(""), windows::Win32::System::Recovery::REGISTER_APPLICATION_RESTART_FLAGS(1 | 2));
-        if GetLastError() == ERROR_ALREADY_EXISTS {
+        if already_running {
             let class = w!("HerbsDownloadManager");
             let mut after: Option<HWND> = None;
             while let Ok(found) = FindWindowExW(None, after, class, PCWSTR::null()) {
