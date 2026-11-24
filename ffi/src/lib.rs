@@ -745,6 +745,12 @@ pub fn find_links(text: String) -> Vec<String> {
     hd_core::links::find(&text)
 }
 
+/// Copied HTML with its relative links made whole against the page it was copied from (`base`, §5.2).
+#[uniffi::export]
+pub fn absolute_html(html: String, base: String) -> String {
+    hd_core::links::absolute_html(&html, &base)
+}
+
 /// The links a batch pattern like `https://e.com/img^(###1-100).jpg` makes (§5.5).
 #[uniffi::export]
 pub fn expand_batch(pattern: String) -> Result<Vec<String>, CoreError> {

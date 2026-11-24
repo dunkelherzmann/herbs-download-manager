@@ -179,8 +179,20 @@ pub(crate) unsafe fn bytes(memory: windows::Win32::Foundation::HGLOBAL) -> Vec<u
 }
 
 /// The HTML in Windows' "HTML Format" (UTF-8 after a header of offsets): the copied fragment, so the header's
-/// SourceURL (the page's own address) isn't taken for a link.
+/// SourceURL (the page's own address, which Chromium and Firefox write) isn't taken for a link, with its relative
+/// links made whole against that page (§5.2).
 pub(crate) fn html_fragment(data: &[u8]) -> String {
+    let text = String::from_utf8_lossy(data);
+    let fragment = fragment(data);
+    let mut header = text.lines().take_while(|l| !l.trim_start().starts_with('<'));
+    let source = header.find_map(|l| l.strip_prefix("SourceURL:")).and_then(|u| hd_core::links::copied_from(u.as_bytes()));
+    match source {
+        Some(base) => hd_core::links::absolute_html(&fragment, &base),
+        None => fragment,
+    }
+}
+
+fn fragment(data: &[u8]) -> String {
     let text = String::from_utf8_lossy(data);
     let offset = |key: &str| {
         text.lines().find_map(|l| l.strip_prefix(key)).and_then(|v| v.trim().parse::<usize>().ok()).filter(|&v| v <= data.len())
@@ -318,5 +330,15 @@ mod tests {
         );
         assert_eq!(header.len(), header_len);
         assert_eq!(super::html_fragment(format!("{header}{body}").as_bytes()), body);
+    }
+
+    #[test]
+    fn html_fragment_makes_relative_links_whole() {
+        let body = "<a href=\"files/a.zip\">a</a>";
+        let header = "Version:0.9\r\nStartHTML:00000000\r\nEndHTML:00000000\r\nStartFragment:00000000\r\nEndFragment:00000000\r\nSourceURL:https://example.com/dl/index.html\r\n";
+        let n = header.len();
+        let header = header.replace("StartHTML:00000000", &format!("StartHTML:{n:08}")).replace("EndHTML:00000000", &format!("EndHTML:{:08}", n + body.len()))
+            .replace("StartFragment:00000000", &format!("StartFragment:{n:08}")).replace("EndFragment:00000000", &format!("EndFragment:{:08}", n + body.len()));
+        assert_eq!(super::html_fragment(format!("{header}{body}").as_bytes()), "<a href=\"https://example.com/dl/files/a.zip\">a</a>");
     }
 }

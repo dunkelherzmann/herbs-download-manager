@@ -211,7 +211,9 @@ Every link in the clipboard's text opens the Add Links window (§5.3), where eac
 to the files on it. Links are read from a paste the way JDownloader reads one: `hxxp://` and `h**p://` count as
 `http://`; links run together (`…a.ziphttps://…b.zip`) are split; a link carried in another's query
 (`?u=https%3A%2F%2F…`) is listed too, after it; `www.` addresses count without `http://`, and so does a paste that is
-only one `example.com/path`. Pasting in the main window does the same: ⌘V
+only one `example.com/path`. A copied part of a web page brings its links' relative addresses (`files/a.zip`) too:
+they count against the page it was copied from, whose address the browser stores with the copy (Chrome, Edge and other
+Chromium browsers on all three systems, Firefox on Linux and Windows). Pasting in the main window does the same: ⌘V
 (Edit ▸ Paste) on the Mac, Ctrl+V on Linux and Windows, whenever no text field (the find bar's) has the cursor; one
 that has takes the paste as usual.
 

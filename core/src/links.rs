@@ -228,6 +228,21 @@ pub fn absolute_html(html: &str, base: &str) -> String {
     out
 }
 
+/// The page a copy was made from, from the address a browser stores beside copied HTML (Chromium's
+/// `chromium/x-source-url`, Firefox's `text/x-moz-url-priv` on Linux, which is UTF-16, or `SourceURL:` on Windows):
+/// UTF-8 or UTF-16 text, its first line, if it is a web or ftp address.
+pub fn copied_from(data: &[u8]) -> Option<String> {
+    let text = if data.len() >= 2 && data.len() % 2 == 0 && (data.starts_with(&[0xff, 0xfe]) || data[1] == 0) {
+        let units: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(data).into_owned()
+    };
+    let line = text.trim_start_matches('\u{feff}').lines().next()?.trim_matches(|c: char| c.is_whitespace() || c == '\0');
+    let url = reqwest::Url::parse(line).ok()?;
+    matches!(url.scheme(), "http" | "https" | "ftp").then(|| line.to_string())
+}
+
 /// One `^(…)` placeholder's values.
 fn expand_range(spec: &str) -> Result<Vec<String>, String> {
     let bad = || format!("“{spec}” isn't a range like ###1-100, 0-ffH or a-z");
@@ -478,6 +493,15 @@ mod tests {
             find(&text),
             vec!["https://example.com/dl/files/a.zip", "https://example.com/b.iso", "https://example.com/dl/c.pdf", "https://x.org/d.zip"]
         );
+    }
+
+    #[test]
+    fn copied_from_reads_utf8_and_utf16() {
+        assert_eq!(copied_from(b"https://example.com/dl/index.html").as_deref(), Some("https://example.com/dl/index.html"));
+        let wide: Vec<u8> = "https://example.com/a\nPage".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        assert_eq!(copied_from(&wide).as_deref(), Some("https://example.com/a"));
+        assert_eq!(copied_from(b"file:///etc/passwd"), None);
+        assert_eq!(copied_from(b""), None);
     }
 
     #[test]
