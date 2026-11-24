@@ -136,3 +136,11 @@ No bugs reported yet.
   - [ ] Windows
 - [ ] **Linux's accessibility audit read only one control in the main window** (*found in testing*, 2026-11-24). Linux (`linux/scripts/a11y-audit.sh`). It reported 12 Settings controls without hover text (the scheduler's days and times), but missed the main window's.
   - [ ] Linux
+- [ ] **The Windows feature run sometimes stops with "no main window"** (*found in testing*, 2026-11-24). Windows (`windows/scripts/features.ps1`). From some feature onward every step fails with "no main window", on main's build too (1 of 2 runs, then 4 passing in a row); the app's state seems to stay borrowed while a nested message loop runs.
+  - [ ] Windows
+- [ ] **A running download's count stands still while a speed limit holds it back** (*found in testing*, 2026-11-24). All three systems (the shared core). The downloaded amount only jumps forward when the download is paused.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
+- [ ] **The name-in-use question says "Trash" on Windows** (*found in testing*, 2026-11-24). Windows. The explanation comes from the shared core, which says "Trash" where Windows calls it the Recycle Bin.
+  - [ ] Windows
