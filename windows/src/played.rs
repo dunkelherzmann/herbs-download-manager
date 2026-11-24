@@ -186,7 +186,7 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
         )?;
         // What the network gave the page and its frames, in the script's words.
         let n = note.clone();
-        view.add_WebResourceResponseReceived(
+        view.cast::<ICoreWebView2_2>()?.add_WebResourceResponseReceived(
             &WebResourceResponseReceivedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
                 let request = unsafe { args.Request()? };
