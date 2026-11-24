@@ -10,6 +10,7 @@ pub mod download;
 pub mod feed;
 pub mod join;
 pub mod mp4;
+pub mod played;
 pub mod scan;
 pub mod scan_text;
 pub mod subtitles;

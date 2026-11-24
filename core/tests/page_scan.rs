@@ -126,6 +126,7 @@ fn a_scan_finds_what_players_hide() {
         pages: vec![hd_core::media::scan::GivenPage { url: s.url("/app"), html: format!(r#"<title>App</title><video src="{base}/given.mp4"></video>"#) }],
         resources: vec![],
         user_agent: Some(ua.into()),
+        played: vec![],
     };
     let app = m.scan_page_given(&s.url("/app"), given).unwrap();
     assert_eq!((app.title.as_str(), app.found.iter().map(|f| f.name.as_str()).collect::<Vec<_>>()), ("App", vec!["given.mp4"]));
