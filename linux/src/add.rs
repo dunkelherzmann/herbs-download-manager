@@ -882,21 +882,35 @@ pub fn alert(window: &impl IsA<gtk::Widget>, heading: &str, body: &str) {
     d.present(Some(window));
 }
 
-/// The clipboard's text, with its HTML when it has some (links behind a copied page's text, §5.2).
+/// The clipboard's text, with its HTML when it has some (links behind a copied page's text, §5.2), the HTML's
+/// relative links made whole against the page it was copied from: Chromium browsers (Chrome, Edge) put its address
+/// beside the copy as `chromium/x-source-url`, Firefox as `text/x-moz-url-priv`.
 pub async fn clipboard_text(clipboard: &gdk::Clipboard) -> String {
     let mut text = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
-    if clipboard.formats().contain_mime_type("text/html")
-        && let Ok((stream, _)) = clipboard.read_future(&["text/html"], glib::Priority::DEFAULT).await
-    {
-        let out = gio::MemoryOutputStream::new_resizable();
-        if out.splice_future(&stream, gio::OutputStreamSpliceFlags::CLOSE_SOURCE | gio::OutputStreamSpliceFlags::CLOSE_TARGET,
-                             glib::Priority::DEFAULT).await.is_ok()
-        {
-            text.push('\n');
-            text.push_str(&String::from_utf8_lossy(&out.steal_as_bytes()));
+    if let Some(html) = clipboard_bytes(clipboard, "text/html").await {
+        let mut html = String::from_utf8_lossy(&html).into_owned();
+        for mime in ["chromium/x-source-url", "text/x-moz-url-priv"] {
+            if let Some(base) = clipboard_bytes(clipboard, mime).await.and_then(|b| hd_core::links::copied_from(&b)) {
+                html = hd_core::links::absolute_html(&html, &base);
+                break;
+            }
         }
+        text.push('\n');
+        text.push_str(&html);
     }
     text
+}
+
+/// The clipboard's data of one type, if it has that type.
+async fn clipboard_bytes(clipboard: &gdk::Clipboard, mime: &str) -> Option<Vec<u8>> {
+    if !clipboard.formats().contain_mime_type(mime) {
+        return None;
+    }
+    let (stream, _) = clipboard.read_future(&[mime], glib::Priority::DEFAULT).await.ok()?;
+    let out = gio::MemoryOutputStream::new_resizable();
+    out.splice_future(&stream, gio::OutputStreamSpliceFlags::CLOSE_SOURCE | gio::OutputStreamSpliceFlags::CLOSE_TARGET,
+                      glib::Priority::DEFAULT).await.ok()?;
+    Some(out.steal_as_bytes().to_vec())
 }
 
 /// Export Links (§5.8): these downloads (all with none), saved as a text file with each file's name and its link and

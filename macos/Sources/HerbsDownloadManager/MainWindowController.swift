@@ -323,18 +323,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSToolb
         guard count != seenClipboard else { return }
         seenClipboard = count
         guard AppModel.shared.settings.watchClipboard, !NSApp.isActive else { return }
-        var text = pasteboard.string(forType: .string) ?? ""
-        if let html = pasteboard.string(forType: .html) { text += "\n" + html }
-        let links = findLinks(text: text)
+        let links = findLinks(text: DropView.copiedText(pasteboard))
         if !links.isEmpty { openLinks(links) }
     }
 
     /// Add from Clipboard (§5.2): every link in the clipboard's text opens Add Links.
     @objc func addFromClipboard(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
-        var text = pasteboard.string(forType: .string) ?? ""
-        if let html = pasteboard.string(forType: .html) { text += "\n" + html }
-        let links = findLinks(text: text)
+        let links = findLinks(text: DropView.copiedText(pasteboard))
         guard !links.isEmpty, let window else {
             let alert = NSAlert()
             alert.messageText = "The clipboard has no links."
@@ -730,6 +726,19 @@ final class DropView: NSView {
         }
     }
 
+    /// A copy's text and HTML, the HTML's relative links made whole against the page it was copied from, which
+    /// Chromium browsers (Chrome, Edge) put beside it as `org.chromium.source-url` (§5.2).
+    static func copiedText(_ pasteboard: NSPasteboard) -> String {
+        var text = pasteboard.string(forType: .string) ?? ""
+        if var html = pasteboard.string(forType: .html) {
+            if let base = pasteboard.string(forType: NSPasteboard.PasteboardType("org.chromium.source-url")) {
+                html = absoluteHtml(html: html, base: base)
+            }
+            text += "\n" + html
+        }
+        return text
+    }
+
     static func links(from pasteboard: NSPasteboard) -> [String] {
         var text = ""
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
@@ -741,8 +750,7 @@ final class DropView: NSView {
                 }
             }
         }
-        text += "\n" + (pasteboard.string(forType: .string) ?? "")
-        text += "\n" + (pasteboard.string(forType: .html) ?? "")
+        text += "\n" + copiedText(pasteboard)
         return findLinks(text: text)
     }
 
