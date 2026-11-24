@@ -310,3 +310,7 @@ A box is ticked once the change has shipped. A request that covers several platf
 - [ ] **Linux and Windows work 1:1 like the Mac:** check every function against the Mac version and close the gaps, tested on each machine. *Requested 2026-11-24.* A code audit of every spec section and the feature suites on all three (22 of 22 passing on each, the observer clean on Linux and Windows) found about 30 differences on Linux and 15 on Windows: Linux quit when its window closed, kept no layout, didn't ask before Pause or Restart lost data, lacked Open With, the Connections ▸ lines, the Edit items, column titles and hover text in places, and its enable rules differed; Windows lacked dimmed speed-limit fields, red source states, some hover text and the alerts' keyboard highlight. Import Links on both read only plain-text files.
   - [ ] Linux
   - [ ] Windows
+- [ ] **Paste links into the main window to have them scanned for downloadable files, as JDownloader's link crawler does:** ⌘V on the Mac, Ctrl+V on Linux and Windows, takes every link on the clipboard, reads each one and lists the files it leads to. *Requested 2026-11-24.* Mac, Linux, Windows. Pasting already opens Add Links, which checks each link and replaces a web page with the files and media on it (#80, #121); to check against JDownloader's crawler (its source) for what it finds that HDM doesn't.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
