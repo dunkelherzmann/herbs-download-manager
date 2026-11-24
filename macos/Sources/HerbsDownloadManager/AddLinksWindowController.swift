@@ -187,8 +187,21 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                         // A web page: what's on it takes its place (§15).
                         item.sizeText = "Scanning page…"
                         self.table.reloadData()
-                        let scanned = await Task.detached { Result { try manager.scanPage(url: url) } }.value
+                        var scanned = await Task.detached { Result { try manager.scanPage(url: url) } }.value
                         guard !Task.isCancelled else { return }
+                        if case .success(let scan) = scanned, scan.found.isEmpty {
+                            // Nothing in its text: its player may build the address only while it runs.
+                            item.sizeText = "Looking at the page's player…"
+                            self.table.reloadData()
+                            let seen = await PagePlayer.run(url: url)
+                            guard !Task.isCancelled else { return }
+                            if !seen.isEmpty {
+                                scanned = await Task.detached {
+                                    Result { try manager.scanPagePlayed(url: url, playedSeen: seen) }
+                                }.value
+                                guard !Task.isCancelled else { return }
+                            }
+                        }
                         self.replace(page: item, with: scanned)
                     case .success(let info):
                         item.name = info.name

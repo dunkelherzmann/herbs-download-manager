@@ -30,7 +30,7 @@ let package = Package(
             name: "HerbsDownloadManager",
             dependencies: ["HDCore"],
             path: "Sources/HerbsDownloadManager",
-            linkerSettings: [.linkedFramework("AppKit")]
+            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
         ),
     ]
 )
