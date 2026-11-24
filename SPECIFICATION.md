@@ -998,8 +998,13 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
-  kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). A page with nothing on it stays as an unchecked row
-  saying "Web page: no files found". A server's folder listing ("Index of /…", Python's "Directory listing for /…",
+  kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). When the page's text names nothing (its player builds
+  the video's address only while it runs), Add Links says "Looking at the page's player…" and opens the page out of
+  sight and muted in the system's own web engine (WebKit on the Mac and Linux, WebView2 on Windows), in a view of its
+  own that keeps no cookies or files, for up to 15 seconds (1.5 seconds more once a playlist turns up). It notes what
+  the page and its frames fetch or play, and the scan checks that with the frame as referer, so the row gives way to
+  the stream the player would have played. A page with nothing on it even then stays as an unchecked row saying "Web
+  page: no files found". A server's folder listing ("Index of /…", Python's "Directory listing for /…",
   IIS's "[To Parent Directory]") gives every file in it, whatever its type or size, and its subfolders' files, three
   levels down and at most 40 folders. On any page, archives split in parts (`.001`, `.7z.002`, `.r00`, `.z01`),
   subtitles, e-books and model files count as files, and checksum, recovery and info files (`.sfv`, `.md5`, `.par2`,
