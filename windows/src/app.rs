@@ -960,7 +960,6 @@ fn enabled(id: u16, selected: &[Row], rows: &[Row]) -> bool {
     }
 }
 
-/// The text field with the keyboard (the find bar, a list name being edited), if one has it.
 thread_local! {
     /// The text field Edit ▸ Undo last undid, and its text right after, so Redo knows there's something to put back.
     static UNDONE: std::cell::RefCell<Option<(isize, String)>> = const { std::cell::RefCell::new(None) };
@@ -971,6 +970,7 @@ fn undone(field: HWND) -> bool {
     UNDONE.with_borrow(|u| u.as_ref().is_some_and(|(h, text)| *h == field.0 as isize && *text == crate::add::text_of(field)))
 }
 
+/// The text field with the keyboard (the find bar, a list name being edited), if one has it.
 fn typing_field() -> Option<HWND> {
     unsafe {
         let focus = GetFocus();

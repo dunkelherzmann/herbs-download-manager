@@ -532,7 +532,9 @@ pub fn show_sign_ins_summary(text: &str) {
 
 /// Add Mirror… (§7.1 M2, M3): one link per line.
 pub fn ask_mirrors(ctx: &Ctx, id: u64) {
-    let Some(d) = ctx.manager.detail(id) else { return };
+    if ctx.manager.detail(id).is_none() {
+        return;
+    }
     let multi = (ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN) as u32 | WS_VSCROLL.0;
     let note = "Other servers with the same file, one address per line. A running download starts using them at once.".to_string();
     let hwnd = create(ctx, Kind::Mirror { id }, "Add Mirror", (480, 220), &[
@@ -1192,7 +1194,7 @@ unsafe fn state_colors(lparam: LPARAM) -> LRESULT {
         if stage == CDDS_ITEMPREPAINT {
             return LRESULT(CDRF_NOTIFYSUBITEMDRAW as isize);
         }
-        if stage == (CDDS_ITEMPREPAINT | CDDS_SUBITEM) {
+        if stage == NMCUSTOMDRAW_DRAW_STAGE(CDDS_ITEMPREPAINT.0 | CDDS_SUBITEM.0) {
             let mut buffer = [0u16; 128];
             let get = LVITEMW { iSubItem: draw.iSubItem, pszText: PWSTR(buffer.as_mut_ptr()), cchTextMax: buffer.len() as i32, ..Default::default() };
             let n = SendMessageW(draw.nmcd.hdr.hwndFrom, LVM_GETITEMTEXTW, Some(WPARAM(draw.nmcd.dwItemSpec)), Some(LPARAM(&get as *const _ as isize))).0.max(0) as usize;
