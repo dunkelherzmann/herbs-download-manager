@@ -144,3 +144,5 @@ No bugs reported yet.
   - [ ] Windows
 - [ ] **The name-in-use question says "Trash" on Windows** (*found in testing*, 2026-11-24). Windows. The explanation comes from the shared core, which says "Trash" where Windows calls it the Recycle Bin.
   - [ ] Windows
+- [ ] **A second launch on Windows started a second copy instead of bringing back the first** (*found in testing*, 2026-11-24). Windows. With the same data folder, the "already running" answer was read after another call had replaced it.
+  - [ ] Windows
