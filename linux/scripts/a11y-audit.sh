@@ -26,7 +26,7 @@ done
 python3 - "$WORK" <<'PY'
 import json, os, sys
 work = sys.argv[1]
-roles = {"push button", "toggle button", "check box", "text", "entry", "spin button", "combo box", "switch", "menu button", "radio button"}
+roles = {"button", "push button", "toggle button", "check box", "text", "entry", "spin button", "combo box", "switch", "menu button", "radio button"}
 failed = False
 for w in ["main", "download-window", "settings", "new-download", "add-links", "batch"]:
     path = os.path.join(work, w + ".json")

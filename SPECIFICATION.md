@@ -54,7 +54,7 @@ The layout, top to bottom:
 
 Closing the window (its close button, Close Window, Hide Herb's DM) leaves the app running, so downloads carry on: on
 the Mac in the Dock, on Windows in the notification area, where a click on its icon brings the window back and a
-right-click offers Show and Quit. Opening the app again while it runs brings its window back; only one copy runs at a
+right-click offers Show and Quit, on Linux in the background (GNOME lists it under Background Apps). Opening the app again while it runs brings its window back; only one copy runs at a
 time (on Windows, one per data folder, so a test copy can run beside it). The window's size and place, the sidebar's
 width and the list's columns and sort are remembered.
 Dropping links, text or `.txt`/`.html` files on the window adds every link found (§5.4); while dragging, the
@@ -168,7 +168,8 @@ Right-clicking downloads shows: Open · Open With ▸ · Show in Finder (Show in
 Restart · — · **Add Mirror…** · **Connections ▸** (Add Connection, Remove Connection, the live list) · — ·
 Copy Link · Properties · — · Delete. Items that don't apply are hidden (Connections for finished downloads) or
 disabled. Open With ▸ lists the apps the system suggests for the file, the default one first and marked "(default)";
-on Windows it ends with Choose Another App…, Windows' own "Open with" window.
+on Windows it ends with Choose Another App…, Windows' own "Open with" window. In the Linux Flatpak, which can't see the
+desktop's apps, it holds Choose an App…, the desktop's own app chooser.
 
 **Rename…** (F2 on Linux and Windows) and **Move To…** work on one finished download whose file is on disk; they are
 also in the Main Menu's Tasks. Rename asks for the new name, with the part before the extension selected; Move To asks

@@ -110,13 +110,18 @@ fn buttons(cancel: &gtk::Button, add: &gtk::Button, download: &gtk::Button) -> g
 }
 
 fn dialog_window(ctx: &Ctx, title: &str, width: i32, height: i32) -> adw::Window {
-    adw::Window::builder()
+    let window = adw::Window::builder()
         .title(title)
         .transient_for(&ctx.window)
         .modal(false)
         .default_width(width)
         .default_height(height)
-        .build()
+        .build();
+    // Esc closes it, as Cancel does (its hover text says so).
+    let keys = gtk::ShortcutController::new();
+    keys.add_shortcut(gtk::Shortcut::new(gtk::ShortcutTrigger::parse_string("Escape"), Some(gtk::NamedAction::new("window.close"))));
+    window.add_controller(keys);
+    window
 }
 
 fn with_header(window: &adw::Window, body: &impl IsA<gtk::Widget>) {
@@ -129,7 +134,7 @@ fn with_header(window: &adw::Window, body: &impl IsA<gtk::Widget>) {
 /// New Download (§5.1).
 pub fn new_download(ctx: &Ctx, link: Option<String>) {
     let window = dialog_window(ctx, "New Download", 560, 420);
-    let link_entry = gtk::Entry::builder().hexpand(true).placeholder_text("https://…").build();
+    let link_entry = gtk::Entry::builder().hexpand(true).placeholder_text("https://example.com/file.zip").build();
     crate::explain(&link_entry, "Link", "The address of the file to download");
     if let Some(l) = link {
         link_entry.set_text(&l);
@@ -138,7 +143,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     crate::explain(&mirrors, "Mirrors", "Other servers with the same file, one link per line (optional)");
     mirrors.set_tooltip_text(Some("Other servers with the same file, one link per line (optional)"));
     let mirrors_scroll = gtk::ScrolledWindow::builder().child(&mirrors).min_content_height(70).has_frame(true).build();
-    let name = gtk::Entry::builder().hexpand(true).build();
+    let name = gtk::Entry::builder().hexpand(true).placeholder_text("From the server").build();
     crate::explain(&name, "Name", "The file's name, from the server; change it to save under another name");
     let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
@@ -398,6 +403,11 @@ impl AddLinks {
         let size_label = gtk::Label::builder().label(size_text).width_chars(14).xalign(0.0).build();
         let link = gtk::Label::builder().label(url).xalign(0.0).width_chars(30).max_width_chars(30).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
         link.add_css_class("dim-label");
+        // Each cell's whole text on hover, as on the Mac: a name or link cut short can be read.
+        for l in [&name_label, &size_label, &link] {
+            l.set_tooltip_text(Some(&l.label()).filter(|t| !t.is_empty()).map(|t| t.as_str()));
+            l.connect_label_notify(|l| l.set_tooltip_text(Some(&l.label()).filter(|t| !t.is_empty()).map(|t| t.as_str())));
+        }
         let line = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         line.append(&check);
         line.append(&name_label);
@@ -602,7 +612,8 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     let save = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     save.append(&gtk::Label::new(Some("Save to:")));
     save.append(&folder_row(&window, folder.clone()));
-    let summary = gtk::Label::builder().xalign(0.0).hexpand(true).build();
+    let summary = gtk::Label::builder().xalign(0.0).hexpand(true)
+        .tooltip_text("Links to the same file (same name and size) are added as one download and its mirrors").build();
     summary.add_css_class("dim-label");
     let (cancel, add, download) = (gtk::Button::with_label("Cancel"), gtk::Button::with_label("Add"), gtk::Button::with_label("Download"));
     let bottom = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -703,27 +714,30 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     window.present();
 }
 
-/// Links from a drop: link text, or the links inside dropped text files (§5.4, §5.7).
+/// The links in what is being dragged: link text, or the links inside dragged text files (§5.4, §5.7).
+pub fn links_in_drop(value: &glib::Value) -> Vec<String> {
+    let mut text = String::new();
+    if let Ok(files) = value.get::<gdk::FileList>() {
+        for f in files.files() {
+            text.push('\n');
+            match f.path() {
+                Some(p) => text.push_str(&hd_core::links::text_of_file(&p).unwrap_or_default()),
+                None => text.push_str(&f.uri()),
+            }
+        }
+    } else if let Ok(s) = value.get::<String>() {
+        text = s;
+    }
+    hd_core::links::find(&text)
+}
+
+/// Links from a drop (§5.4, §5.7).
 pub fn drop_target(ctx: &Ctx, on_links: impl Fn(Vec<String>) + 'static) -> gtk::DropTarget {
     let target = gtk::DropTarget::new(glib::Type::INVALID, gdk::DragAction::COPY);
     target.set_types(&[gdk::FileList::static_type(), glib::GString::static_type()]);
     let tell = ctx.tell.clone();
     target.connect_drop(move |_, value, _, _| {
-        let mut text = String::new();
-        if let Ok(files) = value.get::<gdk::FileList>() {
-            for f in files.files() {
-                if let Some(p) = f.path() {
-                    text.push('\n');
-                    text.push_str(&hd_core::links::text_of_file(&p).unwrap_or_default());
-                } else {
-                    text.push('\n');
-                    text.push_str(&f.uri());
-                }
-            }
-        } else if let Ok(s) = value.get::<String>() {
-            text = s;
-        }
-        let links = hd_core::links::find(&text);
+        let links = links_in_drop(value);
         if links.is_empty() {
             tell("No links found in what was dropped".into());
             return false;
@@ -734,16 +748,22 @@ pub fn drop_target(ctx: &Ctx, on_links: impl Fn(Vec<String>) + 'static) -> gtk::
     target
 }
 
-/// Batch Download (§5.5): a link with a range placeholder, a preview, then Add Links.
+/// Batch Download (§5.5): a link with a range placeholder, the help, a preview of the first and last links and the
+/// count, then Add Links.
 pub fn batch(ctx: &Ctx) {
-    let window = dialog_window(ctx, "Batch Download", 560, 220);
+    let window = dialog_window(ctx, "Batch Download", 600, 230);
     let pattern = gtk::Entry::builder().hexpand(true).placeholder_text("https://example.com/img^(###1-100).jpg").build();
-    crate::explain(&pattern, "Link pattern", "^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters");
-    pattern.set_tooltip_text(Some("^(###1-100) counts with 3 digits; H after a range for hexadecimal; a-z for letters"));
-    let preview = gtk::Label::builder().xalign(0.0).wrap(true).build();
+    crate::explain(&pattern, "Link pattern", "Batch link: a link with a range placeholder");
+    let help = gtk::Label::builder().xalign(0.0).wrap(true).label(
+        "Put a range where the number or letters change: ^(###1-100) pads to 3 digits, ^(0-ffH) counts in \
+         hexadecimal, ^(a-z) or ^(AA-BZ) in letters. Separate several ranges with commas.").build();
+    help.add_css_class("dim-label");
+    help.add_css_class("caption");
+    let preview = gtk::Label::builder().xalign(0.0).wrap(true).selectable(true).build();
     preview.add_css_class("dim-label");
-    let next = gtk::Button::with_label("Next");
-    next.set_tooltip_text(Some("Show these links in Add Links"));
+    preview.add_css_class("monospace");
+    let next = gtk::Button::with_label("Continue…");
+    next.set_tooltip_text(Some("Show the links in the Add Links window"));
     next.add_css_class("suggested-action");
     next.set_sensitive(false);
     let cancel = gtk::Button::with_label("Cancel");
@@ -752,28 +772,52 @@ pub fn batch(ctx: &Ctx) {
     row.set_halign(gtk::Align::End);
     row.append(&cancel);
     row.append(&next);
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    body.set_margin_top(16);
-    body.set_margin_bottom(16);
-    body.set_margin_start(16);
-    body.set_margin_end(16);
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    body.set_margin_top(20);
+    body.set_margin_bottom(20);
+    body.set_margin_start(20);
+    body.set_margin_end(20);
     body.append(&pattern);
+    body.append(&help);
     body.append(&preview);
     body.append(&row);
     with_header(&window, &body);
     let links: Rc<RefCell<Vec<String>>> = Rc::default();
     {
         let (links, next) = (links.clone(), next.clone());
-        pattern.connect_changed(move |p| match hd_core::links::expand_batch(p.text().trim()) {
-            Ok(l) if !l.is_empty() => {
-                preview.set_label(&format!("{} links: {} … {}", l.len(), l[0], l[l.len() - 1]));
-                next.set_sensitive(true);
-                *links.borrow_mut() = l;
-            }
-            Ok(_) => preview.set_label(""),
-            Err(e) => {
-                preview.set_label(&e);
+        pattern.connect_changed(move |p| {
+            let text = p.text().trim().to_string();
+            preview.remove_css_class("error");
+            preview.add_css_class("dim-label");
+            if text.is_empty() {
+                preview.set_label("");
                 next.set_sensitive(false);
+                links.borrow_mut().clear();
+                return;
+            }
+            match hd_core::links::expand_batch(&text) {
+                Ok(l) if !l.is_empty() => {
+                    preview.set_label(&if l.len() == 1 {
+                        format!("1 link: {}", l[0])
+                    } else {
+                        format!("{} links\nFirst: {}\nLast:  {}", l.len(), l[0], l[l.len() - 1])
+                    });
+                    next.set_sensitive(true);
+                    *links.borrow_mut() = l;
+                }
+                Ok(_) => {
+                    preview.set_label("");
+                    next.set_sensitive(false);
+                    links.borrow_mut().clear();
+                }
+                Err(e) => {
+                    // A mistake in the pattern is red, as on the Mac.
+                    preview.set_label(&e);
+                    preview.remove_css_class("dim-label");
+                    preview.add_css_class("error");
+                    next.set_sensitive(false);
+                    links.borrow_mut().clear();
+                }
             }
         });
     }
@@ -782,9 +826,13 @@ pub fn batch(ctx: &Ctx) {
     let (ctx2, w) = (ctx.clone(), window.clone());
     next.connect_clicked(move |_| {
         let l = links.borrow().clone();
+        if l.is_empty() {
+            return;
+        }
         w.close();
         add_links(&ctx2, l);
     });
+    pattern.set_activates_default(true);
     window.set_default_widget(Some(&next));
     window.present();
 }
@@ -808,13 +856,47 @@ pub fn import(ctx: &Ctx) {
                 }
             }
         }
+        let _ = unreadable;
         let links = hd_core::links::find(&text);
         if links.is_empty() {
-            (ctx.tell)(if unreadable > 0 { "That file isn't text, so it has no links".into() } else { "No links found".into() });
+            let heading = match files.n_items() {
+                1 => {
+                    let name = files.item(0).and_downcast::<gio::File>().and_then(|f| f.basename())
+                        .map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    format!("“{name}” has no links.")
+                }
+                _ => "These files have no links.".into(),
+            };
+            alert(&ctx.window, &heading, "Import Links reads text files (with or without an extension), Markdown, rich text \
+                   and HTML, and finds the web addresses (http, https or ftp) in them.");
             return;
         }
         add_links(&ctx, links);
     });
+}
+
+/// A message over the window, with OK, as the Mac's alerts (§4).
+pub fn alert(window: &impl IsA<gtk::Widget>, heading: &str, body: &str) {
+    let d = adw::AlertDialog::new(Some(heading), Some(body).filter(|b| !b.is_empty()));
+    d.add_response("ok", "OK");
+    d.present(Some(window));
+}
+
+/// The clipboard's text, with its HTML when it has some (links behind a copied page's text, §5.2).
+pub async fn clipboard_text(clipboard: &gdk::Clipboard) -> String {
+    let mut text = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
+    if clipboard.formats().contain_mime_type("text/html")
+        && let Ok((stream, _)) = clipboard.read_future(&["text/html"], glib::Priority::DEFAULT).await
+    {
+        let out = gio::MemoryOutputStream::new_resizable();
+        if out.splice_future(&stream, gio::OutputStreamSpliceFlags::CLOSE_SOURCE | gio::OutputStreamSpliceFlags::CLOSE_TARGET,
+                             glib::Priority::DEFAULT).await.is_ok()
+        {
+            text.push('\n');
+            text.push_str(&String::from_utf8_lossy(&out.steal_as_bytes()));
+        }
+    }
+    text
 }
 
 /// Export Links (§5.8): these downloads (all with none), saved as a text file with each file's name and its link and
@@ -829,9 +911,8 @@ pub fn export(ctx: &Ctx, ids: Vec<u64>) {
     let ctx = ctx.clone();
     dialog.save(Some(&ctx.window.clone()), None::<&gio::Cancellable>, move |result| {
         let Some(path) = result.ok().and_then(|f| f.path()) else { return };
-        match std::fs::write(&path, ctx.manager.links_tree(&ids)) {
-            Ok(()) => (ctx.tell)(format!("Links saved to {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())),
-            Err(e) => (ctx.tell)(format!("The links couldn't be saved: {e}")),
+        if let Err(e) = std::fs::write(&path, ctx.manager.links_tree(&ids)) {
+            alert(&ctx.window, "The links couldn't be saved.", &e.to_string());
         }
     });
 }
@@ -840,8 +921,12 @@ pub fn export(ctx: &Ctx, ids: Vec<u64>) {
 pub fn from_clipboard(ctx: &Ctx) {
     let ctx = ctx.clone();
     glib::spawn_future_local(async move {
-        let text = ctx.window.clipboard().read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
-        add_links(&ctx, hd_core::links::find(&text));
+        let links = hd_core::links::find(&clipboard_text(&ctx.window.clipboard()).await);
+        if links.is_empty() {
+            alert(&ctx.window, "The clipboard has no links.", "Copy one or more web addresses (http, https or ftp), then try again.");
+            return;
+        }
+        add_links(&ctx, links);
     });
 }
 

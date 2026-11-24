@@ -92,7 +92,11 @@ fn perform(action: WhenDone, window: &adw::ApplicationWindow) {
         return;
     }
     let method = match action {
-        WhenDone::Quit => return window.close(),
+        // Quit, not just close: closing the window leaves the app running (§2).
+        WhenDone::Quit => {
+            let _ = WidgetExt::activate_action(window, "win.quit", None);
+            return;
+        }
         WhenDone::Sleep => "Suspend",
         WhenDone::ShutDown => "PowerOff",
         WhenDone::Nothing => return,

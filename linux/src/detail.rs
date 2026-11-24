@@ -32,14 +32,14 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     let window = adw::Window::builder().title(&first.row.name).transient_for(&ctx.window).default_width(680).default_height(470).build();
 
     let bar = gtk::DrawingArea::builder().content_height(18).hexpand(true).build();
-    bar.update_property(&[gtk::accessible::Property::Label("Downloaded parts of the file")]);
+    crate::explain(&bar, "Downloaded parts of the file", "The file's ranges: filled parts are downloaded, gaps are still to fetch");
     let percent = gtk::Label::builder().xalign(0.0).build();
     percent.add_css_class("title-3");
     let numbers = gtk::Label::builder().xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::End).build();
     numbers.add_css_class("dim-label");
     let toggle = gtk::Button::with_label("Pause");
     let close = gtk::Button::with_label("Close");
-    close.set_tooltip_text(Some("Close this window; the download carries on"));
+    close.set_tooltip_text(Some("Close this window; the download keeps going"));
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     header.append(&percent);
     header.append(&numbers);
@@ -68,14 +68,15 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     let conn_buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     conn_buttons.append(&plus);
     conn_buttons.append(&minus);
-    let conn_page = page(&conn_list, &conn_buttons);
+    let conn_page = page(&conn_list, &conn_buttons, &[("Source", 22), ("Range", 14), ("Downloaded", 14), ("Speed", 14), ("State", 14)]);
 
     // Mirrors (§7.3).
     let src_list = gtk::ListBox::new();
     src_list.add_css_class("boxed-list");
     let add_mirror = gtk::Button::with_label("Add Mirror…");
+    add_mirror.set_tooltip_text(Some("Add Mirror: another server with the same file (Ctrl+Alt+M)"));
     let remove_mirror = gtk::Button::with_label("Remove");
-    remove_mirror.set_tooltip_text(Some("Remove the selected mirror (the original link stays)"));
+    remove_mirror.set_tooltip_text(Some("Remove the selected mirror; the original link can only be turned off"));
     let make_main = gtk::Button::with_label("Make Main Link");
     make_main.set_tooltip_text(Some(
         "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept",
@@ -88,7 +89,8 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     src_buttons.append(&copy_link);
     src_buttons.append(&make_main);
     src_buttons.append(&remove_mirror);
-    let src_page = page(&src_list, &src_buttons);
+    let src_page = page(&src_list, &src_buttons,
+                        &[("", 3), ("Address", 34), ("State", 14), ("Connections", 6), ("Speed", 10), ("Served", 10)]);
 
     // Options.
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
@@ -193,9 +195,10 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     let manager = ctx.manager.clone();
     let id_ = id;
     {
-        let (manager, detail) = (manager.clone(), detail.clone());
+        let (manager, detail, w) = (manager.clone(), detail.clone(), window.clone());
+        // Pausing a download that can't be resumed asks first, as the main window's Pause does (§10).
         toggle.connect_clicked(move |_| {
-            if detail.borrow().row.status.is_running() { manager.pause(&[id_]) } else { manager.resume(&[id_]) }
+            if detail.borrow().row.status.is_running() { crate::window::pause_asking(&w, &manager, id_) } else { manager.resume(&[id_]) }
         });
     }
     {
@@ -233,27 +236,75 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
         let ctx = ctx.clone();
         add_mirror.connect_clicked(move |_| ask_mirrors(&ctx, id_));
     }
-    {
+    // Copy Link, Make Main Link and Remove act on a source by its place in the list: the selected one for the
+    // buttons, the right-clicked one for the source's menu (§7.3).
+    let source_action = {
         let (manager, src_list, detail) = (manager.clone(), src_list.clone(), detail.clone());
-        make_main.connect_clicked(move |_| {
-            if let Some(row) = src_list.selected_row()
-                && let Some(s) = detail.borrow().sources.get(row.index() as usize)
-                && s.url != detail.borrow().row.url
-            {
-                manager.make_main(id_, &s.url);
+        Rc::new(move |what: &str, index: i32| {
+            let d = detail.borrow();
+            let Some(s) = usize::try_from(index).ok().and_then(|i| d.sources.get(i)) else { return };
+            let original = s.url == d.row.url;
+            match what {
+                "copy" => src_list.clipboard().set_text(&s.url),
+                "main" if !original => {
+                    manager.make_main(id_, &s.url);
+                }
+                "remove" if !original => {
+                    manager.remove_source(id_, &s.url);
+                }
+                _ => {}
             }
+        })
+    };
+    {
+        let (a, src_list) = (source_action.clone(), src_list.clone());
+        make_main.connect_clicked(move |_| a("main", src_list.selected_row().map(|r| r.index()).unwrap_or(-1)));
+    }
+    {
+        let menu = gtk::gio::Menu::new();
+        menu.append(Some("Copy Link"), Some("source.copy"));
+        menu.append(Some("Make Main Link"), Some("source.main"));
+        menu.append(Some("Remove"), Some("source.remove"));
+        // Parented on the page, not the list: a list box treats every child as a row.
+        let popover = gtk::PopoverMenu::from_model(Some(&menu));
+        popover.set_parent(&src_page);
+        {
+            let popover = popover.clone();
+            window.connect_destroy(move |_| popover.unparent());
+        }
+        popover.set_has_arrow(false);
+        let clicked = Rc::new(std::cell::Cell::new(-1));
+        let group = gtk::gio::SimpleActionGroup::new();
+        for what in ["copy", "main", "remove"] {
+            let action = gtk::gio::SimpleAction::new(what, None);
+            let (a, clicked) = (source_action.clone(), clicked.clone());
+            action.connect_activate(move |_, _| a(what, clicked.get()));
+            group.add_action(&action);
+        }
+        src_page.insert_action_group("source", Some(&group));
+        let click = gtk::GestureClick::builder().button(gtk::gdk::BUTTON_SECONDARY).build();
+        let (list, detail, page) = (src_list.clone(), detail.clone(), src_page.clone());
+        click.connect_pressed(move |_, _, x, y| {
+            let Some(row) = list.row_at_y(y as i32) else { return };
+            clicked.set(row.index());
+            let d = detail.borrow();
+            let original = d.sources.get(row.index() as usize).is_some_and(|s| s.url == d.row.url);
+            for what in ["main", "remove"] {
+                if let Some(a) = group.lookup_action(what).and_downcast::<gtk::gio::SimpleAction>() {
+                    a.set_enabled(!original);
+                }
+            }
+            let at = list.compute_point(&page, &gtk::graphene::Point::new(x as f32, y as f32))
+                .map(|p| (p.x() as i32, p.y() as i32)).unwrap_or((x as i32, y as i32));
+            popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(at.0, at.1, 1, 1)));
+            popover.popup();
         });
+        src_list.add_controller(click);
     }
     // Copy Link: the selected source's address, the main link's too (Ctrl+C on the list does the same).
     {
-        let (src_list2, detail) = (src_list.clone(), detail.clone());
-        let copy = move || {
-            if let Some(row) = src_list2.selected_row()
-                && let Some(s) = detail.borrow().sources.get(row.index() as usize)
-            {
-                src_list2.clipboard().set_text(&s.url);
-            }
-        };
+        let (src_list2, a) = (src_list.clone(), source_action.clone());
+        let copy = move || a("copy", src_list2.selected_row().map(|r| r.index()).unwrap_or(-1));
         let copy2 = copy.clone();
         copy_link.connect_clicked(move |_| copy2());
         let keys = gtk::ShortcutController::new();
@@ -267,17 +318,28 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
         src_list.add_controller(keys);
     }
     {
-        let (manager, src_list, detail) = (manager.clone(), src_list.clone(), detail.clone());
-        remove_mirror.connect_clicked(move |_| {
-            if let Some(row) = src_list.selected_row()
-                && let Some(s) = detail.borrow().sources.get(row.index() as usize)
-                && s.url != detail.borrow().row.url
-            {
-                manager.remove_source(id_, &s.url);
-            }
-        });
+        let (a, src_list) = (source_action.clone(), src_list.clone());
+        remove_mirror.connect_clicked(move |_| a("remove", src_list.selected_row().map(|r| r.index()).unwrap_or(-1)));
+    }
+    // Remove and Make Main Link need a selected mirror (not the original link), Copy Link any selected source.
+    let enable_sources = {
+        let (src_list, detail, remove_mirror, make_main, copy_link) =
+            (src_list.clone(), detail.clone(), remove_mirror.clone(), make_main.clone(), copy_link.clone());
+        move || {
+            let d = detail.borrow();
+            let selected = src_list.selected_row().and_then(|r| d.sources.get(r.index() as usize));
+            let mirror = selected.is_some_and(|s| s.url != d.row.url);
+            remove_mirror.set_sensitive(mirror);
+            make_main.set_sensitive(mirror);
+            copy_link.set_sensitive(selected.is_some());
+        }
+    };
+    {
+        let e = enable_sources.clone();
+        src_list.connect_row_selected(move |_, _| e());
     }
 
+    let limit_row2 = limit_row.clone();
     let refresh = {
         let (manager, window, detail, bar) = (manager.clone(), window.clone(), detail.clone(), bar.clone());
         move || -> bool {
@@ -318,6 +380,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
             plus.set_sensitive(!finished && r.allowed_connections < 32);
             minus.set_sensitive(!finished && r.allowed_connections > 1);
             connections.set_sensitive(!finished);
+            limit_row2.set_sensitive(!finished);
             if connections.value() as u32 != r.allowed_connections && !connections.has_focus() {
                 connections.set_value(r.allowed_connections as f64);
             }
@@ -330,6 +393,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
             }));
             refill_sources(&src_list, &d, &manager, id_);
             *detail.borrow_mut() = d;
+            enable_sources();
             bar.queue_draw();
             true
         }
@@ -367,9 +431,19 @@ fn find_stack(widget: &gtk::Widget) -> Option<adw::ViewStack> {
     None
 }
 
-fn page(list: &gtk::ListBox, buttons: &gtk::Box) -> gtk::Box {
+/// A list page: the columns' titles over the list (as the Mac's table headers), the list, then its buttons.
+fn page(list: &gtk::ListBox, buttons: &gtk::Box, titles: &[(&str, i32)]) -> gtk::Box {
     let b = gtk::Box::new(gtk::Orientation::Vertical, 8);
     b.set_margin_top(12);
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    head.set_margin_start(12);
+    for (title, chars) in titles {
+        let l = gtk::Label::builder().label(*title).xalign(0.0).width_chars(*chars).build();
+        l.add_css_class("caption-heading");
+        l.add_css_class("dim-label");
+        head.append(&l);
+    }
+    b.append(&head);
     b.append(&gtk::ScrolledWindow::builder().child(list).vexpand(true).build());
     b.append(buttons);
     b
@@ -387,9 +461,8 @@ fn refill(list: &gtk::ListBox, rows: impl Iterator<Item = Vec<String>>) {
         n += 1;
     }
     if n as usize != rows.len() {
-        while let Some(c) = list.first_child() {
-            list.remove(&c);
-        }
+        // Rows only: the sources' right-click menu is a child of the list too.
+        list.remove_all();
         for cells in &rows {
             let line = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             line.set_margin_top(4);
@@ -405,7 +478,7 @@ fn refill(list: &gtk::ListBox, rows: impl Iterator<Item = Vec<String>>) {
         let mut child = line.first_child();
         for text in cells {
             if let Some(label) = child.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                label.set_label(text);
+                show_text(label, text);
             }
             child = child.and_then(|c| c.next_sibling());
         }
@@ -420,12 +493,10 @@ fn refill_sources(list: &gtk::ListBox, d: &Detail, manager: &Manager, id: u64) {
     }
     if n as usize != d.sources.len() {
         let selected = list.selected_row().map(|r| r.index());
-        while let Some(c) = list.first_child() {
-            list.remove(&c);
-        }
+        // Rows only: the sources' right-click menu is a child of the list too.
+        list.remove_all();
         for s in &d.sources {
             let check = gtk::CheckButton::new();
-            check.set_tooltip_text(Some("Use this source; unchecking moves its connections to the others"));
             let url = s.url.clone();
             let m = manager.clone();
             check.connect_toggled(move |c| m.set_source_enabled(id, &url, c.is_active()));
@@ -445,19 +516,32 @@ fn refill_sources(list: &gtk::ListBox, d: &Detail, manager: &Manager, id: u64) {
     for (i, s) in d.sources.iter().enumerate() {
         let Some(line) = list.row_at_index(i as i32).and_then(|r| r.child()) else { continue };
         let mut child = line.first_child();
-        if let Some(check) = child.as_ref().and_then(|c| c.downcast_ref::<gtk::CheckButton>())
-            && check.is_active() != s.enabled
-        {
-            check.set_active(s.enabled);
+        if let Some(check) = child.as_ref().and_then(|c| c.downcast_ref::<gtk::CheckButton>()) {
+            if check.is_active() != s.enabled {
+                check.set_active(s.enabled);
+            }
+            check.set_tooltip_text(Some(if s.enabled { "Turn this source off; its connections move to the others" } else { "Turn this source on" }));
+            check.update_property(&[gtk::accessible::Property::Label(&format!("Use {}", s.url))]);
         }
         let original = if s.url == d.row.url { " (original)" } else { "" };
-        for text in [format!("{}{original}", s.url), s.status.text(), s.active.to_string(), format::speed_text(s.speed),
+        for text in [format!("{}{original}", s.url), s.status.text(), if s.active > 0 { s.active.to_string() } else { String::new() }, format::speed_text(s.speed),
                      if s.bytes > 0 { format::bytes(s.bytes) } else { String::new() }] {
             child = child.and_then(|c| c.next_sibling());
             if let Some(label) = child.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                label.set_label(&text);
+                show_text(label, &text);
             }
         }
+    }
+}
+
+/// A list cell's text, also its hover text (a cut-off link can be read whole); failures are red, as on the Mac.
+fn show_text(label: &gtk::Label, text: &str) {
+    label.set_label(text);
+    label.set_tooltip_text(Some(text).filter(|t| !t.is_empty()));
+    if text.starts_with("Failed") || text == "Different file" || text == "File changed" {
+        label.add_css_class("error");
+    } else {
+        label.remove_css_class("error");
     }
 }
 
@@ -488,7 +572,7 @@ fn draw_segments(cr: &gtk::cairo::Context, w: f64, h: f64, d: &Detail) {
 /// Add Mirror… (§7.1 M2, M3): one address per line.
 pub fn ask_mirrors(ctx: &Ctx, id: u64) {
     let Some(name) = ctx.manager.detail(id).map(|d| d.row.name) else { return };
-    let dialog = adw::AlertDialog::new(Some("Add Mirror"), Some(&format!("Other links to “{name}”, one per line. Each is checked before it's used.")));
+    let dialog = adw::AlertDialog::new(Some("Add Mirror"), Some("Other servers with the same file, one address per line. A running download starts using them at once."));
     let text = gtk::TextView::builder().wrap_mode(gtk::WrapMode::None).build();
     let scroll = gtk::ScrolledWindow::builder().child(&text).min_content_height(90).min_content_width(420).has_frame(true).build();
     dialog.set_extra_child(Some(&scroll));
