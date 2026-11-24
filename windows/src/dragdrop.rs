@@ -184,7 +184,7 @@ pub(crate) unsafe fn bytes(memory: windows::Win32::Foundation::HGLOBAL) -> Vec<u
 pub(crate) fn html_fragment(data: &[u8]) -> String {
     let text = String::from_utf8_lossy(data);
     let fragment = fragment(data);
-    let header = text.lines().take_while(|l| !l.trim_start().starts_with('<'));
+    let mut header = text.lines().take_while(|l| !l.trim_start().starts_with('<'));
     let source = header.find_map(|l| l.strip_prefix("SourceURL:")).and_then(|u| hd_core::links::copied_from(u.as_bytes()));
     match source {
         Some(base) => hd_core::links::absolute_html(&fragment, &base),
