@@ -307,3 +307,6 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Linux
   - [ ] Windows
 - [x] **`scripts/check.sh` runs clippy on every machine:** after the tests, `cargo clippy --workspace --all-targets` on the Mac, Linux and Windows, failing only on clippy's deny-level lints (warnings are left alone, no `-D warnings`). *Requested 2026-11-20.* Developer tooling, all platforms. Shipped in #39.
+- [ ] **Linux and Windows work 1:1 like the Mac:** check every function against the Mac version and close the gaps, tested on each machine. *Requested 2026-11-24.* A code audit of every spec section and the feature suites on all three (22 of 22 passing on each, the observer clean on Linux and Windows) found about 30 differences on Linux and 15 on Windows: Linux quit when its window closed, kept no layout, didn't ask before Pause or Restart lost data, lacked Open With, the Connections ▸ lines, the Edit items, column titles and hover text in places, and its enable rules differed; Windows lacked dimmed speed-limit fields, red source states, some hover text and the alerts' keyboard highlight. Import Links on both read only plain-text files.
+  - [ ] Linux
+  - [ ] Windows

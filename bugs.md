@@ -128,3 +128,11 @@ No bugs reported yet.
   - [x] Linux
   - [x] Windows
 - [ ] **The guard test misses commits in the shared checkout given as a Windows path** (*found in testing*, 2026-11-20). Windows (`tests/guard/guard-bash.test.mjs`). `check` lets `git -C C:\Users\…\Projects\herbs-download-manager commit -m x` through, so "commit, PR merge and branch switch in the shared checkout" fails; the backslash path isn't matched as the shared checkout.
+- [ ] **The Linux list sorted by Mirrors at launch instead of Date Added** (*found in testing*, 2026-11-24). Linux. The default sort picked the eighth column, which is Mirrors.
+  - [ ] Linux
+- [ ] **Linux removed the Administrator Password without asking** (*found in testing*, 2026-11-24). Linux. Leaving both new-password fields blank removed it at once; the Mac first asks "Remove the Administrator Password?", with Cancel the default.
+  - [ ] Linux
+- [ ] **Redo on Windows undid instead of redoing** (*found in testing*, 2026-11-24). Windows. Edit ▸ Redo sent the same message as Undo.
+  - [ ] Windows
+- [ ] **Linux's accessibility audit read only one control in the main window** (*found in testing*, 2026-11-24). Linux (`linux/scripts/a11y-audit.sh`). It reported 12 Settings controls without hover text (the scheduler's days and times), but missed the main window's.
+  - [ ] Linux
