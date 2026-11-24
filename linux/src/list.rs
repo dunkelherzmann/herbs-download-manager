@@ -36,6 +36,8 @@ pub fn shown_at_first(key: &str) -> bool {
 type Cells = Rc<RefCell<HashMap<(u64, &'static str), glib::WeakRef<gtk::Widget>>>>;
 /// What links dropped on a download do (they become its mirrors, §7.1 M4), set by the window.
 pub type RowDrop = Rc<RefCell<Option<Rc<dyn Fn(u64, Vec<String>)>>>>;
+/// What a right-click on a download does (§4.1): its id, and the point in the list's coordinates.
+pub type RowMenu = Rc<RefCell<Option<Rc<dyn Fn(u64, f64, f64)>>>>;
 
 #[derive(Clone)]
 pub struct DownloadList {
@@ -47,6 +49,7 @@ pub struct DownloadList {
     cells: Cells,
     order: Rc<RefCell<Vec<u64>>>,
     pub on_drop: RowDrop,
+    pub on_menu: RowMenu,
 }
 
 /// "Today at 10:48", "Yesterday at 09:02", or "3 Nov 2026 at 17:20".
@@ -77,10 +80,35 @@ fn cell_text(column: &str, r: &Row) -> String {
         "mirrors" => r.mirrors_text.clone(),
         "added" => date_text(Some(r.added)),
         "finished" => date_text(r.finished),
-        "location" => r.folder.display().to_string(),
+        "location" => tilde(&r.folder),
         "note" => r.note.clone(),
         _ => String::new(),
     }
+}
+
+/// A folder as the Mac shows it: the home folder as ~.
+pub fn tilde(path: &std::path::Path) -> String {
+    match path.strip_prefix(glib::home_dir()) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => path.display().to_string(),
+    }
+}
+
+/// A cell's right-click: selects its download when it isn't selected and opens the menu (§4.1).
+fn row_menu_gesture(cell: &gtk::Widget, cells: Cells, on_menu: RowMenu, view: glib::WeakRef<gtk::ColumnView>) -> gtk::GestureClick {
+    let click = gtk::GestureClick::builder().button(gtk::gdk::BUTTON_SECONDARY).build();
+    let cell = cell.downgrade();
+    click.connect_pressed(move |g, _, x, y| {
+        let (Some(cell), Some(view)) = (cell.upgrade(), view.upgrade()) else { return };
+        let id = cells.borrow().iter().find(|(_, w)| w.upgrade().as_ref() == Some(&cell)).map(|((id, _), _)| *id);
+        let (Some(id), Some(run)) = (id, on_menu.borrow().clone()) else { return };
+        g.set_state(gtk::EventSequenceState::Claimed);
+        let point = cell.compute_point(&view, &gtk::graphene::Point::new(x as f32, y as f32));
+        let (px, py) = point.map(|p| (p.x() as f64, p.y() as f64)).unwrap_or((x, y));
+        run(id, px, py);
+    });
+    click
 }
 
 /// The file type's icon from the desktop's icon theme, by its name's content type.
@@ -126,14 +154,16 @@ impl DownloadList {
         let rows: Rc<RefCell<HashMap<u64, Row>>> = Rc::default();
         let cells: Cells = Rc::default();
         let on_drop: RowDrop = Rc::default();
+        let on_menu: RowMenu = Rc::default();
         let view = gtk::ColumnView::builder().show_column_separators(true).reorderable(true).build();
+        let weak_view = view.downgrade();
         view.add_css_class("data-table");
         let id_of = |o: &glib::Object| o.downcast_ref::<gtk::StringObject>().and_then(|s| s.string().parse::<u64>().ok());
         let header_menu = gio::Menu::new();
 
         for (key, title, width) in COLUMNS {
             let factory = gtk::SignalListItemFactory::new();
-            let (cells_d, on_drop_d) = (cells.clone(), on_drop.clone());
+            let (cells_d, on_drop_d, on_menu_d, view_d) = (cells.clone(), on_drop.clone(), on_menu.clone(), weak_view.clone());
             factory.connect_setup(move |_, item| {
                 let item = item.downcast_ref::<gtk::ListItem>().unwrap();
                 if key == "name" {
@@ -154,6 +184,7 @@ impl DownloadList {
                 // Links dropped on a download become its mirrors (§7.1 M4); elsewhere they open Add Links.
                 if let Some(child) = item.child() {
                     child.add_controller(row_drop_target(&child, cells_d.clone(), on_drop_d.clone()));
+                    child.add_controller(row_menu_gesture(&child, cells_d.clone(), on_menu_d.clone(), view_d.clone()));
                 }
             });
             let (rows_b, cells_b) = (rows.clone(), cells.clone());
@@ -200,11 +231,12 @@ impl DownloadList {
         let sorted = gtk::SortListModel::new(Some(store.clone()), Some(sorter.clone()));
         let selection = gtk::MultiSelection::new(Some(sorted));
         view.set_model(Some(&selection));
+        let list = DownloadList { view, selection, store, sorter, rows, cells, order: Rc::default(), on_drop, on_menu };
         // Date Added, newest first (L8's default).
-        if let Some(added) = view.columns().item(7).and_downcast::<gtk::ColumnViewColumn>() {
-            view.sort_by_column(Some(&added), gtk::SortType::Descending);
+        if let Some(added) = list.column("added") {
+            list.view.sort_by_column(Some(&added), gtk::SortType::Descending);
         }
-        DownloadList { view, selection, store, sorter, rows, cells, order: Rc::default(), on_drop }
+        list
     }
 
     /// Shows `rows` filtered by status, file type and search text, updating cells in place when the same downloads
@@ -266,6 +298,60 @@ impl DownloadList {
         self.rows.borrow().get(&id).cloned()
     }
 
+    /// A column by its key.
+    pub fn column(&self, key: &str) -> Option<gtk::ColumnViewColumn> {
+        let columns = self.view.columns();
+        (0..columns.n_items())
+            .filter_map(|c| columns.item(c).and_downcast::<gtk::ColumnViewColumn>())
+            .find(|c| c.id().as_deref() == Some(key))
+    }
+
+    /// The columns' layout, as one line per column in their order: `key width shown`, then `sort key ascending`.
+    pub fn layout_text(&self) -> String {
+        let columns = self.view.columns();
+        let mut out = String::new();
+        for c in (0..columns.n_items()).filter_map(|c| columns.item(c).and_downcast::<gtk::ColumnViewColumn>()) {
+            out.push_str(&format!("column {} {} {}\n", c.id().unwrap_or_default(), c.fixed_width(), c.is_visible() as u8));
+        }
+        if let Some(sorter) = self.view.sorter().and_downcast::<gtk::ColumnViewSorter>()
+            && let Some(column) = sorter.primary_sort_column()
+        {
+            let ascending = sorter.primary_sort_order() == gtk::SortType::Ascending;
+            out.push_str(&format!("sort {} {}\n", column.id().unwrap_or_default(), ascending as u8));
+        }
+        out
+    }
+
+    /// Puts back a layout saved by `layout_text`; returns the columns shown, for View ▸ Columns' checkmarks.
+    pub fn apply_layout(&self, text: &str) {
+        let mut position = 0;
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split(' ').collect();
+            match parts.as_slice() {
+                ["column", key, width, shown] => {
+                    if let Some(c) = self.column(key) {
+                        if let Ok(w) = width.parse::<i32>() && w > 20 {
+                            c.set_fixed_width(w);
+                        }
+                        if *key != "name" {
+                            c.set_visible(*shown == "1");
+                        }
+                        self.view.remove_column(&c);
+                        self.view.insert_column(position, &c);
+                        position += 1;
+                    }
+                }
+                ["sort", key, ascending] => {
+                    if let Some(c) = self.column(key) {
+                        let order = if *ascending == "1" { gtk::SortType::Ascending } else { gtk::SortType::Descending };
+                        self.view.sort_by_column(Some(&c), order);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn set_column_visible(&self, key: &str, visible: bool) {
         let columns = self.view.columns();
         for c in 0..columns.n_items() {
@@ -321,9 +407,15 @@ fn show_cell(key: &str, widget: &gtk::Widget, r: &Row) {
         line.update_property(&[gtk::accessible::Property::Label(&format!("{}, {}", r.name, r.status_text))]);
     } else if let Some(label) = widget.downcast_ref::<gtk::Label>() {
         let text = cell_text(key, r);
-        // A long note is cut short in its column: the whole of it shows on hover.
-        if key == "note" {
+        // Status, Location and Note can be cut short in their columns: the whole text shows on hover, as on the Mac.
+        if matches!(key, "status" | "location" | "note") {
             label.set_tooltip_text(Some(&text).filter(|t| !t.is_empty()).map(|t| t.as_str()));
+        }
+        // A failed download's status is red (§2.2).
+        if key == "status" && matches!(r.status, Status::Failed(_)) {
+            label.add_css_class("error");
+        } else {
+            label.remove_css_class("error");
         }
         label.set_label(&text);
     }

@@ -48,6 +48,9 @@ impl TimeRow {
         let minutes = spin(59.0, minutes_now % 60, "minutes");
         let on = gtk::Switch::builder().active(value.is_some()).valign(gtk::Align::Center).build();
         on.update_property(&[gtk::accessible::Property::Label(title)]);
+        for s in [&hours, &minutes] {
+            s.set_tooltip_text(Some(&format!("Time to {} the queue", if title.starts_with("Start") { "start" } else { "stop" })));
+        }
         let time = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         time.append(&hours);
         time.append(&gtk::Label::new(Some(":")));
@@ -65,12 +68,30 @@ impl TimeRow {
     }
 }
 
-fn spin(title: &str, subtitle: &str, low: f64, high: f64, value: u32) -> adw::SpinRow {
+fn spin(title: &str, subtitle: &str, low: f64, high: f64, value: u32, help: &str) -> adw::SpinRow {
     let row = adw::SpinRow::with_range(low, high, 1.0);
     row.set_title(title);
     row.set_subtitle(subtitle);
     row.set_value(value as f64);
+    explain_spin(&row, title, help);
     row
+}
+
+/// Hover text, as on the Mac, for a spin row and the number field inside it.
+fn explain_spin(row: &adw::SpinRow, name: &str, help: &str) {
+    crate::explain_row(row, help);
+    let mut stack = vec![row.clone().upcast::<gtk::Widget>()];
+    while let Some(w) = stack.pop() {
+        if w.is::<gtk::SpinButton>() || w.is::<gtk::Text>() {
+            w.set_tooltip_text(Some(help));
+            w.update_property(&[gtk::accessible::Property::Label(name), gtk::accessible::Property::Description(help)]);
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            child = c.next_sibling();
+            stack.push(c);
+        }
+    }
 }
 
 pub fn open(ctx: &Ctx) {
@@ -100,19 +121,23 @@ pub fn open(ctx: &Ctx) {
         let window = ctx.window.clone();
         show.connect_clicked(move |_| match hd_core::browser::extension_folder(&crate::data_folder()) {
             Ok(folder) => gtk::FileLauncher::new(Some(&gio::File::for_path(folder))).launch(Some(&window), None::<&gio::Cancellable>, |_| {}),
-            Err(e) => eprintln!("The extension can't be written: {e}"),
+            Err(e) => crate::add::alert(&window, "The extension can't be written.", &e.to_string()),
         });
     }
 
     // S1: Save downloads to.
     let folder = adw::ActionRow::builder().title("Save downloads to").subtitle(crate::save_folder(&ctx.manager).display().to_string()).build();
+    // The whole path on hover, as on the Mac (a long one is cut short).
+    folder.set_tooltip_text(Some(&crate::save_folder(&ctx.manager).display().to_string()));
+    folder.connect_subtitle_notify(|row| row.set_tooltip_text(row.subtitle().as_deref()));
     let choose = gtk::Button::builder().label("Choose…").valign(gtk::Align::Center).tooltip_text("Choose the folder new downloads are saved to").build();
     let reset = gtk::Button::builder().label("Use Downloads").valign(gtk::Align::Center).tooltip_text("Save new downloads to your Downloads folder").build();
     folder.add_suffix(&choose);
     folder.add_suffix(&reset);
     downloads.add(&folder);
     // S4, S5.
-    let at_once = spin("Downloads at once", "Downloads the queue runs at the same time", 1.0, 10.0, s.downloads_at_once);
+    let at_once = spin("Downloads at once", "Downloads the queue runs at the same time", 1.0, 10.0, s.downloads_at_once,
+                       "Downloads the queue runs at the same time (1–10)");
     downloads.add(&at_once);
     let limit = adw::ExpanderRow::builder().title("Speed limit").subtitle("All downloads together").show_enable_switch(true)
         .enable_expansion(s.speed_limit.is_some()).build();
@@ -127,15 +152,20 @@ pub fn open(ctx: &Ctx) {
         Some(l) => limit_value.set_value(l as f64 / 1_000.0),
         None => limit_value.set_value(500.0),
     }
+    explain_spin(&limit_value, "Limit to", "The most all downloads together may download each second");
+    crate::explain_row(&unit, "Kilobytes or megabytes a second");
     limit.add_row(&limit_value);
     limit.add_row(&unit);
     crate::explain_row(&limit, "Limit the speed of all downloads together");
     downloads.add(&limit);
 
     // S2, S3, S6.
-    let per_download = spin("Connections per download", "The most a new download uses (New Download can choose another)", 1.0, 32.0, s.connections);
-    let per_server = spin("Connections per server", "To any one server, from a download's next start", 1.0, 32.0, s.connections_per_server);
-    let retries = spin("Retries per source", "Times a link or mirror is tried again before it counts as failed", 0.0, 20.0, s.retries);
+    let per_download = spin("Connections per download", "The most a new download uses (New Download can choose another)", 1.0, 32.0, s.connections,
+                            "Connections a new download uses at most (1–32); New Download can choose another number");
+    let per_server = spin("Connections per server", "To any one server, from a download's next start", 1.0, 32.0, s.connections_per_server,
+                        "Connections a download opens to any one server (1–32), from its next start");
+    let retries = spin("Retries per source", "Times a link or mirror is tried again before it counts as failed", 0.0, 20.0, s.retries,
+                     "Times a link or mirror is tried again after failing before it counts as failed (0–20)");
     connections.add(&per_download);
     connections.add(&per_server);
     connections.add(&retries);
@@ -165,13 +195,19 @@ pub fn open(ctx: &Ctx) {
 
     // Q1–Q4 (§11.1).
     let start = TimeRow::new("Start the queue at", "On the days chosen below", s.schedule.start, 60);
+    crate::explain_row(&start.row, "Start the queue at this time on the days chosen below");
+    start.on.set_tooltip_text(Some("Start the queue at this time on the days chosen below"));
     let stop = TimeRow::new("Stop the queue at", "Running downloads wait for the next start", s.schedule.stop, 7 * 60);
-    crate::explain_row(&stop.row, "Stop the queue at this time; running downloads pause and wait in the queue for the next start. A time before the start time is the next morning's");
+    let stop_help = "Stop the queue at this time; downloads still running pause and wait in the queue for the next start. A time before the start time is the next morning's";
+    crate::explain_row(&stop.row, stop_help);
+    stop.on.set_tooltip_text(Some(stop_help));
     let days_row = adw::ActionRow::builder().title("On").build();
     let days_box = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    let days: Vec<gtk::CheckButton> = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].iter().zip(s.schedule.days)
-        .map(|(name, on)| {
+    let full = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    let days: Vec<gtk::CheckButton> = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].iter().zip(full).zip(s.schedule.days)
+        .map(|((name, day), on)| {
             let b = gtk::CheckButton::builder().label(*name).active(on).build();
+            crate::explain(&b, name, &format!("Start the queue on {day}s"));
             days_box.append(&b);
             b
         })

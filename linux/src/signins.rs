@@ -246,6 +246,28 @@ fn create_or_modify_with(ctx: &Ctx, message: Option<String>, then: Then, otherwi
         if modifying && !vault.unlock(&old) {
             return again("The current password is wrong.");
         }
+        // Removing the protection asks first, Cancel the default; Cancel goes back to the password dialog.
+        if modifying && value.is_empty() {
+            let c = alert("Remove the Administrator Password?",
+                          "Saved sign-ins, passwords and cookies included, will be stored as plain text: anyone or anything that can read your files could read them.");
+            c.add_response("cancel", "Cancel");
+            c.add_response("remove", "Remove Password");
+            c.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+            c.set_default_response(Some("cancel"));
+            c.set_close_response("cancel");
+            let (ctx3, then, otherwise) = (ctx2.clone(), then.clone(), otherwise.clone());
+            c.connect_response(None, move |_, response| {
+                if response != "remove" {
+                    return create_or_modify_with(&ctx3, None, then.clone(), otherwise.clone());
+                }
+                match ctx3.manager.vault().change_password("") {
+                    Ok(()) => then(),
+                    Err(e) => create_or_modify_with(&ctx3, Some(e), then.clone(), otherwise.clone()),
+                }
+            });
+            c.present(Some(&ctx2.window));
+            return;
+        }
         let result = if modifying { vault.change_password(&value) } else { vault.create_password(&value) };
         match result {
             Ok(()) => then(),
