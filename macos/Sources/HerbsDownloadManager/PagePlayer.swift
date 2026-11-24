@@ -54,9 +54,8 @@ final class PagePlayer: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     }
 
     nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let line = message.body as? String else { return }
         MainActor.assumeIsolated {
-            guard done != nil, !seen.contains(line) else { return }
+            guard let line = message.body as? String, done != nil, !seen.contains(line) else { return }
             let first = !seen.contains { playedIsPlaylist(seen: $0) }
             seen.append(line)
             // Once a playlist turned up, its other qualities and sound follow within moments.
