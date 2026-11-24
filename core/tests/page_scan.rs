@@ -168,3 +168,32 @@ fn hdm_scans_a_page_and_adds_what_it_found() {
     assert!(mcp.contains("a.zip") && mcp.contains("\"isError\":false"), "{mcp}");
     assert!(m.quit(std::time::Duration::from_secs(5)));
 }
+
+/// A server's folder listing (§15), as JDownloader reads one: every file in it whatever its type or size, its
+/// subfolders' files too, archives split in parts, and small checksum files.
+#[test]
+fn a_folder_listing_lists_every_file_and_its_subfolders() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let s = rt.block_on(MockServer::start()).unwrap();
+    let html = |title: &str, links: &[&str]| {
+        let rows: String = links.iter().map(|l| format!("<a href=\"{l}\">{l}</a>\n")).collect();
+        typed(format!("<html><head><title>Index of {title}</title></head><body><h1>Index of {title}</h1><a href=\"?C=N;O=D\">Name</a>\n<a href=\"../\">Parent Directory</a>\n{rows}</body></html>").into_bytes(), &["Content-Type: text/html"])
+    };
+    s.put("/pub/", html("/pub/", &["big.7z.001", "big.7z.002", "big.sfv", "README", "extra/"]));
+    s.put("/pub/extra/", html("/pub/extra/", &["notes.bin"]));
+    s.put("/pub/big.7z.001", typed(pattern(40_000, 1), &["Content-Type: application/octet-stream"]));
+    s.put("/pub/big.7z.002", typed(pattern(30_000, 2), &["Content-Type: application/octet-stream"]));
+    s.put("/pub/big.sfv", typed(b"big.7z.001 1234abcd\n".to_vec(), &["Content-Type: text/plain"]));
+    s.put("/pub/README", typed(b"Read me first.\n".to_vec(), &["Content-Type: application/octet-stream"]));
+    s.put("/pub/extra/notes.bin", typed(pattern(500, 3), &["Content-Type: application/octet-stream"]));
+    let dir = common::Scratch::new("scan-listing");
+    let m = Manager::open(&dir).unwrap();
+    let scan = m.scan_page(&s.url("/pub/")).unwrap();
+    let mut listed: Vec<(&str, Option<u64>)> = scan.found.iter().map(|f| (f.name.as_str(), f.size)).collect();
+    listed.sort();
+    assert_eq!(
+        listed,
+        [("README", Some(15)), ("big.7z.001", Some(40_000)), ("big.7z.002", Some(30_000)), ("big.sfv", Some(20)), ("notes.bin", Some(500))],
+        "every file in the folder and its subfolder, small ones included; never the parent or the sorting links"
+    );
+}

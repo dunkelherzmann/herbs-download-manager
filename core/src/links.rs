@@ -66,33 +66,165 @@ pub fn tree(files: &[(String, Vec<String>)]) -> String {
 }
 
 /// Every http, https and ftp link in plain text or HTML, in order, without repeats. Trailing punctuation that
-/// belongs to the sentence (".", ",", ")", quotes) is left out.
+/// belongs to the sentence (".", ",", ")", quotes) is left out. As JDownloader reads a paste: `hxxp://` and `h**p://`
+/// (written so a link isn't clickable) count as `http://`; links run together (`…a.ziphttps://…`) are split; a link
+/// inside another's query (`?u=https%3A%2F%2F…`) is found too, after it; `www.` addresses count without their
+/// `http://`, and so does a paste that is only one `domain.tld/path`.
 pub fn find(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
+    let text = &unmask(text);
+    let mut found: Vec<(usize, String)> = Vec::new();
     let lower = text.to_ascii_lowercase();
     let mut i = 0;
     while i < text.len() {
         let rest = &lower[i..];
         let Some(at) = ["https://", "http://", "ftp://"].iter().filter_map(|p| rest.find(p)).min() else { break };
         let start = i + at;
-        let end = text[start..]
-            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | '`' | '[' | ']' | '{' | '}' | '|' | '\\'))
-            .map_or(text.len(), |n| start + n);
-        let mut link = &text[start..end];
-        while let Some(last) = link.chars().last() {
-            let unbalanced_paren = last == ')' && link.matches('(').count() < link.matches(')').count();
-            if matches!(last, '.' | ',' | ';' | ':' | '!' | '?') || unbalanced_paren {
-                link = &link[..link.len() - last.len_utf8()];
-            } else {
-                break;
-            }
-        }
-        let link = link.replace("&amp;", "&");
-        if reqwest::Url::parse(&link).is_ok_and(|u| u.host_str().is_some()) && !out.contains(&link) {
-            out.push(link);
+        let end = link_end(text, start);
+        // Run together: a scheme right after a letter or digit starts the next link.
+        let glued = ["https://", "http://", "ftp://"]
+            .iter()
+            .filter_map(|p| lower[start + 1..end].find(p).map(|n| start + 1 + n))
+            .filter(|&n| text[..n].chars().last().is_some_and(|c| c.is_ascii_alphanumeric()))
+            .min();
+        let end = glued.unwrap_or(end);
+        if let Some(link) = clean(&text[start..end]) {
+            let inner = inner_links(&link);
+            found.push((start, link));
+            found.extend(inner.into_iter().map(|l| (start, l)));
         }
         i = end.max(start + 1);
     }
+    // `www.` addresses without a scheme: a word that starts with "www.".
+    let mut from = 0;
+    while let Some(n) = lower[from..].find("www.") {
+        let start = from + n;
+        from = start + 4;
+        if text[..start].chars().last().is_some_and(|c| c.is_alphanumeric() || "./-:@_%=".contains(c)) {
+            continue;
+        }
+        let end = link_end(text, start);
+        if let Some(link) = clean(&format!("http://{}", &text[start..end])).filter(|l| has_real_host(l)) {
+            found.push((start, link));
+        }
+    }
+    // The whole paste is one address without a scheme: "example.com/files/a.zip".
+    let trimmed = text.trim();
+    if found.is_empty() && !trimmed.contains(char::is_whitespace) && trimmed.contains('/') && !trimmed.starts_with('/') {
+        if let Some(link) = clean(&format!("http://{trimmed}")).filter(|l| has_real_host(l)) {
+            found.push((0, link));
+        }
+    }
+    found.sort_by_key(|(at, _)| *at);
+    let mut out: Vec<String> = Vec::new();
+    for (_, link) in found {
+        if !out.contains(&link) {
+            out.push(link);
+        }
+    }
+    out
+}
+
+/// `hxxp://`, `hxxps://`, `h**p://` and the like, written so a link isn't clickable, as `http(s)://`.
+fn unmask(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &lower[i..];
+        let masked = rest.len() >= 7
+            && rest.as_bytes()[0] == b'h'
+            && rest.as_bytes()[1..3].iter().all(|b| matches!(b, b'x' | b'*' | b't'))
+            && &rest[1..3] != "tt"
+            && rest.as_bytes()[3] == b'p'
+            && (rest[4..].starts_with("://") || rest[4..].starts_with("s://"));
+        if masked && !text[..i].chars().last().is_some_and(|c| c.is_ascii_alphanumeric()) {
+            out.push_str("http");
+            i += 4;
+        } else {
+            let c = text[i..].chars().next().unwrap_or(' ');
+            out.push(c);
+            i += c.len_utf8();
+        }
+    }
+    out
+}
+
+/// Where a link that starts at `start` ends: at a space or a character links don't hold.
+fn link_end(text: &str, start: usize) -> usize {
+    text[start..]
+        .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>' | '`' | '[' | ']' | '{' | '}' | '|' | '\\'))
+        .map_or(text.len(), |n| start + n)
+}
+
+/// A link without the sentence's punctuation after it, and with `&amp;` as `&`; `None` if it isn't one.
+fn clean(raw: &str) -> Option<String> {
+    let mut link = raw;
+    while let Some(last) = link.chars().last() {
+        let unbalanced_paren = last == ')' && link.matches('(').count() < link.matches(')').count();
+        if matches!(last, '.' | ',' | ';' | ':' | '!' | '?') || unbalanced_paren {
+            link = &link[..link.len() - last.len_utf8()];
+        } else {
+            break;
+        }
+    }
+    let link = link.replace("&amp;", "&");
+    reqwest::Url::parse(&link).is_ok_and(|u| u.host_str().is_some()).then_some(link)
+}
+
+/// Links carried in another link's query, such as a redirect's `?url=https%3A%2F%2Fcdn.example.com%2Ff.zip`.
+fn inner_links(link: &str) -> Vec<String> {
+    let Ok(url) = reqwest::Url::parse(link) else { return Vec::new() };
+    url.query_pairs()
+        .map(|(_, v)| v.into_owned())
+        .filter(|v| v.starts_with("http://") || v.starts_with("https://"))
+        .filter_map(|v| clean(&v))
+        .collect()
+}
+
+/// A host written as a name with a dot and a top-level domain of letters ("example.com"), or an IP address: what a
+/// link without its scheme must have to count.
+fn has_real_host(link: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(link) else { return false };
+    match url.domain() {
+        Some(d) => {
+            let labels: Vec<&str> = d.split('.').collect();
+            labels.len() >= 2
+                && labels.iter().all(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+                && labels.last().is_some_and(|t| t.len() >= 2 && t.chars().all(|c| c.is_ascii_alphabetic()))
+        }
+        None => url.host_str().is_some(),
+    }
+}
+
+/// Copied HTML with its relative links (`href="files/a.zip"`, `src=…`) made whole against the page it was copied from
+/// (`base`, the address the browser puts with a copy), so that they are found as links too.
+pub fn absolute_html(html: &str, base: &str) -> String {
+    let Ok(base) = reqwest::Url::parse(base) else { return html.to_string() };
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while i < html.len() {
+        let next = ["href=", "src="].iter().filter_map(|a| lower[i..].find(a).map(|n| (i + n, a.len()))).min();
+        let Some((at, len)) = next else { break };
+        let value_at = at + len;
+        out.push_str(&html[i..value_at]);
+        let quote = html[value_at..].chars().next().filter(|c| *c == '"' || *c == '\'');
+        let body = value_at + quote.map_or(0, |_| 1);
+        let end = match quote {
+            Some(q) => html[body..].find(q).map_or(html.len(), |n| body + n),
+            None => html[body..].find(|c: char| c.is_whitespace() || c == '>').map_or(html.len(), |n| body + n),
+        };
+        let value = &html[body..end];
+        let whole = reqwest::Url::parse(value).is_ok();
+        let skip = value.starts_with('#') || value.to_ascii_lowercase().starts_with("javascript:") || value.to_ascii_lowercase().starts_with("mailto:");
+        out.push_str(&html[value_at..body]);
+        match base.join(&value.replace("&amp;", "&")) {
+            Ok(u) if !whole && !skip && !value.is_empty() => out.push_str(u.as_str()),
+            _ => out.push_str(value),
+        }
+        i = end;
+    }
+    out.push_str(&html[i..]);
     out
 }
 
@@ -313,6 +445,39 @@ mod tests {
             ]
         );
         assert!(find("no links, just http:// and words").is_empty());
+    }
+
+    #[test]
+    fn reads_a_paste_as_jdownloader_does() {
+        // Masked, run together, without a scheme, and a link inside a redirect's query.
+        assert_eq!(find("see hxxps://a.com/x.zip and h**p://b.org/y.iso"), vec!["https://a.com/x.zip", "http://b.org/y.iso"]);
+        assert_eq!(find("https://a.com/1.ziphttps://a.com/2.zip"), vec!["https://a.com/1.zip", "https://a.com/2.zip"]);
+        assert_eq!(
+            find("https://r.example.com/go?u=https%3A%2F%2Fcdn.example.com%2Ff.zip&x=1"),
+            vec!["https://r.example.com/go?u=https%3A%2F%2Fcdn.example.com%2Ff.zip&x=1", "https://cdn.example.com/f.zip"]
+        );
+        assert_eq!(find("Get it at www.example.com/files/a.zip, today."), vec!["http://www.example.com/files/a.zip"]);
+        assert_eq!(find("example.com/files/a.zip"), vec!["http://example.com/files/a.zip"]);
+        assert_eq!(find("  192.168.1.5:8080/a.iso\n"), vec!["http://192.168.1.5:8080/a.iso"]);
+        // Not links: a scheme inside a word, a path alone, a file name, words.
+        assert!(find("look at notes.txt and src/main.rs").is_empty());
+        assert!(find("files/a.zip").is_empty());
+        assert!(find("v1.2/notes").is_empty());
+        assert!(find("swww.example.com").is_empty());
+        // A link already written with its scheme isn't found twice.
+        assert_eq!(find("https://www.example.com/a.zip"), vec!["https://www.example.com/a.zip"]);
+        // "http" inside a query value isn't split off.
+        assert_eq!(find("https://a.com/?next=http://b.com/"), vec!["https://a.com/?next=http://b.com/", "http://b.com/"]);
+    }
+
+    #[test]
+    fn copied_html_links_count_against_their_page() {
+        let html = r##"<a href="files/a.zip">A</a> <a href='/b.iso'>B</a> <a href=c.pdf>C</a> <a href="#top">T</a> <a href="https://x.org/d.zip">D</a>"##;
+        let text = absolute_html(html, "https://example.com/dl/index.html");
+        assert_eq!(
+            find(&text),
+            vec!["https://example.com/dl/files/a.zip", "https://example.com/b.iso", "https://example.com/dl/c.pdf", "https://x.org/d.zip"]
+        );
     }
 
     #[test]

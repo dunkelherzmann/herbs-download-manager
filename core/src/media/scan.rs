@@ -91,6 +91,11 @@ const PER_HOST: usize = 4;
 /// Smaller pictures are icons and thumbnails; smaller other files are bits of the site.
 const PICTURE_MIN: u64 = 50 * 1024;
 const FILE_MIN: u64 = 10 * 1024;
+/// Small by nature, so kept whatever their size: checksums, recovery and info files, subtitles.
+const SMALL_EXT: &[&str] = &["par2", "sfv", "md5", "sha1", "sha256", "sha512", "nfo", "srt", "vtt", "ass", "ssa", "sub", "torrent"];
+/// A server's folder listing ("Index of /files/"): its subfolders are read this deep, at most this many of them.
+const LISTING_DEPTH: usize = 3;
+const LISTING_PAGES_MAX: usize = 40;
 
 const PAGE_EXT: &[&str] = &["html", "htm", "xhtml", "shtml", "php", "asp", "aspx", "jsp", "cgi", "pl"];
 const SITE_EXT: &[&str] = &["js", "mjs", "css", "json", "map", "woff", "woff2", "ttf", "otf", "eot", "ico", "svg", "webmanifest", "xml", "rss", "atom", "txt"];
@@ -104,9 +109,14 @@ fn kind_of_ext(ext: &str) -> Option<Kind> {
         | "rmvb" | "divx" => Kind::Video,
         "mp3" | "m4a" | "m4b" | "aac" | "ogg" | "oga" | "opus" | "flac" | "wav" | "wma" | "aiff" | "mka" | "ac3" | "ape" => Kind::Audio,
         "jpg" | "jpeg" | "png" | "gif" | "webp" | "avif" | "heic" | "tif" | "tiff" | "bmp" => Kind::Image,
-        "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "iso" | "dmg" | "img" => Kind::Archive,
-        "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp" | "epub" | "rtf" | "csv" => Kind::Document,
-        "exe" | "msi" | "pkg" | "deb" | "rpm" | "appimage" | "apk" | "flatpakref" | "torrent" => Kind::Program,
+        "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "lz" | "lzma" | "cab" | "iso" | "dmg" | "img" | "wim" => Kind::Archive,
+        // Archives split in parts: .001, .7z.002, .r00, .z01 (as JDownloader takes them).
+        _ if ext.len() == 3 && ext.chars().all(|c| c.is_ascii_digit()) => Kind::Archive,
+        _ if ext.len() == 3 && (ext.starts_with('r') || ext.starts_with('z')) && ext[1..].chars().all(|c| c.is_ascii_digit()) => Kind::Archive,
+        "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp" | "epub" | "rtf" | "csv" | "mobi" | "azw3" | "djvu"
+        | "cbz" | "cbr" | "srt" | "vtt" | "ass" | "ssa" | "sub" => Kind::Document,
+        "exe" | "msi" | "pkg" | "deb" | "rpm" | "appimage" | "apk" | "xapk" | "ipa" | "jar" | "bin" | "flatpakref" | "torrent" => Kind::Program,
+        "par2" | "sfv" | "md5" | "sha1" | "sha256" | "sha512" | "nfo" | "gguf" | "safetensors" | "ckpt" => Kind::Other,
         _ => return None,
     })
 }
@@ -282,6 +292,8 @@ struct Answer {
     /// A playlist's quality and sound playlists, to leave out of the list (a master lists them).
     variants: Vec<String>,
     is_playlist: bool,
+    /// The server answered with a web page.
+    html: bool,
 }
 
 /// How each request of a scan introduces itself: the browser's User-Agent, and the page the address was found on.
@@ -373,7 +385,7 @@ async fn check(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault,
         Some(ext) if !name.contains('.') => format!("{name}.{ext}"),
         _ => name,
     };
-    let mut answer = Answer { kind, name, size, variants: Vec::new(), is_playlist: false };
+    let mut answer = Answer { kind, name, size, variants: Vec::new(), is_playlist: false, html };
     // A playlist or manifest, by its type or address, or text that may be one whatever its address says.
     let maybe_stream = kind == Some(Kind::Stream) || by_ext == Some(Kind::Stream) || (!html && texty && size.is_none_or(|s| s < 4 * 1024 * 1024) && (kind.is_none() || kind == Some(Kind::Other)));
     if maybe_stream {
@@ -385,6 +397,10 @@ async fn check(client: &reqwest::Client, url: &Url, vault: &crate::vault::Vault,
         if !is_stream && kind == Some(Kind::Other) && mime.starts_with("text/") {
             return None;
         }
+    }
+    // Text the address names as a file the scan knows (subtitles, checksums, a .csv): a file, not a page.
+    if answer.kind.is_none() && !html {
+        answer.kind = by_ext;
     }
     Some(answer)
 }
@@ -503,9 +519,40 @@ pub async fn scan(client: &reqwest::Client, url: &str, vault: Arc<crate::vault::
         let ext = extension(u);
         PAGE_EXT.contains(&ext.as_str()) || SITE_EXT.contains(&ext.as_str()) || PIECE_EXT.contains(&ext.as_str())
     };
+    // A server's folder listing: every file in it is a candidate whatever its type, and its subfolders are read too.
+    let mut listed: HashSet<String> = HashSet::new();
+    let mut listing_files: Vec<(Url, String)> = Vec::new();
+    {
+        let mut folders: Vec<(Url, String, usize)> = pages.iter().filter(|(_, html, _)| is_listing(html)).map(|(u, h, _)| (u.clone(), h.clone(), 0)).collect();
+        let mut read_folders: HashSet<String> = folders.iter().map(|(u, _, _)| u.as_str().to_string()).collect();
+        let mut i = 0;
+        while i < folders.len() {
+            let (base, html, depth) = folders[i].clone();
+            i += 1;
+            let (files, subfolders) = listing_entries(&html, &base);
+            for f in files {
+                if listed.insert(f.to_string()) {
+                    listing_files.push((f, base.to_string()));
+                }
+            }
+            if depth + 1 > LISTING_DEPTH {
+                continue;
+            }
+            for sub in subfolders {
+                if read_folders.len() >= LISTING_PAGES_MAX || !read_folders.insert(sub.as_str().to_string()) {
+                    continue;
+                }
+                if let Ok(Read::Page(at, text)) = read_page(client, &sub, &vault, Some(base.as_str()), &asking, 12).await
+                    && is_listing(&text)
+                {
+                    folders.push((at, text, depth + 1));
+                }
+            }
+        }
+    }
     let page_urls: HashSet<String> = pages.iter().map(|(u, _, _)| u.as_str().to_string()).collect();
-    let mut seen = HashSet::new();
-    let mut candidates: Vec<(Url, String)> = Vec::new();
+    let mut seen: HashSet<String> = listed.clone();
+    let mut candidates: Vec<(Url, String)> = listing_files;
     let mut media_named = 0;
     for (base, html, _) in &pages {
         let text = super::scan_text::expand(html);
@@ -555,12 +602,18 @@ pub async fn scan(client: &reqwest::Client, url: &str, vault: Arc<crate::vault::
     let mut found = Vec::new();
     let mut names = HashSet::new();
     for (_, url, answer) in answers {
-        let Some(a) = answer else { continue };
+        let Some(mut a) = answer else { continue };
+        let in_listing = listed.contains(url.as_str());
+        // Whatever a folder listing holds is a file, unless it answers as a page.
+        if in_listing && a.kind.is_none() && !a.html {
+            a.kind = Some(Kind::Other);
+        }
         let Some(kind) = a.kind else { continue };
         if hidden.contains(url.as_str()) {
             continue;
         }
         let min = match kind {
+            _ if in_listing || SMALL_EXT.contains(&extension(&url).as_str()) => 0,
             Kind::Stream => 0,
             Kind::Image => PICTURE_MIN,
             _ => FILE_MIN,
@@ -581,6 +634,52 @@ pub async fn scan(client: &reqwest::Client, url: &str, vault: Arc<crate::vault::
         found.push(Found { url: url.to_string(), name, size: if kind == Kind::Stream { None } else { a.size }, kind });
     }
     Ok(Scan { title, found })
+}
+
+/// A server's own listing of a folder: Apache, nginx and lighttpd ("Index of /…"), Python's ("Directory listing
+/// for /…") and IIS ("[To Parent Directory]").
+fn is_listing(html: &str) -> bool {
+    let lower = html.to_ascii_lowercase();
+    lower.contains("<title>index of /") || lower.contains("<h1>index of /") || lower.contains("<title>directory listing for /")
+        || lower.contains("[to parent directory]")
+}
+
+/// A folder listing's files and subfolders: the links to what lies inside the folder, leaving out the parent, the
+/// sorting links (`?C=N;O=D`) and anything elsewhere.
+fn listing_entries(html: &str, folder: &Url) -> (Vec<Url>, Vec<Url>) {
+    let mut dir = folder.clone();
+    dir.set_query(None);
+    dir.set_fragment(None);
+    if !dir.path().ends_with('/') {
+        let path = dir.path().rsplit_once('/').map(|(p, _)| format!("{p}/")).unwrap_or_else(|| "/".into());
+        dir.set_path(&path);
+    }
+    let (mut files, mut folders) = (Vec::new(), Vec::new());
+    let lower = html.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(n) = lower[from..].find("<a ") {
+        let at = from + n;
+        from = at + 3;
+        let Some(end) = lower[at..].find('>').map(|e| at + e) else { break };
+        let tag = &html[at..end];
+        let tag_lower = &lower[at..end];
+        let Some(h) = tag_lower.find("href=") else { continue };
+        let raw = &tag[h + 5..];
+        let value = match raw.chars().next() {
+            Some(q @ ('"' | '\'')) => raw[1..].split(q).next().unwrap_or(""),
+            _ => raw.split(|c: char| c.is_whitespace()).next().unwrap_or(""),
+        };
+        let Ok(mut u) = dir.join(&unescape(value)) else { continue };
+        u.set_fragment(None);
+        if u.query().is_some() || u.host_str() != dir.host_str() || u.port_or_known_default() != dir.port_or_known_default() {
+            continue;
+        }
+        if !u.path().starts_with(dir.path()) || u.path() == dir.path() {
+            continue;
+        }
+        if u.path().ends_with('/') { folders.push(u) } else { files.push(u) }
+    }
+    (files, folders)
 }
 
 /// A link with no extension that may still be a file: a download path ("/download/…", "?file=…", "/get/…").
@@ -633,5 +732,26 @@ mod tests {
         assert_eq!(kind_of_type("image/svg+xml"), None);
         assert_eq!(kind_of_ext("pdf"), Some(Kind::Document));
         assert_eq!(kind_of_ext("js"), None);
+        for (ext, kind) in [("001", Kind::Archive), ("r00", Kind::Archive), ("z01", Kind::Archive), ("srt", Kind::Document), ("par2", Kind::Other), ("cbz", Kind::Document)] {
+            assert_eq!(kind_of_ext(ext), Some(kind), "{ext}");
+        }
+        assert_eq!(kind_of_ext("r2d"), None);
+    }
+
+    #[test]
+    fn a_folder_listing_gives_its_files_and_subfolders() {
+        let html = r#"<html><head><title>Index of /pub/iso/</title></head><body><h1>Index of /pub/iso/</h1>
+            <a href="?C=N;O=D">Name</a> <a href="/pub/">Parent Directory</a> <a href="disk1.img">disk1.img</a>
+            <a href='README'>README</a> <a href="old/">old/</a> <a href="https://elsewhere.org/x.zip">x</a>
+            <a href="part.7z.001">part</a></body></html>"#;
+        assert!(is_listing(html));
+        assert!(!is_listing("<html><title>Downloads</title></html>"));
+        let (files, folders) = listing_entries(html, &Url::parse("https://example.com/pub/iso/").unwrap());
+        let files: Vec<&str> = files.iter().map(|u| u.as_str()).collect();
+        assert_eq!(files, ["https://example.com/pub/iso/disk1.img", "https://example.com/pub/iso/README", "https://example.com/pub/iso/part.7z.001"]);
+        assert_eq!(folders.iter().map(|u| u.as_str()).collect::<Vec<_>>(), ["https://example.com/pub/iso/old/"]);
+        // A listing reached without its final slash still lists what's inside.
+        let (files, _) = listing_entries(html, &Url::parse("https://example.com/pub/iso/index.html").unwrap());
+        assert_eq!(files.len(), 3);
     }
 }
