@@ -127,7 +127,7 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
         view.add_NewWindowRequested(
             &NewWindowRequestedEventHandler::create(Box::new(|_, args| {
                 if let Some(args) = args {
-                    unsafe { args.SetHandled(true)? };
+                    args.SetHandled(true)?;
                 }
                 Ok(())
             })),
@@ -137,7 +137,7 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
             let _ = v4.add_DownloadStarting(
                 &DownloadStartingEventHandler::create(Box::new(|_, args| {
                     if let Some(args) = args {
-                        unsafe { args.SetCancel(true)? };
+                        args.SetCancel(true)?;
                     }
                     Ok(())
                 })),
@@ -148,23 +148,21 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
             let _ = v4.add_FrameCreated(
                 &FrameCreatedEventHandler::create(Box::new(move |_, args| {
                     let Some(args) = args else { return Ok(()) };
-                    let frame: ICoreWebView2Frame2 = unsafe { args.Frame()? }.cast()?;
+                    let frame: ICoreWebView2Frame2 = args.Frame()?.cast()?;
                     let n = n.clone();
                     let mut token = 0i64;
-                    unsafe {
-                        frame.add_WebMessageReceived(
-                            &FrameWebMessageReceivedEventHandler::create(Box::new(move |_, args| {
-                                if let Some(args) = args {
-                                    let mut text = PWSTR::null();
-                                    if unsafe { args.TryGetWebMessageAsString(&mut text) }.is_ok() {
-                                        n(take(text));
-                                    }
+                    frame.add_WebMessageReceived(
+                        &FrameWebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+                            if let Some(args) = args {
+                                let mut text = PWSTR::null();
+                                if args.TryGetWebMessageAsString(&mut text).is_ok() {
+                                    n(take(text));
                                 }
-                                Ok(())
-                            })),
-                            &mut token,
-                        )?;
-                    }
+                            }
+                            Ok(())
+                        })),
+                        &mut token,
+                    )?;
                     Ok(())
                 })),
                 &mut token,
@@ -176,7 +174,7 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
             &WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
                 if let Some(args) = args {
                     let mut text = PWSTR::null();
-                    if unsafe { args.TryGetWebMessageAsString(&mut text) }.is_ok() {
+                    if args.TryGetWebMessageAsString(&mut text).is_ok() {
                         n(take(text));
                     }
                 }
@@ -189,9 +187,9 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
         view.cast::<ICoreWebView2_2>()?.add_WebResourceResponseReceived(
             &WebResourceResponseReceivedEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
-                let request = unsafe { args.Request()? };
+                let request = args.Request()?;
                 let mut uri = PWSTR::null();
-                unsafe { request.Uri(&mut uri)? };
+                request.Uri(&mut uri)?;
                 let uri = take(uri);
                 let header = |headers: windows::core::Result<_>, name: PCWSTR| -> String {
                     let headers: ICoreWebView2HttpRequestHeaders = match headers {
@@ -199,13 +197,13 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
                         Err(_) => return String::new(),
                     };
                     let mut value = PWSTR::null();
-                    if unsafe { headers.GetHeader(name, &mut value) }.is_ok() { take(value) } else { String::new() }
+                    if headers.GetHeader(name, &mut value).is_ok() { take(value) } else { String::new() }
                 };
-                let frame = header(unsafe { request.Headers() }, w!("Referer"));
-                let mime = match unsafe { args.Response().and_then(|r| r.Headers()) } {
+                let frame = header(request.Headers(), w!("Referer"));
+                let mime = match args.Response().and_then(|r| r.Headers()) {
                     Ok(h) => {
                         let mut value = PWSTR::null();
-                        if unsafe { h.GetHeader(w!("Content-Type"), &mut value) }.is_ok() { take(value) } else { String::new() }
+                        if h.GetHeader(w!("Content-Type"), &mut value).is_ok() { take(value) } else { String::new() }
                     }
                     Err(_) => String::new(),
                 };
