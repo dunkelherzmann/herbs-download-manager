@@ -127,16 +127,28 @@ fn probe_in_background(window: HWND, manager: Manager, urls: Vec<String>) {
 struct Scanned {
     url: String,
     result: Result<hd_core::media::scan::Scan, String>,
+    /// Not an answer yet: the page's text had nothing, and its player is being looked at.
+    looking: bool,
 }
 
 fn scan_in_background(window: HWND, manager: Manager, url: String) {
     let handle = window.0 as isize;
     std::thread::spawn(move || {
-        let result = manager.scan_page(&url);
-        let answer = Box::new(Scanned { url, result });
-        unsafe {
-            let _ = PostMessageW(Some(HWND(handle as *mut _)), WM_SCANNED, WPARAM(0), LPARAM(Box::into_raw(answer) as isize));
+        let post = |answer: Scanned| unsafe {
+            let _ = PostMessageW(Some(HWND(handle as *mut _)), WM_SCANNED, WPARAM(0), LPARAM(Box::into_raw(Box::new(answer)) as isize));
+        };
+        let mut result = manager.scan_page(&url);
+        if result.as_ref().is_ok_and(|scan| scan.found.is_empty()) {
+            // Nothing in its text: its player may build the address only while it runs.
+            post(Scanned { url: url.clone(), result: Err(String::new()), looking: true });
+            let seen = crate::played::run(&url, &crate::data_folder());
+            if !seen.is_empty() {
+                let seen: Vec<_> = seen.iter().filter_map(|j| hd_core::media::played::parse(j)).collect();
+                let given = hd_core::media::scan::Given { played: hd_core::media::played::picked(&seen), ..Default::default() };
+                result = manager.scan_page_given(&url, given);
+            }
         }
+        post(Scanned { url, result, looking: false });
     });
 }
 
@@ -880,6 +892,10 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 let answer = Box::from_raw(lparam.0 as *mut Scanned);
                 with_form(hwnd, |f| {
                     let Some(at) = f.items.iter().position(|i| i.0 == answer.url) else { return };
+                    if answer.looking {
+                        f.items[at].3 = "Looking at the page's player…".into();
+                        return;
+                    }
                     match &answer.result {
                         Ok(scan) if !scan.found.is_empty() => {
                             let known: Vec<String> = f.items.iter().map(|i| i.0.clone()).collect();

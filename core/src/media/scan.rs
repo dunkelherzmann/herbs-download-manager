@@ -70,12 +70,14 @@ pub const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 pub const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /// What the browser extension hands over with a scan: the page as the browser shows it (every frame, after its
-/// scripts ran), the addresses it already fetched, and the browser's User-Agent.
+/// scripts ran), the addresses it already fetched, and the browser's User-Agent. `played` is what the app's own
+/// hidden run of the page saw (`super::played`), each address with the frame that asked for it.
 #[derive(Clone, Debug, Default)]
 pub struct Given {
     pub pages: Vec<GivenPage>,
     pub resources: Vec<String>,
     pub user_agent: Option<String>,
+    pub played: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -577,6 +579,15 @@ pub async fn scan(client: &reqwest::Client, url: &str, vault: Arc<crate::vault::
         u.set_fragment(None);
         if is_web(&u) && !skipped(&u) && kind_of_ext(&extension(&u)).is_some() && seen.insert(u.to_string()) {
             candidates.push((u, referer.clone()));
+        }
+    }
+    // What the app's hidden run of the page fetched or played: checked whatever its address looks like (a player's
+    // playlist is often just `/m3u8/ID`), with its frame as the Referer.
+    for (r, frame) in &given.played {
+        let Ok(mut u) = Url::parse(r) else { continue };
+        u.set_fragment(None);
+        if is_web(&u) && seen.insert(u.to_string()) {
+            candidates.insert(0, (u, if frame.is_empty() { referer.clone() } else { frame.clone() }));
         }
     }
     candidates.truncate(CHECK_MAX);

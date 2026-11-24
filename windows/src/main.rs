@@ -17,6 +17,8 @@ mod chrome;
 #[cfg(windows)]
 mod openwith;
 #[cfg(windows)]
+mod played;
+#[cfg(windows)]
 mod theme;
 #[cfg(windows)]
 mod detail;

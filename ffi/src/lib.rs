@@ -596,7 +596,14 @@ impl DownloadManager {
 
     /// Reads a web page and lists its files and media, each checked. Blocks: call it off the main thread.
     pub fn scan_page(&self, url: String) -> Result<PageScan, CoreError> {
-        let scan = self.inner.scan_page(&url).map_err(|message| CoreError::Message { message })?;
+        self.scan_page_played(url, Vec::new())
+    }
+
+    /// `scan_page` with what the app's hidden run of the page saw (`played_seen`, one line of the catch script each).
+    pub fn scan_page_played(&self, url: String, played_seen: Vec<String>) -> Result<PageScan, CoreError> {
+        let seen: Vec<_> = played_seen.iter().filter_map(|j| hd_core::media::played::parse(j)).collect();
+        let given = hd_core::media::scan::Given { played: hd_core::media::played::picked(&seen), ..Default::default() };
+        let scan = self.inner.scan_page_given(&url, given).map_err(|message| CoreError::Message { message })?;
         Ok(PageScan {
             title: scan.title,
             found: scan
@@ -743,6 +750,25 @@ pub fn speed_text(bytes_per_second: u64) -> String {
 #[uniffi::export]
 pub fn find_links(text: String) -> Vec<String> {
     hd_core::links::find(&text)
+}
+
+/// The script the hidden run of a page puts into every frame (§15).
+#[uniffi::export]
+pub fn played_catch_script() -> String {
+    hd_core::media::played::CATCH_SCRIPT.to_string()
+}
+
+/// How long the hidden run of a page waits, in seconds, and how much longer once a playlist turned up, in
+/// milliseconds.
+#[uniffi::export]
+pub fn played_wait() -> Vec<u64> {
+    vec![hd_core::media::played::WAIT_SECS, hd_core::media::played::AFTER_PLAYLIST_MS]
+}
+
+/// Whether a line from the catch script names a playlist (the run can end soon after).
+#[uniffi::export]
+pub fn played_is_playlist(seen: String) -> bool {
+    hd_core::media::played::parse(&seen).is_some_and(|s| hd_core::media::played::is_playlist(&s.url, &s.mime))
 }
 
 /// Copied HTML with its relative links made whole against the page it was copied from (`base`, §5.2).

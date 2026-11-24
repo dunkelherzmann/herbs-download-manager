@@ -431,7 +431,25 @@ impl AddLinks {
             item.size_label.set_label(&item.size_text);
         }
         let (manager, u) = (self.manager.clone(), url.to_string());
-        let scanned = gio::spawn_blocking(move || manager.scan_page(&u)).await.unwrap_or_else(|_| Err("The scan stopped".into()));
+        let mut scanned = gio::spawn_blocking(move || manager.scan_page(&u)).await.unwrap_or_else(|_| Err("The scan stopped".into()));
+        if matches!(&scanned, Ok(scan) if scan.found.is_empty()) {
+            // Nothing in its text: its player may build the address only while it runs.
+            for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
+                item.size_text = "Looking at the page's player…".into();
+                item.size_label.set_label(&item.size_text);
+            }
+            let seen = crate::played::run(url).await;
+            if !seen.is_empty() {
+                let (manager, u) = (self.manager.clone(), url.to_string());
+                scanned = gio::spawn_blocking(move || {
+                    let seen: Vec<_> = seen.iter().filter_map(|j| hd_core::media::played::parse(j)).collect();
+                    let given = hd_core::media::scan::Given { played: hd_core::media::played::picked(&seen), ..Default::default() };
+                    manager.scan_page_given(&u, given)
+                })
+                .await
+                .unwrap_or_else(|_| Err("The scan stopped".into()));
+            }
+        }
         match scanned {
             Ok(scan) if !scan.found.is_empty() => {
                 let page_row = self.items.borrow().iter().find(|i| i.url == url).map(|i| i.row.clone());

@@ -409,6 +409,7 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
                 pages: r.pages.iter().map(|p| crate::media::scan::GivenPage { url: p.url.clone(), html: p.html.clone() }).collect(),
                 resources: r.resources.clone(),
                 user_agent: r.user_agent.clone(),
+                played: Vec::new(),
             };
             match manager.scan_page_given(url, given) {
                 Err(e) => Answer::error(format!("Can't scan {url}: {e}")),
