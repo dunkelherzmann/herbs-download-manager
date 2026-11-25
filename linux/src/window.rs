@@ -553,10 +553,11 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     }
     // S16, Watch the clipboard: links copied in other apps open Add Links; copies made in this app are left alone.
     {
-        // GTK tells of the clipboard's contents when it first learns them too: the text seen last is kept (from the
-        // start), and only different text counts as copied.
+        // GTK tells of the clipboard's contents when it first learns them too: the text seen last is kept, and only
+        // different text counts as copied. What is there at the start is left alone, as on the Mac; under Wayland the
+        // app learns it only once it first has the keyboard, so until then the first text it hears of is that.
         let seen: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-        {
+        if !window.clipboard().formats().mime_types().is_empty() {
             let (seen, clipboard) = (seen.clone(), window.clipboard());
             glib::spawn_future_local(async move {
                 let text = crate::add::clipboard_text(&clipboard).await;
@@ -568,7 +569,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             let (ctx, clipboard, seen) = (ctx2.clone(), clipboard.clone(), seen.clone());
             glib::spawn_future_local(async move {
                 let text = crate::add::clipboard_text(&clipboard).await;
-                let new = seen.borrow().as_deref() != Some(text.as_str());
+                let new = seen.borrow().as_ref().is_some_and(|s| *s != text);
                 *seen.borrow_mut() = Some(text.clone());
                 // Copies made in this app, in any of its windows, are left alone (Copy Link in a Download window
                 // opened Add Links); the Mac leaves alone what is copied while it is the active app. Copies made
