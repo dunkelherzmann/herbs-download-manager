@@ -8,5 +8,6 @@ Icon=org.herbsdownloadmanager.app
 Terminal=false
 Categories=Network;FileTransfer;GTK;
 StartupNotify=true
-# Text and HTML files can be opened with it (not as their default app): the links in them open Add Links.
-MimeType=text/plain;text/html;
+# Text files can be opened with it (Open With): the links in them open Add Links. HTML is left out: with no default
+# browser set for it, the desktop would make this app the one that opens web pages.
+MimeType=text/plain;

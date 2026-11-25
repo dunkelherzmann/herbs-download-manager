@@ -246,7 +246,7 @@ Links, text, a web page's HTML (the addresses of its links), and text-based file
 the Dock icon open the Add Links window with every link they contain. The pointer shows the copy sign only when what
 is dragged holds links. Copied web pages count too: Add from Clipboard and Watch the clipboard read their HTML as well
 as their text. On Windows, files handed to the `.exe` (Open with, a drop on its icon or shortcut) open
-Import Links the same way, in the copy already running if there is one; on Linux, text and HTML files opened with the
+Import Links the same way, in the copy already running if there is one; on Linux, text files opened with the
 app from the file manager (Open With) do too.
 
 ### 5.6 A name in use
