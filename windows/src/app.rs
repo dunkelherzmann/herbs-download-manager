@@ -2073,6 +2073,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 LRESULT(0)
             }
             WM_DESTROY => {
+                // The Download, add and Settings windows aren't owned by this one, so they aren't destroyed with it:
+                // close them first, as quitting on the Mac closes every window, so none keeps the list alive while
+                // the app ends (a window left open hung the quit).
+                close_other_windows(hwnd);
                 save_layout(hwnd);
                 if with(|s| s.tray_icon).unwrap_or(false) {
                     let data = NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: 1, ..Default::default() };
@@ -2085,6 +2089,23 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 LRESULT(0)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        }
+    }
+}
+
+/// Destroys this thread's other top-level windows that no window owns (owned ones go with their owners).
+fn close_other_windows(main: HWND) {
+    unsafe extern "system" fn collect(hwnd: HWND, list: LPARAM) -> BOOL {
+        unsafe { (*(list.0 as *mut Vec<HWND>)).push(hwnd) };
+        TRUE
+    }
+    let mut others: Vec<HWND> = Vec::new();
+    unsafe {
+        let _ = EnumThreadWindows(windows::Win32::System::Threading::GetCurrentThreadId(), Some(collect), LPARAM(&mut others as *mut _ as isize));
+        for other in others.into_iter().filter(|&h| h != main && GetWindow(h, GW_OWNER).is_err()) {
+            if IsWindow(Some(other)).as_bool() {
+                let _ = DestroyWindow(other);
+            }
         }
     }
 }
