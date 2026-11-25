@@ -144,8 +144,10 @@ fn create(ctx: &Ctx, kind: Kind, title: &str, size: (i32, i32), controls: &[Spec
         // The Download window and Settings stand on their own, as the Mac's do (they stay when the main window hides
         // or minimizes); Add Mirror belongs to the window it was asked from.
         let owner = matches!(kind, Kind::Mirror { .. }).then_some(ctx.owner);
+        // On its own, it has its own taskbar button, where Minimize puts it.
+        let taskbar = if owner.is_none() { WS_EX_APPWINDOW } else { WINDOW_EX_STYLE::default() };
         // No icon in the title bar, as the Mac's windows have none.
-        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | frame,
+        let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME | taskbar, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | frame,
                                    CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, owner, None,
                                    Some(instance.into()), None)
             .unwrap_or_default();

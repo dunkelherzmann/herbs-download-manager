@@ -376,7 +376,8 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
         let mut rect = RECT { left: 0, top: 0, right: px(size.0), bottom: px(size.1) };
         let _ = AdjustWindowRectEx(&mut rect, style, false, WINDOW_EX_STYLE::default());
         let hwnd = CreateWindowExW(
-            WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT,
+            // Its own taskbar button, as it isn't owned by the main window.
+            WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT | WS_EX_APPWINDOW,
             w!("HerbsDMForm"),
             PCWSTR(t.as_ptr()),
             style | WS_VISIBLE,
