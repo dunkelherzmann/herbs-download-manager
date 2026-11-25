@@ -44,8 +44,9 @@ pub const BRIDGE: &str = r#"(() => {
       const v = document.querySelector('video');
       const r = response();
       const hls = (r && r.streamingData && r.streamingData.hlsManifestUrl) || '';
-      // Its player has played a few seconds of it (by then YouTube gave the page its full token), or it's live with a playlist.
-      if ((video.ready && v && v.currentTime > 4) || (video.live && hls)) { told = true; post({ hdm: 'video', video, hls }); }
+      // Its player has played a few seconds of it (by then YouTube gave the page its full token), or it's live (listed
+      // by its playlist when the player gave one, else said to wait for the broadcast's end).
+      if ((video.ready && v && v.currentTime > 4) || video.live) { told = true; post({ hdm: 'video', video, hls }); }
     } else if (a.type === 'piece') {
       post({ hdm: 'piece', ack: a.ack, track: a.track, init: !!a.init, data: base64(a.data) });
     } else if (a.type === 'done') {
