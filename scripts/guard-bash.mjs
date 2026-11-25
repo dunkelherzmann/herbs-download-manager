@@ -91,7 +91,8 @@ function strip(words) {
 }
 
 const expand = (word, home) => {
-    let v = word.value;
+    // An unquoted Windows path (C:\Users\…) loses its backslashes to the shell's rules; it still names that folder.
+    let v = /^[A-Za-z]:\\[^'"]*$/.test(word.raw) ? word.raw : word.value;
     if (!word.raw.startsWith("'") && !word.raw.startsWith('"')) v = v.replace(/^~(?=\/|$)/, home);
     return v.replace(/^\$\{?HOME\}?(?=\/|$)/, home);
 };
