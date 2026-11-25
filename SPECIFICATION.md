@@ -1021,7 +1021,8 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   player builds the video's address only while it runs; a video site's thumbnails don't count), Add Links says
   "Looking at the page's player…" and opens the page out of sight and muted in the system's own web engine (WebKit on
   the Mac and Linux, WebView2 on Windows), in a view of its own that keeps no cookies or files, inside a window nobody
-  sees (off every screen, fully transparent, ignoring the mouse; outside a window the player wouldn't really play),
+  sees (off every screen, fully transparent, ignoring the mouse; outside a window the player wouldn't really play), named to sites as the system's
+  browser (on the Mac "Version/… Safari/…" is added: without it Vimeo sends no player),
   for up to 15 seconds (1.5 seconds more once a playlist turns up). It notes what
   the page and its frames fetch or play, and the scan checks that with the frame as referer, so the row gives way to
   the stream the player would have played. A page with nothing on it even then stays as an unchecked row saying "Web
