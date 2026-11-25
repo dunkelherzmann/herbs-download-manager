@@ -488,7 +488,9 @@ pub fn run() {
         SendMessageW(sidebar, TVM_SELECTITEM, Some(WPARAM(TVGN_CARET as usize)), Some(LPARAM(sidebar_items[0].2)));
 
         // No sunken 3D edge: the window draws one-pixel lines between its parts (bands()).
-        let list = child(WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS, Default::default(), ID_LIST);
+        // WS_CLIPSIBLINGS: the find bar lies over the list's top right, and without it the list painted over the bar, so
+        // the search field took typing but never showed (2026-11-25).
+        let list = child(WC_LISTVIEWW, "", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS | WS_CLIPSIBLINGS.0, Default::default(), ID_LIST);
         set_font(list, text_font);
         SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, Some(WPARAM(0)),
                      Some(LPARAM((LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP) as isize)));

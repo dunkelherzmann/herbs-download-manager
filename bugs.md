@@ -185,3 +185,5 @@ No bugs reported yet.
   - [x] Linux
 - [x] **Nothing showed the app was still running once its window was closed** (*found in testing*, 2026-11-25). Linux. The Mac keeps its Dock icon, Windows its notification-area icon. Fixed in #55: an icon in the status area (a StatusNotifierItem, shown by Ubuntu's AppIndicator extension) while the window is closed, with Show Herb's Download Manager and Quit Herb's DM. Checked on Ubuntu: the icon appeared when the window closed, its Show brought the window back, and it went away.
   - [x] Linux
+- [x] **The Windows find bar took typing but never showed** (*found in testing*, 2026-11-25). Windows. Ctrl+F or Search put the keyboard in the search field, and typing filtered the list, but neither the field nor Done was drawn: they lie over the list's top right, and the list painted over them. The list now leaves its siblings' area alone (`WS_CLIPSIBLINGS`); checked in a test copy, the field shows with its text and Done beside it.
+  - [x] Windows
