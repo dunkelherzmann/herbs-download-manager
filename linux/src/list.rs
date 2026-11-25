@@ -68,6 +68,12 @@ pub fn date_text(seconds: Option<u64>) -> String {
     }
 }
 
+/// "1 Oct 2026 at 01:59", as the Mac's Download window writes dates (never "Today").
+pub fn full_date_text(seconds: u64) -> String {
+    glib::DateTime::from_unix_local(seconds as i64).ok().and_then(|d| d.format("%-d %b %Y at %H:%M").ok())
+        .map(|t| t.to_string()).unwrap_or_default()
+}
+
 /// A column's text for a row (L2–L10).
 fn cell_text(column: &str, r: &Row) -> String {
     let finished = r.status == Status::Finished;
@@ -117,35 +123,44 @@ fn file_icon(name: &str) -> gio::Icon {
     gio::content_type_get_symbolic_icon(&content_type)
 }
 
-/// A cell's drop target: links (text, or files holding links) dropped on it go to its download's mirrors.
-fn row_drop_target(cell: &gtk::Widget, cells: Cells, on_drop: RowDrop) -> gtk::DropTarget {
-    let target = gtk::DropTarget::new(glib::Type::INVALID, gtk::gdk::DragAction::COPY);
-    target.set_types(&[gtk::gdk::FileList::static_type(), glib::GString::static_type()]);
-    let cell = cell.downgrade();
-    target.connect_drop(move |_, value, _, _| {
-        let Some(cell) = cell.upgrade() else { return false };
-        let id = cells.borrow().iter().find(|(_, w)| w.upgrade().as_ref() == Some(&cell)).map(|((id, _), _)| *id);
-        let (Some(id), Some(run)) = (id, on_drop.borrow().clone()) else { return false };
-        let mut text = String::new();
-        if let Ok(files) = value.get::<gtk::gdk::FileList>() {
-            for f in files.files() {
-                text.push('\n');
-                match f.path() {
-                    Some(p) => text.push_str(&hd_core::links::text_of_file(&p).unwrap_or_default()),
-                    None => text.push_str(&f.uri()),
+/// Hover text on each column header: its title.
+fn header_hover(view: &gtk::ColumnView) {
+    let mut child = view.first_child();
+    while let Some(c) = child {
+        if c.css_name() == "header" {
+            let mut title = c.first_child();
+            while let Some(t) = title {
+                let mut stack = vec![t.clone()];
+                while let Some(w) = stack.pop() {
+                    if let Some(l) = w.downcast_ref::<gtk::Label>() {
+                        t.set_tooltip_text(Some(&l.label()).filter(|s| !s.is_empty()).map(|s| s.as_str()));
+                        break;
+                    }
+                    let mut g = w.first_child();
+                    while let Some(x) = g {
+                        g = x.next_sibling();
+                        stack.push(x);
+                    }
                 }
+                title = t.next_sibling();
             }
-        } else if let Ok(s) = value.get::<String>() {
-            text = s;
         }
-        let links = hd_core::links::find(&text);
-        if links.is_empty() {
-            return false;
+        child = c.next_sibling();
+    }
+}
+
+/// A cell's drop target: links (text, web-page text with its links, or files holding links) dropped on it go to its
+/// download's mirrors.
+fn row_drop_target(cell: &gtk::Widget, cells: Cells, on_drop: RowDrop) -> gtk::DropTargetAsync {
+    let cell = cell.downgrade();
+    crate::add::links_drop(|_| {}, move |links| {
+        let Some(cell) = cell.upgrade() else { return };
+        let id = cells.borrow().iter().find(|(_, w)| w.upgrade().as_ref() == Some(&cell)).map(|((id, _), _)| *id);
+        let (Some(id), Some(run)) = (id, on_drop.borrow().clone()) else { return };
+        if !links.is_empty() {
+            run(id, links);
         }
-        run(id, links);
-        true
-    });
-    target
+    })
 }
 
 impl DownloadList {
@@ -231,6 +246,16 @@ impl DownloadList {
         let sorted = gtk::SortListModel::new(Some(store.clone()), Some(sorter.clone()));
         let selection = gtk::MultiSelection::new(Some(sorted));
         view.set_model(Some(&selection));
+        // Each column's title on hover over its header, as on the Mac (GTK has no call for it: the headers are found
+        // once shown, and again when columns move).
+        view.connect_map(|v| header_hover(v));
+        {
+            let weak = view.downgrade();
+            view.columns().connect_items_changed(move |_, _, _, _| {
+                let weak = weak.clone();
+                glib::idle_add_local_once(move || if let Some(v) = weak.upgrade() { header_hover(&v) });
+            });
+        }
         let list = DownloadList { view, selection, store, sorter, rows, cells, order: Rc::default(), on_drop, on_menu };
         // Date Added, newest first (L8's default).
         if let Some(added) = list.column("added") {

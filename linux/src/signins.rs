@@ -61,6 +61,8 @@ pub fn ask_if_needed(ctx: &Ctx, rows: &[hd_core::manager::Row]) {
     let Some(row) = rows.iter().find(|r| r.needs_login.is_some() && !ASKED.with(|a| a.borrow().contains(&r.id))) else { return };
     ASKED.with(|a| a.borrow_mut().insert(row.id));
     ASKING.set(true);
+    // The prompt goes over the main window, brought back first if it was closed, as on the Mac.
+    ctx.window.present();
     ask_for_login(ctx, row.needs_login.as_deref().unwrap_or(""), Rc::new(|| ASKING.set(false)));
 }
 

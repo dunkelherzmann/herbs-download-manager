@@ -113,7 +113,7 @@ pub fn open(ctx: &Ctx) {
         .description("Chrome, Edge, Brave and Vivaldi: Extensions ▸ Developer mode ▸ Load Unpacked, and choose the folder. Firefox: about:debugging ▸ This Firefox ▸ Load Temporary Add-on, and choose manifest.json in it.").build();
     let extension = adw::ActionRow::builder().title("Chrome, Edge, Brave, Vivaldi and Firefox").build();
     let show = gtk::Button::builder().label("Show Extension Folder").valign(gtk::Align::Center)
-        .tooltip_text("Open the folder with the extension, to load it in the browser").build();
+        .tooltip_text("Show the extension that hands Chrome's, Edge's, Brave's, Vivaldi's and Firefox's downloads to the app").build();
     extension.add_suffix(&show);
     browsers.add(&extension);
     page.add(&browsers);
@@ -121,12 +121,12 @@ pub fn open(ctx: &Ctx) {
         let window = ctx.window.clone();
         show.connect_clicked(move |_| match hd_core::browser::extension_folder(&crate::data_folder()) {
             Ok(folder) => gtk::FileLauncher::new(Some(&gio::File::for_path(folder))).launch(Some(&window), None::<&gio::Cancellable>, |_| {}),
-            Err(e) => crate::add::alert(&window, "The extension can't be written.", &e.to_string()),
+            Err(e) => crate::add::alert(&window, "The extension can't be written to the app's folder", &e.to_string()),
         });
     }
 
     // S1: Save downloads to.
-    let folder = adw::ActionRow::builder().title("Save downloads to").subtitle(crate::save_folder(&ctx.manager).display().to_string()).build();
+    let folder = adw::ActionRow::builder().title("Save downloads to").subtitle(crate::list::tilde(&crate::save_folder(&ctx.manager))).build();
     // The whole path on hover, as on the Mac (a long one is cut short).
     folder.set_tooltip_text(Some(&crate::save_folder(&ctx.manager).display().to_string()));
     folder.connect_subtitle_notify(|row| row.set_tooltip_text(row.subtitle().as_deref()));
@@ -339,7 +339,7 @@ pub fn open(ctx: &Ctx) {
                     && let Some(path) = dir.path()
                 {
                     manager.set_settings(Settings { save_to: Some(path.display().to_string()), ..manager.settings() });
-                    folder.set_subtitle(&path.display().to_string());
+                    folder.set_subtitle(&crate::list::tilde(&path));
                 }
             });
         });
@@ -348,7 +348,7 @@ pub fn open(ctx: &Ctx) {
         let manager = ctx.manager.clone();
         reset.connect_clicked(move |_| {
             manager.set_settings(Settings { save_to: None, ..manager.settings() });
-            folder.set_subtitle(&crate::downloads_folder().display().to_string());
+            folder.set_subtitle(&crate::list::tilde(&crate::downloads_folder()));
         });
     }
     dialog.present(Some(&ctx.window));

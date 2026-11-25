@@ -17,6 +17,8 @@ finish-args:
   # Delete moves files to the desktop's Trash.
   - --filesystem=xdg-data/Trash
   - --talk-name=org.freedesktop.Notifications
+  # The status-area icon while the window is closed.
+  - --talk-name=org.kde.StatusNotifierWatcher
   # The scheduler sleeps or shuts down the computer when the queue is done, if chosen in Settings.
   - --system-talk-name=org.freedesktop.login1
 build-options:

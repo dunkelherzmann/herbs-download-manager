@@ -3,8 +3,11 @@ Type=Application
 Name=Herb's Download Manager
 GenericName=Download Manager
 Comment=Download files over many connections and mirrors
-Exec=herbs-download-manager
+Exec=herbs-download-manager --open %F
 Icon=org.herbsdownloadmanager.app
 Terminal=false
 Categories=Network;FileTransfer;GTK;
 StartupNotify=true
+# Text files can be opened with it (Open With): the links in them open Add Links. HTML is left out: with no default
+# browser set for it, the desktop would make this app the one that opens web pages.
+MimeType=text/plain;

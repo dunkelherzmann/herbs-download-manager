@@ -9,6 +9,7 @@ mod played;
 mod queuedone;
 mod settings;
 mod signins;
+mod tray;
 mod window;
 
 use adw::prelude::*;
@@ -106,7 +107,12 @@ fn main() -> gtk::glib::ExitCode {
         println!("core {} connections {} per-server {}", hd_core::version(), s.connections, s.connections_per_server);
         return gtk::glib::ExitCode::SUCCESS;
     }
-    let app = adw::Application::builder().application_id(app_id()).build();
+    // Files handed over by the file manager (Open With, the .desktop file's `--open %F`) reach the running copy (§5.4).
+    let app = adw::Application::builder().application_id(app_id()).flags(gtk::gio::ApplicationFlags::HANDLES_OPEN).build();
+    app.connect_open(|app, files, _| {
+        app.activate();
+        window::open_files(files);
+    });
     app.connect_activate(|app| {
         if let Some(window) = app.active_window() {
             window.present();
@@ -210,6 +216,8 @@ fn main() -> gtk::glib::ExitCode {
             }
         }
     });
-    // GTK must not see our own flags.
-    app.run_with_args(&std::env::args().take(1).collect::<Vec<_>>())
+    // GTK must not see our own flags; it gets only the files after `--open`.
+    let args: Vec<String> = std::env::args().collect();
+    let files = args.iter().position(|a| a == "--open").map(|i| args[i + 1..].to_vec()).unwrap_or_default();
+    app.run_with_args(&args.into_iter().take(1).chain(files).collect::<Vec<_>>())
 }
