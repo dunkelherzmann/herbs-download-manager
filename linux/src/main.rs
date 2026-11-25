@@ -11,6 +11,7 @@ mod settings;
 mod signins;
 mod tray;
 mod window;
+mod youtube;
 
 use adw::prelude::*;
 use std::path::PathBuf;

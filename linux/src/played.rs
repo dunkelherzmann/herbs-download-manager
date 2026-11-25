@@ -21,25 +21,9 @@ pub async fn run(url: &str) -> Vec<String> {
         &[],
     ));
     content.register_script_message_handler("hdmPlayed", None);
-    let view = webkit6::WebView::builder()
-        .network_session(&webkit6::NetworkSession::new_ephemeral())
-        .user_content_manager(&content)
-        .build();
-    if let Some(settings) = webkit6::prelude::WebViewExt::settings(&view) {
-        settings.set_media_playback_requires_user_gesture(false);
-    }
-    view.set_is_muted(true);
-    // The page can't download anything.
-    view.connect_decide_policy(|_, decision, kind| {
-        if kind == webkit6::PolicyDecisionType::Response
-            && let Some(d) = decision.downcast_ref::<webkit6::ResponsePolicyDecision>()
-            && !d.is_mime_type_supported()
-        {
-            decision.ignore();
-            return true;
-        }
-        false
-    });
+    let view = hidden_view(&content);
+    // In a window nobody sees: outside one, its player wouldn't really play.
+    let window = hidden_window(&view);
 
     let seen = Rc::new(RefCell::new(Vec::<String>::new()));
     let end = Rc::new(Cell::new(Instant::now() + Duration::from_secs(played::WAIT_SECS)));
@@ -66,7 +50,70 @@ pub async fn run(url: &str) -> Vec<String> {
     }
     view.stop_loading();
     content.unregister_script_message_handler("hdmPlayed", None);
+    window.destroy();
     seen.take()
+}
+
+/// A web view for a page run out of sight: it keeps nothing, plays muted without a click, and can't download.
+pub fn hidden_view(content: &webkit6::UserContentManager) -> webkit6::WebView {
+    let view = webkit6::WebView::builder()
+        .network_session(&webkit6::NetworkSession::new_ephemeral())
+        .user_content_manager(content)
+        .build();
+    if let Some(settings) = webkit6::prelude::WebViewExt::settings(&view) {
+        settings.set_media_playback_requires_user_gesture(false);
+    }
+    view.set_is_muted(true);
+    view.set_size_request(960, 540);
+    // The page can't download anything.
+    view.connect_decide_policy(|_, decision, kind| {
+        if kind == webkit6::PolicyDecisionType::Response
+            && let Some(d) = decision.downcast_ref::<webkit6::ResponsePolicyDecision>()
+            && !d.is_mime_type_supported()
+        {
+            decision.ignore();
+            return true;
+        }
+        false
+    });
+    view
+}
+
+/// A window nobody sees, holding `view`: a web view that isn't in a shown window doesn't play its video (YouTube's
+/// then gives no full token) and slows its timers, as on the Mac. It is shown without a frame, fully transparent,
+/// and lets every click through (an empty input region); the window that had the keyboard keeps it.
+pub fn hidden_window(view: &webkit6::WebView) -> gtk::Window {
+    use gtk::prelude::*;
+    let front = gtk::Window::list_toplevels().into_iter().filter_map(|w| w.downcast::<gtk::Window>().ok()).find(|w| w.is_active());
+    let window = gtk::Window::builder()
+        .decorated(false)
+        .resizable(false)
+        .focusable(false)
+        .can_focus(false)
+        .can_target(false)
+        .default_width(960)
+        .default_height(540)
+        .title("")
+        .build();
+    window.add_css_class("hdm-hidden-page");
+    window.set_opacity(0.0);
+    window.set_child(Some(view));
+    window.connect_realize(|w| {
+        if let Some(surface) = w.surface() {
+            surface.set_input_region(Some(&gtk::cairo::Region::create()));
+        }
+    });
+    window.connect_map(|w| {
+        if let Some(surface) = w.surface() {
+            surface.set_input_region(Some(&gtk::cairo::Region::create()));
+        }
+    });
+    window.present();
+    // The window that had the keyboard gets it back.
+    if let Some(front) = front {
+        glib::idle_add_local_once(move || front.present());
+    }
+    window
 }
 
 fn is_playlist(line: &str) -> bool {
