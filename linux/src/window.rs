@@ -114,6 +114,9 @@ fn main_menu() -> (gio::Menu, gio::Menu) {
     let window = gio::Menu::new();
     item(&window, "Minimize", "minimize");
     item(&window, "Zoom", "zoom");
+    let front = gio::Menu::new();
+    item(&front, "Bring All to Front", "bring-all-to-front");
+    window.append_section(None, &front);
     menu.append_submenu(Some("Window"), &window);
 
     let help = gio::Menu::new();
@@ -482,11 +485,11 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
                 return;
             }
             let added = ctx2.manager.add_mirrors(id, &links);
-            let name = ctx2.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_default();
+            let name = ctx2.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_else(|| "the download".into());
             (ctx2.tell)(match added {
-                0 => format!("{name} already has those links"),
-                1 => format!("Added 1 mirror to {name}"),
-                n => format!("Added {n} mirrors to {name}"),
+                0 => format!("“{name}” already uses {}", if links.len() == 1 { "that link" } else { "those links" }),
+                1 => format!("Added 1 mirror to “{name}”"),
+                n => format!("Added {n} mirrors to “{name}”"),
             });
             (ctx2.refresh)();
         }));
@@ -495,6 +498,8 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     // Closing the window leaves the app running, so downloads carry on (§2), as the Mac's Dock keeps it: opening the
     // app again brings the window back. Quit asks first while downloads run.
     std::mem::forget(app.hold());
+    // Its icon in the status area meanwhile, as on Windows: a click, or Show, brings the window back (§2).
+    crate::tray::follow(&window);
     {
         let (split, sidebar_scroll, list) = (split.clone(), sidebar_scroll.clone(), ui.list.clone());
         let save = move |w: &adw::ApplicationWindow| save_layout(w, &split, &sidebar_scroll, &list);
@@ -525,6 +530,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         });
     }
     crate::features::install(&ctx, &ui.list);
+    CTX.with(|c| *c.borrow_mut() = Some(ctx.clone()));
     // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
     {
         let args: Vec<String> = std::env::args().collect();
@@ -564,7 +570,11 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
                 let text = crate::add::clipboard_text(&clipboard).await;
                 let new = seen.borrow().as_deref() != Some(text.as_str());
                 *seen.borrow_mut() = Some(text.clone());
-                if !new || !ctx.manager.settings().watch_clipboard || ctx.window.is_active() {
+                // Copies made in this app (its own, or while any of its windows is in front, as the Mac's "app is
+                // active") are left alone: Copy Link in a Download window opened Add Links.
+                let ours = clipboard.is_local()
+                    || ctx.window.application().is_some_and(|a| a.windows().iter().any(|w| w.is_active()));
+                if !new || !ctx.manager.settings().watch_clipboard || ours {
                     return;
                 }
                 let links = hd_core::links::find(&text);
@@ -577,18 +587,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     // Links, text and link files dropped on the window open Add Links (§5.4); while they're over it, it dims.
     {
         let (ctx2, note) = (ctx.clone(), drop_note.clone());
-        let target = crate::add::drop_target(&ctx, move |links| {
-            note.set_visible(false);
-            crate::add::add_links(&ctx2, links);
-        });
-        target.set_preload(true);
-        let note = drop_note.clone();
-        target.connect_value_notify(move |t| {
-            let links = t.value().map(|v| crate::add::links_in_drop(&v)).unwrap_or_default();
-            note.set_visible(!links.is_empty());
-        });
-        let note = drop_note.clone();
-        target.connect_leave(move |_| note.set_visible(false));
+        let target = crate::add::drop_target(&ctx, move |on| note.set_visible(on), move |links| crate::add::add_links(&ctx2, links));
         view.add_controller(target);
     }
     {
@@ -625,13 +624,14 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
         let refresh = refresh.clone();
         ui.list.selection.connect_selection_changed(move |_, _, _| refresh());
     }
-    // Double-click (§2.2): a finished download opens its file; an unfinished one its Download window.
+    // Double-click (§2.2): a finished download opens its file; an unfinished one, or one whose file is gone, its
+    // Download window.
     {
         let (ui, ctx) = (ui.clone(), ctx.clone());
         ui.list.view.clone().connect_activate(move |_, position| {
             let Some(r) = ui.list.row_at(position) else { return };
             match (&r.status, &r.path) {
-                (Status::Finished, Some(path)) => {
+                (Status::Finished, Some(path)) if path.exists() => {
                     let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), None::<&gio::AppLaunchContext>);
                 }
                 _ => crate::detail::open(&ctx, r.id, None),
@@ -991,7 +991,7 @@ fn add_actions(
         let (ui, refresh, window2) = (ui.clone(), refresh.clone(), window.clone());
         add("move-file", &[], Box::new(move || {
             let Some(r) = ui.list.selected().into_iter().next().filter(|r| r.status == Status::Finished) else { return };
-            let picker = gtk::FileDialog::builder().title(format!("Move “{}” To", r.name)).accept_label("Move Here").build();
+            let picker = gtk::FileDialog::builder().title(format!("Choose where “{}” goes", r.name)).accept_label("Move Here").build();
             if let Some(folder) = r.path.as_ref().and_then(|p| p.parent()) {
                 picker.set_initial_folder(Some(&gio::File::for_path(folder)));
             }
@@ -1064,6 +1064,19 @@ fn add_actions(
         add("minimize", &["<Control>m"], Box::new(move || w.minimize()));
         let w = window.clone();
         add("zoom", &[], Box::new(move || if w.is_maximized() { w.unmaximize() } else { w.maximize() }));
+        // Bring All to Front: every window of the app that is open, the one in front last so it stays in front.
+        let w = window.clone();
+        add("bring-all-to-front", &[], Box::new(move || {
+            let Some(app) = w.application() else { return };
+            let windows: Vec<gtk::Window> = app.windows().into_iter().filter(|x| x.is_visible()).collect();
+            let front = app.active_window();
+            for x in windows.iter().rev().filter(|x| Some(*x) != front.as_ref()) {
+                x.present();
+            }
+            if let Some(front) = front.filter(|f| f.is_visible()) {
+                front.present();
+            }
+        }));
         // Quit asks first while downloads run, Cancel the default (§10); they start again at the next launch (the
         // application's shutdown calls the manager's quit).
         let (w, manager) = (window.clone(), ui.manager.clone());
@@ -1183,7 +1196,12 @@ fn confirm_delete(window: &adw::ApplicationWindow, ui: &Rc<Ui>, refresh: &Rc<dyn
         };
         if let Some(first) = kept.first() {
             let name = first.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            *ui.notice.borrow_mut() = Some((format!("“{name}” couldn't go to the Trash, so it was left where it is"), std::time::Instant::now()));
+            let text = if kept.len() == 1 {
+                format!("“{name}” couldn't go to the Trash, so it was left where it is")
+            } else {
+                format!("{} files couldn't go to the Trash, so they were left where they are", kept.len())
+            };
+            *ui.notice.borrow_mut() = Some((text, std::time::Instant::now()));
         }
         refresh();
     });
@@ -1221,6 +1239,29 @@ fn tell(window: &adw::ApplicationWindow, text: &str) {
     let d = adw::AlertDialog::new(Some(text), None);
     d.add_response("ok", "OK");
     d.present(Some(window));
+}
+
+thread_local! {
+    /// What the dialogs need, for files handed to the app (`open_files`).
+    static CTX: RefCell<Option<crate::add::Ctx>> = const { RefCell::new(None) };
+}
+
+/// Files handed to the app (Open With in the file manager, or dropped on its icon): the links in them open Add Links,
+/// as on the Mac (§5.4, §5.7). Files with none are passed over.
+pub fn open_files(files: &[gio::File]) {
+    let Some(ctx) = CTX.with(|c| c.borrow().clone()) else { return };
+    let mut text = String::new();
+    for f in files {
+        text.push('\n');
+        match f.path() {
+            Some(p) => text.push_str(&hd_core::links::text_of_file(&p).unwrap_or_default()),
+            None => text.push_str(&f.uri()),
+        }
+    }
+    let links = hd_core::links::find(&text);
+    if !links.is_empty() {
+        crate::add::add_links(&ctx, links);
+    }
 }
 
 thread_local! {

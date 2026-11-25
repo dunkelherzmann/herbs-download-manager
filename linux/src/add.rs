@@ -47,11 +47,14 @@ pub fn add_all(ctx: &Ctx, links: Vec<PendingLink>, folder: PathBuf, connections:
                     dialog.set_response_appearance("replace", adw::ResponseAppearance::Destructive);
                     dialog.set_response_appearance("keep", adw::ResponseAppearance::Suggested);
                     dialog.set_default_response(Some("keep"));
-                    dialog.set_close_response("skip");
+                    // As on the Mac, Esc gives no answer: one of the three buttons must be chosen.
+                    dialog.set_can_close(false);
                     let rest = gtk::CheckButton::with_label("Do the same for the rest");
                     if q.more {
                         dialog.set_extra_child(Some(&rest));
                     }
+                    // The question goes over the main window, brought back if it was closed (§2).
+                    ctx.window.present();
                     let answer = dialog.choose_future(Some(&ctx.window)).await;
                     let choice = match answer.as_str() {
                         "replace" => Choice::Replace,
@@ -71,22 +74,26 @@ fn label(text: &str) -> gtk::Label {
     gtk::Label::builder().label(text).xalign(1.0).build()
 }
 
-/// A folder row: the path and Choose….
-fn folder_row(window: &impl IsA<gtk::Window>, folder: Rc<RefCell<PathBuf>>) -> gtk::Box {
-    let path = gtk::Label::builder().label(folder.borrow().display().to_string()).xalign(0.0).hexpand(true)
+/// A folder row: the path (as ~/…) and Choose…; `changed` runs when another folder is chosen.
+fn folder_row(window: &impl IsA<gtk::Window>, folder: Rc<RefCell<PathBuf>>, files: &str, changed: impl Fn() + 'static) -> gtk::Box {
+    let path = gtk::Label::builder().label(crate::list::tilde(&folder.borrow())).xalign(0.0).hexpand(true)
         .ellipsize(gtk::pango::EllipsizeMode::Middle).build();
-    let choose = gtk::Button::builder().label("Choose…").tooltip_text("Choose the folder the file is saved to").build();
+    path.set_tooltip_text(Some(&format!("The folder {files} saved to; Choose… picks another")));
+    path.update_property(&[gtk::accessible::Property::Label("Save to")]);
+    let choose = gtk::Button::builder().label("Choose…").tooltip_text(format!("Choose the folder {files} saved to")).build();
     let window = window.clone().upcast::<gtk::Window>();
     let path2 = path.clone();
+    let changed = Rc::new(changed);
     choose.connect_clicked(move |_| {
         let dialog = gtk::FileDialog::builder().title("Save to").initial_folder(&gio::File::for_path(&*folder.borrow())).build();
-        let (folder, path) = (folder.clone(), path2.clone());
+        let (folder, path, changed) = (folder.clone(), path2.clone(), changed.clone());
         dialog.select_folder(Some(&window), None::<&gio::Cancellable>, move |result| {
             if let Ok(dir) = result
                 && let Some(p) = dir.path()
             {
-                path.set_label(&p.display().to_string());
+                path.set_label(&crate::list::tilde(&p));
                 *folder.borrow_mut() = p;
+                changed();
             }
         });
     });
@@ -96,7 +103,8 @@ fn folder_row(window: &impl IsA<gtk::Window>, folder: Rc<RefCell<PathBuf>>) -> g
     row
 }
 
-fn buttons(cancel: &gtk::Button, add: &gtk::Button, download: &gtk::Button) -> gtk::Box {
+/// Cancel, Add and Download; `what` is "it" (New Download) or "them" (Add Links).
+fn buttons(cancel: &gtk::Button, add: &gtk::Button, download: &gtk::Button, what: &str) -> gtk::Box {
     download.add_css_class("suggested-action");
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row.set_halign(gtk::Align::End);
@@ -104,8 +112,8 @@ fn buttons(cancel: &gtk::Button, add: &gtk::Button, download: &gtk::Button) -> g
     row.append(add);
     row.append(download);
     cancel.set_tooltip_text(Some("Close without adding anything (Esc)"));
-    add.set_tooltip_text(Some("Add: put it in the queue; it starts when the queue runs"));
-    download.set_tooltip_text(Some("Download: start now"));
+    add.set_tooltip_text(Some(&format!("Add: put {what} in the queue without starting {what}")));
+    download.set_tooltip_text(Some(&format!("Download: start {what} now")));
     row
 }
 
@@ -135,21 +143,21 @@ fn with_header(window: &adw::Window, body: &impl IsA<gtk::Widget>) {
 pub fn new_download(ctx: &Ctx, link: Option<String>) {
     let window = dialog_window(ctx, "New Download", 560, 420);
     let link_entry = gtk::Entry::builder().hexpand(true).placeholder_text("https://example.com/file.zip").build();
-    crate::explain(&link_entry, "Link", "The address of the file to download");
+    crate::explain(&link_entry, "Link", "Link: the address of the file to download");
     if let Some(l) = link {
         link_entry.set_text(&l);
     }
     let mirrors = gtk::TextView::builder().wrap_mode(gtk::WrapMode::None).build();
-    crate::explain(&mirrors, "Mirrors", "Other servers with the same file, one link per line (optional)");
-    mirrors.set_tooltip_text(Some("Other servers with the same file, one link per line (optional)"));
+    crate::explain(&mirrors, "Mirrors", "Mirrors: other servers with the same file, one address per line (optional)");
+    mirrors.set_tooltip_text(Some("Mirrors: other servers with the same file, one address per line (optional)"));
     let mirrors_scroll = gtk::ScrolledWindow::builder().child(&mirrors).min_content_height(70).has_frame(true).build();
     let name = gtk::Entry::builder().hexpand(true).placeholder_text("From the server").build();
-    crate::explain(&name, "Name", "The file's name, from the server; change it to save under another name");
+    crate::explain(&name, "Name", "Name: the file name to save as");
     let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
-    crate::explain(&connections, "Connections", "Connections for this download (1–32)");
+    crate::explain(&connections, "Connections", "Connections: how many parts of the file download at once (1–32)");
     connections.set_value(ctx.manager.settings().connections as f64);
-    connections.set_tooltip_text(Some("Connections for this download (1–32)"));
+    connections.set_tooltip_text(Some("Connections: how many parts of the file download at once (1–32)"));
     let size = gtk::Label::builder().xalign(0.0).label("").build();
     size.add_css_class("dim-label");
     let sound = gtk::CheckButton::with_label("Only the sound");
@@ -161,7 +169,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         ("Link:", link_entry.clone().upcast::<gtk::Widget>()),
         ("Mirrors:", mirrors_scroll.upcast()),
         ("Name:", name.clone().upcast()),
-        ("Save to:", folder_row(&window, folder.clone()).upcast()),
+        ("Save to:", folder_row(&window, folder.clone(), "the file is", || {}).upcast()),
         ("Connections:", connections.clone().upcast()),
         ("Size:", size.clone().upcast()),
         ("Stream:", sound.clone().upcast()),
@@ -173,7 +181,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         grid.attach(&widget, 1, row as i32, 1, 1);
     }
     let (cancel, add, download) = (gtk::Button::with_label("Cancel"), gtk::Button::with_label("Add"), gtk::Button::with_label("Download"));
-    grid.attach(&buttons(&cancel, &add, &download), 0, 7, 2, 1);
+    grid.attach(&buttons(&cancel, &add, &download, "it"), 0, 7, 2, 1);
     with_header(&window, &grid);
 
     // A6: ask the server about the link once it stops changing.
@@ -184,13 +192,22 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     // The download started while this window is open (enhancements.md), once the link proved resumable: Download or
     // Add adopts it, Cancel discards it.
     let early: Rc<Early> = Rc::new(Early { manager: ctx.manager.clone(), token: Cell::new(None), timer: RefCell::new(None) });
+    // The user typed a name: the server's no longer replaces it (it does each time the link changes otherwise).
+    let typed: Rc<Cell<bool>> = Rc::default();
+    let filling: Rc<Cell<bool>> = Rc::default();
+    {
+        let (typed, filling) = (typed.clone(), filling.clone());
+        name.connect_changed(move |n| if !filling.get() { typed.set(!n.text().is_empty()) });
+    }
     {
         let (manager, name, size, probed, pending) = (ctx.manager.clone(), name.clone(), size.clone(), probed.clone(), pending.clone());
         let folder = folder.clone();
         let early = early.clone();
         let page = page.clone();
         let sound = sound.clone();
+        let (typed, filling) = (typed.clone(), filling.clone());
         link_entry.connect_changed(move |entry| {
+            let (typed, filling) = (typed.clone(), filling.clone());
             page.set(false);
             // Sound only is for streams; a whole video file isn't split.
             let stream = hd_core::media::download::is_stream_link(entry.text().trim());
@@ -223,8 +240,10 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
                             size.set_label("A web page: Download lists the files and media on it");
                         }
                         Ok(Ok(p)) => {
-                            if name.text().is_empty() {
+                            if !typed.get() {
+                                filling.set(true);
                                 name.set_text(&p.name);
+                                filling.set(false);
                             }
                             *probed.borrow_mut() = p.size;
                             let mut text = match (p.size, p.resumable) {
@@ -304,11 +323,12 @@ struct Item {
     row: gtk::ListBoxRow,
     name_label: gtk::Label,
     size_label: gtk::Label,
+    folder_label: gtk::Label,
     /// A stream a page scan found: added as one (§15).
     stream: bool,
 }
 
-/// Add Links (§5.3): the links, each with a checkbox, name, size and link; a filter; Check All and Uncheck All;
+/// Add Links (§5.3): the links, each with a checkbox, name, size, folder and link; a filter; Check All and Uncheck All;
 /// "Treat as mirrors of one file"; Save to; Cancel, Add, Download.
 #[derive(Clone)]
 pub struct AddLinks {
@@ -322,10 +342,12 @@ pub struct AddLinks {
     manager: Manager,
     /// The column the rows are sorted by, and whether A to Z (smallest first); none until a header is clicked.
     sort: Rc<Cell<Option<(LinkColumn, bool)>>>,
-    /// The headers' sort arrows: Name, Size, Link.
+    /// The headers' sort arrows: Name, Size, Folder, Link.
     arrows: Rc<Vec<(LinkColumn, gtk::Image)>>,
-    /// Each header as wide as its column's cells: the checkbox, Size and Link.
-    widths: Rc<[gtk::SizeGroup; 3]>,
+    /// Each header as wide as its column's cells: the checkbox, Size, Folder and Link.
+    widths: Rc<[gtk::SizeGroup; 4]>,
+    /// Where the files are saved (Save to).
+    folder: Rc<RefCell<PathBuf>>,
 }
 
 impl AddLinks {
@@ -338,6 +360,11 @@ impl AddLinks {
                 continue;
             }
             fresh.push(url);
+        }
+        // Nothing new (every link listed already): a beep, as on the Mac.
+        if fresh.is_empty() {
+            self.window.display().beep();
+            return;
         }
         for url in &fresh {
             self.append_row(url, reqwest_name(url), None, "Checking…", hd_core::media::download::is_stream_link(url), true);
@@ -401,10 +428,12 @@ impl AddLinks {
         check.update_property(&[gtk::accessible::Property::Label(&format!("Download {name}"))]);
         let name_label = gtk::Label::builder().label(&name).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
         let size_label = gtk::Label::builder().label(size_text).width_chars(14).xalign(0.0).build();
+        let folder_label = gtk::Label::builder().label(crate::list::tilde(&self.folder.borrow())).xalign(0.0).width_chars(16)
+            .max_width_chars(16).ellipsize(gtk::pango::EllipsizeMode::End).build();
         let link = gtk::Label::builder().label(url).xalign(0.0).width_chars(30).max_width_chars(30).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
         link.add_css_class("dim-label");
         // Each cell's whole text on hover, as on the Mac: a name or link cut short can be read.
-        for l in [&name_label, &size_label, &link] {
+        for l in [&name_label, &size_label, &folder_label, &link] {
             l.set_tooltip_text(Some(&l.label()).filter(|t| !t.is_empty()).map(|t| t.as_str()));
             l.connect_label_notify(|l| l.set_tooltip_text(Some(&l.label()).filter(|t| !t.is_empty()).map(|t| t.as_str())));
         }
@@ -412,15 +441,16 @@ impl AddLinks {
         line.append(&check);
         line.append(&name_label);
         line.append(&size_label);
+        line.append(&folder_label);
         line.append(&link);
-        for (group, cell) in self.widths.iter().zip([check.upcast_ref::<gtk::Widget>(), size_label.upcast_ref(), link.upcast_ref()]) {
+        for (group, cell) in self.widths.iter().zip([check.upcast_ref::<gtk::Widget>(), size_label.upcast_ref(), folder_label.upcast_ref(), link.upcast_ref()]) {
             group.add_widget(cell);
         }
         let row = gtk::ListBoxRow::builder().child(&line).build();
         self.list.append(&row);
         let this = self.clone();
         check.connect_toggled(move |_| this.update());
-        self.items.borrow_mut().push(Item { url: url.to_string(), name, size, size_text: size_text.into(), check, row, name_label, size_label, stream });
+        self.items.borrow_mut().push(Item { url: url.to_string(), name, size, size_text: size_text.into(), check, row, name_label, size_label, folder_label, stream });
     }
 
     /// Replaces a web page's row with the files and media found on it, each checked already; a page with nothing on
@@ -499,7 +529,8 @@ impl AddLinks {
     fn resort(&self) {
         let Some((column, ascending)) = self.sort.get() else { return };
         let mut items = self.items.borrow_mut();
-        let rows: Vec<LinkRow> = items.iter().map(|i| LinkRow { name: &i.name, size: i.size, folder: "", url: &i.url }).collect();
+        let folder = crate::list::tilde(&self.folder.borrow());
+        let rows: Vec<LinkRow> = items.iter().map(|i| LinkRow { name: &i.name, size: i.size, folder: &folder, url: &i.url }).collect();
         let order = hd_core::links::sort_order(&rows, column, ascending);
         let mut slots: Vec<Option<Item>> = items.drain(..).map(Some).collect();
         items.extend(order.into_iter().filter_map(|i| slots[i].take()));
@@ -572,6 +603,8 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         (ctx.tell)("No links found".into());
         return;
     }
+    // Over the main window, brought back first if it was closed, as on the Mac.
+    ctx.window.present();
     if let Some(open) = ctx.open_links.borrow().clone() {
         open.add(links);
         open.window.present();
@@ -579,7 +612,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     }
     let window = dialog_window(ctx, &title(links.len()), 760, 460);
     let filter = gtk::SearchEntry::builder().placeholder_text("Filter").hexpand(true).build();
-    crate::explain(&filter, "Filter", "Show only links whose name or address contains this text");
+    crate::explain(&filter, "Filter", "Filter: show links whose name or address contains the text");
     let all = gtk::Button::with_label("Check All");
     all.set_tooltip_text(Some("Tick every link shown"));
     let none = gtk::Button::with_label("Uncheck All");
@@ -591,15 +624,16 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     let list = gtk::ListBox::new();
     list.add_css_class("boxed-list");
     list.set_selection_mode(gtk::SelectionMode::None);
-    // Column headers over the rows, lined up with their checkbox, name, size and link: click one to sort by it.
+    // Column headers over the rows, lined up with their checkbox, name, size, folder and link: click one to sort by it.
     let headers = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    let widths: Rc<[gtk::SizeGroup; 3]> = Rc::new(std::array::from_fn(|_| gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal)));
+    let widths: Rc<[gtk::SizeGroup; 4]> = Rc::new(std::array::from_fn(|_| gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal)));
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     widths[0].add_widget(&spacer);
     headers.append(&spacer);
     let mut header_buttons = Vec::new();
     let mut arrows = Vec::new();
-    for (column, name, group) in [(LinkColumn::Name, "Name", None), (LinkColumn::Size, "Size", Some(1)), (LinkColumn::Link, "Link", Some(2))] {
+    for (column, name, group) in [(LinkColumn::Name, "Name", None), (LinkColumn::Size, "Size", Some(1)), (LinkColumn::Folder, "Folder", Some(2)),
+                                  (LinkColumn::Link, "Link", Some(3))] {
         let text = gtk::Label::builder().label(name).build();
         text.add_css_class("heading");
         let arrow = gtk::Image::from_icon_name("pan-up-symbolic");
@@ -623,20 +657,30 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     table.append(&list);
     let scroll = gtk::ScrolledWindow::builder().child(&table).vexpand(true).build();
     let mirrors = gtk::CheckButton::with_label("Treat as mirrors of one file");
-    mirrors.set_tooltip_text(Some("Add the checked links as one download, each a source of the same file"));
+    mirrors.set_tooltip_text(Some("Combine the checked links into one download that uses each of them as a source"));
     let sound = gtk::CheckButton::with_label("Only the sound of streamed videos");
     sound.set_tooltip_text(Some("Save just the sound of each checked stream (.m4a, or .mp3), as the site sends it"));
     let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
+    let shown: Rc<std::cell::OnceCell<AddLinks>> = Rc::default();
     let save = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     save.append(&gtk::Label::new(Some("Save to:")));
-    save.append(&folder_row(&window, folder.clone()));
+    // Another folder shows in every row's Folder cell.
+    save.append(&folder_row(&window, folder.clone(), "the files are", {
+        let shown = shown.clone();
+        move || {
+            let Some(this) = shown.get() else { return };
+            let text = crate::list::tilde(&this.folder.borrow());
+            this.items.borrow().iter().for_each(|i| i.folder_label.set_label(&text));
+            this.resort();
+        }
+    }));
     let summary = gtk::Label::builder().xalign(0.0).hexpand(true)
         .tooltip_text("Links to the same file (same name and size) are added as one download and its mirrors").build();
     summary.add_css_class("dim-label");
     let (cancel, add, download) = (gtk::Button::with_label("Cancel"), gtk::Button::with_label("Add"), gtk::Button::with_label("Download"));
     let bottom = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     bottom.append(&summary);
-    bottom.append(&buttons(&cancel, &add, &download));
+    bottom.append(&buttons(&cancel, &add, &download, "them"));
     let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
     for m in [&top.clone().upcast::<gtk::Widget>(), &scroll.clone().upcast(), &mirrors.clone().upcast(), &sound.clone().upcast(), &save.clone().upcast(), &bottom.clone().upcast()] {
         body.append(m);
@@ -645,7 +689,12 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     body.set_margin_bottom(12);
     body.set_margin_start(12);
     body.set_margin_end(12);
-    with_header(&window, &body);
+    // While links are dragged over it, it dims and says "Drop links to add them", as on the Mac.
+    let note = gtk::Label::builder().label("Drop links to add them").can_target(false).visible(false).hexpand(true).vexpand(true).build();
+    note.add_css_class("hdm-drop");
+    let overlay = gtk::Overlay::builder().child(&body).build();
+    overlay.add_overlay(&note);
+    with_header(&window, &overlay);
 
     let this = AddLinks {
         window: window.clone(),
@@ -658,7 +707,9 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         sort: Rc::default(),
         arrows: Rc::new(arrows),
         widths,
+        folder: folder.clone(),
     };
+    let _ = shown.set(this.clone());
     for (column, button) in header_buttons {
         let this2 = this.clone();
         button.connect_clicked(move |_| this2.sort_by(column));
@@ -679,7 +730,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         });
     }
     // Links dropped on the window join the list (§5.3).
-    window.add_controller(drop_target(ctx, {
+    window.add_controller(drop_target(ctx, move |on| note.set_visible(on), {
         let this = this.clone();
         move |links| this.add(links)
     }));
@@ -687,7 +738,9 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         let (ctx, this) = (ctx.clone(), this.clone());
         move |start: bool| {
             let mut links = this.checked();
+            // Nothing ticked: a beep, as on the Mac.
             if links.is_empty() {
+                this.window.display().beep();
                 return;
             }
             if this.mirrors.is_active() {
@@ -716,11 +769,12 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     }
     *ctx.open_links.borrow_mut() = Some(this.clone());
     this.add(links);
-    // Test hook: `--sort-links name|size|link [desc]` sorts as clicks on that header do.
+    // Test hook: `--sort-links name|size|folder|link [desc]` sorts as clicks on that header do.
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--sort-links") {
         let column = match args.get(i + 1).map(String::as_str) {
             Some("size") => LinkColumn::Size,
+            Some("folder") => LinkColumn::Folder,
             Some("link") => LinkColumn::Link,
             _ => LinkColumn::Name,
         };
@@ -732,10 +786,18 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
     window.present();
 }
 
-/// The links in what is being dragged: link text, or the links inside dragged text files (§5.4, §5.7).
-pub fn links_in_drop(value: &glib::Value) -> Vec<String> {
+/// What a drop carries, as text to find links in: link text, the links inside dropped text files (§5.4, §5.7), and
+/// for text dragged from a web page its HTML, read as a paste reads it (§5.2): the links behind the text, relative
+/// ones made whole against the page.
+pub async fn drop_text(drop: &gdk::Drop) -> String {
+    let types = drop.formats().union_deserialize_gtypes();
     let mut text = String::new();
-    if let Ok(files) = value.get::<gdk::FileList>() {
+    let files = if types.contains_type(gdk::FileList::static_type()) {
+        drop.read_value_future(gdk::FileList::static_type(), glib::Priority::DEFAULT).await.ok().and_then(|v| v.get::<gdk::FileList>().ok())
+    } else {
+        None
+    };
+    if let Some(files) = files {
         for f in files.files() {
             text.push('\n');
             match f.path() {
@@ -743,27 +805,114 @@ pub fn links_in_drop(value: &glib::Value) -> Vec<String> {
                 None => text.push_str(&f.uri()),
             }
         }
-    } else if let Ok(s) = value.get::<String>() {
+    } else if types.contains_type(glib::GString::static_type())
+        && let Ok(v) = drop.read_value_future(glib::GString::static_type(), glib::Priority::DEFAULT).await
+        && let Ok(s) = v.get::<String>()
+    {
         text = s;
     }
-    hd_core::links::find(&text)
+    if drop.formats().contain_mime_type("text/html")
+        && let Some(html) = drop_bytes(drop, "text/html").await
+    {
+        let mut base = None;
+        for mime in SOURCE_URL {
+            if drop.formats().contain_mime_type(mime) && let Some(b) = drop_bytes(drop, mime).await {
+                base = Some(b);
+                break;
+            }
+        }
+        text.push('\n');
+        text.push_str(&page_html(&html, base.as_deref()));
+    }
+    text
 }
 
-/// Links from a drop (§5.4, §5.7).
-pub fn drop_target(ctx: &Ctx, on_links: impl Fn(Vec<String>) + 'static) -> gtk::DropTarget {
-    let target = gtk::DropTarget::new(glib::Type::INVALID, gdk::DragAction::COPY);
-    target.set_types(&[gdk::FileList::static_type(), glib::GString::static_type()]);
-    let tell = ctx.tell.clone();
-    target.connect_drop(move |_, value, _, _| {
-        let links = links_in_drop(value);
-        if links.is_empty() {
-            tell("No links found in what was dropped".into());
-            return false;
-        }
-        on_links(links);
+/// The data of one type in a drop.
+async fn drop_bytes(drop: &gdk::Drop, mime: &str) -> Option<Vec<u8>> {
+    let (stream, _) = drop.read_future(&[mime], glib::Priority::DEFAULT).await.ok()?;
+    read_all(stream).await
+}
+
+async fn read_all(stream: gio::InputStream) -> Option<Vec<u8>> {
+    let out = gio::MemoryOutputStream::new_resizable();
+    out.splice_future(&stream, gio::OutputStreamSpliceFlags::CLOSE_SOURCE | gio::OutputStreamSpliceFlags::CLOSE_TARGET,
+                      glib::Priority::DEFAULT).await.ok()?;
+    Some(out.steal_as_bytes().to_vec())
+}
+
+/// Where browsers say a copy or a drag came from: Chromium browsers (Chrome, Edge) as `chromium/x-source-url`,
+/// Firefox as `text/x-moz-url-priv`.
+const SOURCE_URL: [&str; 2] = ["chromium/x-source-url", "text/x-moz-url-priv"];
+
+/// A page's HTML as text (UTF-8, or UTF-16 with its byte-order mark, as Firefox may send it), its relative links
+/// made whole against the page it came from.
+fn page_html(html: &[u8], source: Option<&[u8]>) -> String {
+    let utf16 = |bytes: &[u8], le: bool| {
+        let units: Vec<u16> = bytes.chunks_exact(2)
+            .map(|c| if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
+            .collect();
+        String::from_utf16_lossy(&units)
+    };
+    let html = match html {
+        [0xff, 0xfe, rest @ ..] => utf16(rest, true),
+        [0xfe, 0xff, rest @ ..] => utf16(rest, false),
+        _ => String::from_utf8_lossy(html).into_owned(),
+    };
+    match source.and_then(hd_core::links::copied_from) {
+        Some(base) => hd_core::links::absolute_html(&html, &base),
+        None => html,
+    }
+}
+
+/// Links dropped on a widget (§5.4, §5.7): `hover` says whether what is dragged over it has links (for a "Drop links
+/// here" note); `on_links` gets the links dropped, none when it had none.
+pub fn links_drop(hover: impl Fn(bool) + 'static, on_links: impl Fn(Vec<String>) + 'static) -> gtk::DropTargetAsync {
+    let formats = gdk::ContentFormats::builder()
+        .add_gtype(gdk::FileList::static_type())
+        .add_gtype(glib::GString::static_type())
+        .add_mime_type("text/html")
+        .build()
+        .union_deserialize_mime_types();
+    let target = gtk::DropTargetAsync::new(Some(formats), gdk::DragAction::COPY);
+    let (hover, on_links) = (Rc::new(hover), Rc::new(on_links));
+    {
+        let hover = hover.clone();
+        target.connect_drag_enter(move |_, drop, _, _| {
+            let (hover, drop) = (hover.clone(), drop.clone());
+            glib::spawn_future_local(async move {
+                let links = hd_core::links::find(&drop_text(&drop).await);
+                hover(!links.is_empty());
+            });
+            gdk::DragAction::COPY
+        });
+    }
+    {
+        let hover = hover.clone();
+        target.connect_drag_leave(move |_, _| hover(false));
+    }
+    target.connect_drop(move |_, drop, _, _| {
+        let (hover, on_links, drop) = (hover.clone(), on_links.clone(), drop.clone());
+        glib::spawn_future_local(async move {
+            let links = hd_core::links::find(&drop_text(&drop).await);
+            drop.finish(if links.is_empty() { gdk::DragAction::empty() } else { gdk::DragAction::COPY });
+            hover(false);
+            on_links(links);
+        });
         true
     });
     target
+}
+
+/// Links dropped on a window open or join Add Links; a drop with none says so in the footer.
+pub fn drop_target(ctx: &Ctx, hover: impl Fn(bool) + 'static, on_links: impl Fn(Vec<String>) + 'static) -> gtk::DropTargetAsync {
+    let tell = ctx.tell.clone();
+    links_drop(hover, move |links| {
+        if links.is_empty() {
+            tell("No links found in what was dropped".into());
+        } else {
+            on_links(links);
+        }
+    })
 }
 
 /// Batch Download (§5.5): a link with a range placeholder, the help, a preview of the first and last links and the
@@ -857,7 +1006,13 @@ pub fn batch(ctx: &Ctx) {
 
 /// Import Links (§5.7): the links in one or more text files.
 pub fn import(ctx: &Ctx) {
-    let dialog = gtk::FileDialog::builder().title("Import Links").accept_label("Import").build();
+    // The Mac's line under the picker's title, here as the name of the files it shows (GTK's picker has no such line).
+    let files = gtk::FileFilter::new();
+    files.set_name(Some("Files with links: plain text with or without an extension, Markdown, rich text, HTML…"));
+    files.add_pattern("*");
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&files);
+    let dialog = gtk::FileDialog::builder().title("Import Links").accept_label("Import").filters(&filters).default_filter(&files).build();
     let ctx = ctx.clone();
     dialog.open_multiple(Some(&ctx.window.clone()), None::<&gio::Cancellable>, move |result| {
         let Ok(files) = result else { return };
@@ -906,15 +1061,15 @@ pub fn alert(window: &impl IsA<gtk::Widget>, heading: &str, body: &str) {
 pub async fn clipboard_text(clipboard: &gdk::Clipboard) -> String {
     let mut text = clipboard.read_text_future().await.ok().flatten().map(|t| t.to_string()).unwrap_or_default();
     if let Some(html) = clipboard_bytes(clipboard, "text/html").await {
-        let mut html = String::from_utf8_lossy(&html).into_owned();
-        for mime in ["chromium/x-source-url", "text/x-moz-url-priv"] {
-            if let Some(base) = clipboard_bytes(clipboard, mime).await.and_then(|b| hd_core::links::copied_from(&b)) {
-                html = hd_core::links::absolute_html(&html, &base);
+        let mut base = None;
+        for mime in SOURCE_URL {
+            if let Some(b) = clipboard_bytes(clipboard, mime).await {
+                base = Some(b);
                 break;
             }
         }
         text.push('\n');
-        text.push_str(&html);
+        text.push_str(&page_html(&html, base.as_deref()));
     }
     text
 }
@@ -925,18 +1080,28 @@ async fn clipboard_bytes(clipboard: &gdk::Clipboard, mime: &str) -> Option<Vec<u
         return None;
     }
     let (stream, _) = clipboard.read_future(&[mime], glib::Priority::DEFAULT).await.ok()?;
-    let out = gio::MemoryOutputStream::new_resizable();
-    out.splice_future(&stream, gio::OutputStreamSpliceFlags::CLOSE_SOURCE | gio::OutputStreamSpliceFlags::CLOSE_TARGET,
-                      glib::Priority::DEFAULT).await.ok()?;
-    Some(out.steal_as_bytes().to_vec())
+    read_all(stream).await
 }
 
 /// Export Links (§5.8): these downloads (all with none), saved as a text file with each file's name and its link and
 /// mirrors under it, as a tree. Import Links reads it back.
 pub fn export(ctx: &Ctx, ids: Vec<u64>) {
     let date = glib::DateTime::now_local().ok().and_then(|d| d.format("%Y-%m-%d").ok()).map(|d| d.to_string()).unwrap_or_default();
+    // What is saved, as the Mac's line under the picker's title says it.
+    let what = match ids.len() {
+        0 => "Every download's links, under its file's name".to_string(),
+        1 => "The selected download's links".to_string(),
+        n => format!("The {n} selected downloads' links"),
+    };
+    let text = gtk::FileFilter::new();
+    text.set_name(Some(&what));
+    text.add_mime_type("text/plain");
+    let filters = gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&text);
     let dialog = gtk::FileDialog::builder()
         .title("Export Links")
+        .filters(&filters)
+        .default_filter(&text)
         .accept_label("Export")
         .initial_name(format!("{}.txt", format!("Herb's DM links {date}").trim_end()))
         .build();

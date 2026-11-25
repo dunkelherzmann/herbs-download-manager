@@ -107,6 +107,9 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     } else {
         limit.set_value(500.0);
     }
+    limit_on.set_tooltip_text(Some("Limit the download speed of this download"));
+    crate::explain(&limit, "Speed limit", "The most this download may download each second");
+    crate::explain(&unit, "Speed limit unit", "Kilobytes or megabytes a second");
     let limit_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     limit_row.append(&limit_on);
     limit_row.append(&limit);
@@ -190,7 +193,7 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
     let detail: Rc<RefCell<Detail>> = Rc::new(RefCell::new(first));
     {
         let detail = detail.clone();
-        bar.set_draw_func(move |_, cr, w, h| draw_segments(cr, w as f64, h as f64, &detail.borrow()));
+        bar.set_draw_func(move |area, cr, w, h| draw_segments(area, cr, w as f64, h as f64, &detail.borrow()));
     }
     let manager = ctx.manager.clone();
     let id_ = id;
@@ -368,15 +371,15 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<&str>) {
             toggle.set_sensitive(r.status.is_running() || matches!(r.status, Status::Waiting | Status::Paused | Status::Failed(_)));
             toggle.set_tooltip_text(Some(if r.status.is_running() { "Pause: stop, keeping what's downloaded (Ctrl+.)" } else { "Resume: continue (Ctrl+R)" }));
             info["Link"].set_label(&r.url);
-            info["Folder"].set_label(&r.folder.display().to_string());
+            info["Folder"].set_label(&crate::list::tilde(&r.folder));
             info["Size"].set_label(&r.size.map(format::bytes).unwrap_or_else(|| "Unknown".into()));
             info["Resumable"].set_label(if r.resumable { "Yes" } else { "No: pausing starts it over" });
-            info["Date Added"].set_label(&crate::list::date_text(Some(r.added)));
+            info["Date Added"].set_label(&crate::list::full_date_text(r.added));
             info["Checksum"].set_label(&d.verified.clone().unwrap_or_else(|| match &d.checksum {
                 Some(c) => format!("{}, checked when the download finishes", c.algorithm.name()),
                 None => "—".into(),
             }));
-            info["Date Finished"].set_label(&r.finished.map(|f| crate::list::date_text(Some(f))).unwrap_or_else(|| "—".into()));
+            info["Date Finished"].set_label(&r.finished.map(crate::list::full_date_text).unwrap_or_else(|| "—".into()));
             plus.set_sensitive(!finished && r.allowed_connections < 32);
             minus.set_sensitive(!finished && r.allowed_connections > 1);
             connections.set_sensitive(!finished);
@@ -545,26 +548,48 @@ fn show_text(label: &gtk::Label, text: &str) {
     }
 }
 
-/// The header's bar: each segment's downloaded part filled (brighter while a connection works on it), the gaps
-/// still to fetch left empty.
-fn draw_segments(cr: &gtk::cairo::Context, w: f64, h: f64, d: &Detail) {
+/// The header's bar, as the Mac draws it: a finished download all green; otherwise each segment's downloaded part
+/// green once the segment is complete, in the accent colour while a connection works on it and grey while it waits,
+/// with a thin line where each segment starts; the gaps still to fetch left empty.
+fn draw_segments(area: &gtk::DrawingArea, cr: &gtk::cairo::Context, w: f64, h: f64, d: &Detail) {
+    let rgb = |c: gtk::gdk::RGBA| cr.set_source_rgba(c.red() as f64, c.green() as f64, c.blue() as f64, c.alpha() as f64);
+    let named = |name: &str, fallback: &str| {
+        #[allow(deprecated)]
+        area.style_context().lookup_color(name).unwrap_or_else(|| gtk::gdk::RGBA::parse(fallback).expect("a colour"))
+    };
+    let (green, accent, grey) = (named("success_color", "#26a269"), named("accent_bg_color", "#3584e4"), gtk::gdk::RGBA::parse("#9a9996").expect("a colour"));
+    let r = 4.0_f64.min(h / 2.0);
+    cr.new_sub_path();
+    cr.arc(w - r, r, r, -std::f64::consts::FRAC_PI_2, 0.0);
+    cr.arc(w - r, h - r, r, 0.0, std::f64::consts::FRAC_PI_2);
+    cr.arc(r, h - r, r, std::f64::consts::FRAC_PI_2, std::f64::consts::PI);
+    cr.arc(r, r, r, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
+    cr.close_path();
     cr.set_source_rgba(0.5, 0.5, 0.5, 0.25);
-    cr.rectangle(0.0, 0.0, w, h);
-    let _ = cr.fill();
+    let _ = cr.fill_preserve();
+    cr.clip();
     let size = d.row.size.unwrap_or(0);
-    if d.row.status == Status::Finished || size == 0 {
-        if d.row.status == Status::Finished {
-            cr.set_source_rgb(0.24, 0.52, 0.89);
-            cr.rectangle(0.0, 0.0, w, h);
-            let _ = cr.fill();
-        }
+    if size == 0 {
         return;
     }
-    for s in &d.segments {
-        let x0 = s.start as f64 / size as f64 * w;
-        let x1 = s.pos as f64 / size as f64 * w;
-        if s.owner.is_some() { cr.set_source_rgb(0.30, 0.70, 0.40) } else { cr.set_source_rgb(0.24, 0.52, 0.89) }
-        cr.rectangle(x0, 0.0, (x1 - x0).max(0.0), h);
+    if d.row.status == Status::Finished {
+        rgb(green);
+        cr.rectangle(0.0, 0.0, w, h);
+        let _ = cr.fill();
+        return;
+    }
+    let scale = w / size as f64;
+    for s in d.segments.iter().filter(|s| s.pos > s.start) {
+        rgb(if s.pos >= s.end { green } else if s.owner.is_some() { accent } else { grey });
+        cr.rectangle(s.start as f64 * scale, 0.0, ((s.pos - s.start) as f64 * scale).max(1.0), h);
+        let _ = cr.fill();
+    }
+    // The window's background, see-through, where each segment after the first starts.
+    let mut bg = named("window_bg_color", "#ffffff");
+    bg.set_alpha(0.6);
+    rgb(bg);
+    for s in d.segments.iter().skip(1) {
+        cr.rectangle(s.start as f64 * scale, 0.0, 1.0, h);
         let _ = cr.fill();
     }
 }
