@@ -15,6 +15,7 @@ pub mod scan;
 pub mod scan_text;
 pub mod subtitles;
 pub mod ts;
+pub mod youtube;
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;

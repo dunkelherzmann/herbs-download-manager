@@ -28,6 +28,12 @@ pub const WAITING: &str = "waiting";
 struct Feed {
     parts: PathBuf,
     received: AtomicU64,
+    /// What the download asked for (its sound only, the picture's most lines), for the app that feeds it itself.
+    choice: super::StreamChoice,
+    /// Whether the app took it to feed (`wanted`).
+    claimed: std::sync::atomic::AtomicBool,
+    /// The size the feeder expects, once it knows (0 when not told).
+    expected: AtomicU64,
     state: Mutex<State>,
 }
 
@@ -69,6 +75,38 @@ fn track_file(parts: &Path, track: usize, init: bool) -> PathBuf {
     parts.join(if init { format!("feed-{track}-init") } else { format!("feed-{track}") })
 }
 
+/// A fed download the app feeds itself: a video it opens out of sight (`super::youtube`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Wanted {
+    pub feed: String,
+    /// The page to open.
+    pub page: String,
+    pub sound_only: bool,
+    /// The picture's most lines (0 for the best).
+    pub lines: u32,
+}
+
+/// The app's own fed downloads that have started and that nothing feeds yet, each handed out once per start.
+pub fn wanted() -> Vec<Wanted> {
+    let feeds = FEEDS.lock().unwrap();
+    let mut out = Vec::new();
+    for (id, feed) in feeds.iter() {
+        let Some(video) = super::youtube::video_of_feed(id) else { continue };
+        if feed.claimed.swap(true, Ordering::SeqCst) {
+            continue;
+        }
+        out.push(Wanted { feed: id.clone(), page: super::youtube::watch_url(&video), sound_only: feed.choice.sound_only, lines: feed.choice.quality.unwrap_or(0) });
+    }
+    out
+}
+
+/// The size the feeder will send in all, once it knows (a sound-only download is smaller than the size listed).
+pub fn expect(id: &str, size: u64) {
+    if let Some(feed) = FEEDS.lock().unwrap().get(id) {
+        feed.expected.store(size, Ordering::SeqCst);
+    }
+}
+
 /// Stores one piece of a running fed download. Errors: `STOPPED` (paused, cancelled or gone: the browser stops),
 /// `WAITING` (not started yet: the browser asks again shortly), or what went wrong.
 pub fn put(id: &str, track: usize, init: bool, data: &[u8]) -> Result<(), String> {
@@ -97,6 +135,13 @@ pub fn put(id: &str, track: usize, init: bool, data: &[u8]) -> Result<(), String
     Ok(())
 }
 
+/// `put` with the piece in base64, as a page sends it.
+pub fn put_base64(id: &str, track: usize, init: bool, data: &str) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|e| format!("A piece came broken: {e}"))?;
+    put(id, track, init, &bytes)
+}
+
 /// The browser has sent every piece (`failed`: it couldn't, and why).
 pub fn end(id: &str, failed: Option<String>) -> Result<(), String> {
     let Some(feed) = FEEDS.lock().unwrap().get(id).cloned() else { return Err(STOPPED.into()) };
@@ -112,7 +157,7 @@ pub fn end(id: &str, failed: Option<String>) -> Result<(), String> {
 }
 
 /// Runs a fed download into `folder/name`: waits for the browser's pieces, then joins them.
-pub async fn run(url: &str, folder: &Path, name: &str, progress: &Progress, stop: &tokio::sync::watch::Receiver<u8>) -> Outcome {
+pub async fn run(url: &str, folder: &Path, name: &str, choice: &super::StreamChoice, progress: &Progress, stop: &tokio::sync::watch::Receiver<u8>) -> Outcome {
     let (id, size) = parse(url);
     let dest = folder.join(name);
     let parts = super::download::parts_folder(&dest);
@@ -127,7 +172,13 @@ pub async fn run(url: &str, folder: &Path, name: &str, progress: &Progress, stop
     if let Some(s) = size {
         progress.size.store(s, Ordering::SeqCst);
     }
-    let feed = Arc::new(Feed { parts: parts.clone(), received: AtomicU64::new(0), state: Mutex::new(State { last: Some(Instant::now()), ..Default::default() }) });
+    let feed = Arc::new(Feed {
+        parts: parts.clone(),
+        received: AtomicU64::new(0),
+        choice: choice.clone(),
+        claimed: Default::default(),
+        expected: AtomicU64::new(0),
+        state: Mutex::new(State { last: Some(Instant::now()), ..Default::default() }) });
     FEEDS.lock().unwrap().insert(id.clone(), feed.clone());
     let forget = || {
         FEEDS.lock().unwrap().remove(&id);
@@ -139,6 +190,10 @@ pub async fn run(url: &str, folder: &Path, name: &str, progress: &Progress, stop
             progress.peak.fetch_max(1, Ordering::SeqCst);
         }
         progress.downloaded.store(received, Ordering::SeqCst);
+        let expected = feed.expected.load(Ordering::SeqCst);
+        if expected > 0 {
+            progress.size.store(expected, Ordering::SeqCst);
+        }
         // Paused or cancelled: the feed stays known as stopped, so the browser's next piece is told to stop.
         if let Some(outcome) = crate::transfer::stop_outcome(stop) {
             feed.state.lock().unwrap().stopped = true;
