@@ -151,6 +151,8 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Linux test copies quit at once while the user's copy runs** (*found in testing*, 2026-11-25). Linux. Since closing the window keeps the app running (#44), the user's copy holds the app's name on the session bus all the time, so a test copy (the feature run's included) handed its launch over to it and quit: `linux/scripts/features.sh` said "the app wrote no report". A test copy (`HD_DATA_DIR` set) now holds a name of its own, made from its data folder, as the Mac and Windows already run one copy per data folder. The feature run passed 22 of 22 with the user's copy open.
+  - [x] Linux
 - [x] **The queue's "when done: Quit" only hid Windows' window to the tray** (*found in testing*, 2026-11-25). Windows. Once the queue finished with Quit chosen, the app closed its window, which only hides it to the notification area, so it kept running; the Mac quits. Fixed in #54: it now quits as Quit (Ctrl+Q) does.
   - [x] Windows
 - [x] **Pause in the Windows Download window didn't ask first for a download that can't resume** (*found in testing*, 2026-11-25). Windows. It paused at once and the download started over; the Mac, and the main list's Pause, first ask "This download can't be resumed and will start over. Pause anyway?". Fixed in #54: the Download window asks the same question.
