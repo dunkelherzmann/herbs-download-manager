@@ -89,7 +89,7 @@ pub fn follow(window: &adw::ApplicationWindow) {
     let quit = gio::SimpleAction::new("tray-quit", None);
     let w = window.clone();
     quit.connect_activate(move |_, _| {
-        let _ = w.activate_action("win.quit", None);
+        let _ = WidgetExt::activate_action(&w, "win.quit", None);
     });
     app.add_action(&quit);
     window.connect_visible_notify(|w| set(!w.is_visible()));

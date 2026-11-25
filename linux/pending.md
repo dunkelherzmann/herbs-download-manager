@@ -45,9 +45,9 @@ A code-by-code check of the Linux app against the Mac's found these differences.
 
 Still different from the Mac:
 
-- [ ] Add Links has no Folder column. (§5.3)
-- [ ] Files handed to the app (Open With from the file manager) don't open Import Links: the `.desktop` file takes no
-  files and the app doesn't handle them. (§5.7)
+- [x] Add Links has no Folder column. (§5.3) Done in #54.
+- [x] Files handed to the app (Open With from the file manager) don't open Import Links: the `.desktop` file takes no
+  files and the app doesn't handle them. (§5.7) Done in #54.
 
 ## Bugs to fix
 

@@ -363,7 +363,7 @@ impl AddLinks {
         }
         // Nothing new (every link listed already): a beep, as on the Mac.
         if fresh.is_empty() {
-            self.window.display().beep();
+            RootExt::display(&self.window).beep();
             return;
         }
         for url in &fresh {
@@ -740,7 +740,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
             let mut links = this.checked();
             // Nothing ticked: a beep, as on the Mac.
             if links.is_empty() {
-                this.window.display().beep();
+                RootExt::display(&this.window).beep();
                 return;
             }
             if this.mirrors.is_active() {
@@ -790,7 +790,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
 /// for text dragged from a web page its HTML, read as a paste reads it (§5.2): the links behind the text, relative
 /// ones made whole against the page.
 pub async fn drop_text(drop: &gdk::Drop) -> String {
-    let types = drop.formats().union_deserialize_gtypes();
+    let types = drop.formats().union_deserialize_types();
     let mut text = String::new();
     let files = if types.contains_type(gdk::FileList::static_type()) {
         drop.read_value_future(gdk::FileList::static_type(), glib::Priority::DEFAULT).await.ok().and_then(|v| v.get::<gdk::FileList>().ok())
@@ -868,8 +868,8 @@ fn page_html(html: &[u8], source: Option<&[u8]>) -> String {
 /// here" note); `on_links` gets the links dropped, none when it had none.
 pub fn links_drop(hover: impl Fn(bool) + 'static, on_links: impl Fn(Vec<String>) + 'static) -> gtk::DropTargetAsync {
     let formats = gdk::ContentFormats::builder()
-        .add_gtype(gdk::FileList::static_type())
-        .add_gtype(glib::GString::static_type())
+        .add_type(gdk::FileList::static_type())
+        .add_type(glib::GString::static_type())
         .add_mime_type("text/html")
         .build()
         .union_deserialize_mime_types();

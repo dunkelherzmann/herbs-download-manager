@@ -54,7 +54,10 @@ The layout, top to bottom:
 
 Closing the window (its close button, Close Window, Hide Herb's DM) leaves the app running, so downloads carry on: on
 the Mac in the Dock, on Windows in the notification area, where a click on its icon brings the window back and a
-right-click offers Show and Quit, on Linux in the background (GNOME lists it under Background Apps). Opening the app again while it runs brings its window back; only one copy runs at a
+right-click offers Show and Quit, on Linux in the status area (a StatusNotifierItem, which GNOME shows through its
+AppIndicator extension and KDE itself), where a click on its icon or Show Herb's Download Manager brings the window
+back and Quit Herb's DM quits. Anything that needs the window meanwhile (Add Links from Watch the clipboard, a
+name-in-use question, a sign-in prompt) brings it back first. Opening the app again while it runs brings its window back; only one copy runs at a
 time (on Windows, one per data folder, so a test copy can run beside it). The window's size and place, the sidebar's
 width and the list's columns and sort are remembered.
 Dropping links, text or `.txt`/`.html` files on the window adds every link found (§5.4); while dragging, the
@@ -147,7 +150,7 @@ the app's windows (Close Window and Minimize act on the window in front), Cut, C
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Rename… · Move To… · Note… · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
-| Window | standard (macOS); Minimize ⌘M · Zoom · — · Bring All to Front (Windows) |
+| Window | standard (macOS); Minimize ⌘M · Zoom · — · Bring All to Front (Windows, Linux) |
 | Help | Herb's Download Manager Help ⌘? (F1 on Linux and Windows): opens the guide, `HELP.md`, on the project's page |
 | (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS; Ctrl+H on Windows, which closes the window to the notification area) · Quit Herb's DM ⌘Q |
 
@@ -226,15 +229,16 @@ Z (case aside, numbers by value: "part 2" before "part 10"), sizes by bytes, sma
 Checkboxes, the filter and Check All / Uncheck All work on the sorted rows as before. Each link is checked as it arrives, four at a time: its
 row gets the file's real name and size, a web page's row gives way to the files on it (§15), and a link that doesn't
 answer as a file is unchecked and says why: "Offline (404 Not Found)", "Offline (The server didn't answer)" or
-"Needs a sign-in". Ticking it again adds it all the same. The Linux list
-shows Name, Size and Link. **Treat as mirrors of
+"Needs a sign-in". Ticking it again adds it all the same. **Treat as mirrors of
 one file** combines the checked links into one download with mirrors (offered when they share a file name or size).
 **Only the sound of streamed videos** (offered when a checked link is a stream) saves just the sound of each checked
 stream (§15); other files are added as they are. Buttons: Cancel, Add, Download. Links are added one at a time in list order, so links to the same file (the same
 name, and the same size when known) become one download and its mirrors (§7.1 M5); the footer line says so ("5
 links checked: 2 downloads with mirrors"), and afterwards the main window's footer sums up what was added. While the
 window is open, links, text and link files dropped on it, or on the main window or the Dock icon, join the list as
-more rows (several mirrors of one file at once, say); a link already listed is skipped.
+more rows (several mirrors of one file at once, say); a link already listed is skipped, with a beep when none was new.
+While links are dragged over it, the window dims and shows "Drop links to add them". Add or Download with nothing
+checked beeps.
 
 ### 5.4 Drag and drop
 
@@ -242,7 +246,8 @@ Links, text, a web page's HTML (the addresses of its links), and text-based file
 the Dock icon open the Add Links window with every link they contain. The pointer shows the copy sign only when what
 is dragged holds links. Copied web pages count too: Add from Clipboard and Watch the clipboard read their HTML as well
 as their text. On Windows, files handed to the `.exe` (Open with, a drop on its icon or shortcut) open
-Import Links the same way, in the copy already running if there is one.
+Import Links the same way, in the copy already running if there is one; on Linux, text and HTML files opened with the
+app from the file manager (Open With) do too.
 
 ### 5.6 A name in use
 
@@ -302,8 +307,9 @@ links and the count before they go to the Add Links window.
 
 Opens for a download from the list (double-click or ⌘O). Its title is the file name.
 
-- **Header**: progress bar drawn as the file's segments (each segment colored by state, the gaps still to fetch
-  left empty), percentage, downloaded / total, speed, time left.
+- **Header**: progress bar drawn as the file's segments (a segment's downloaded part green once it is complete, in
+  the accent colour while a connection works on it, grey while it waits; a thin line where each segment starts; the
+  gaps still to fetch left empty; a finished download all green), percentage, downloaded / total, speed, time left.
 - **Buttons**: Resume / Pause (one toggling button), Close. Closing the window never stops the download.
 - **Tabs**:
   - **Info**: link, folder, size, resumable or not, date added, date finished, checksum.
