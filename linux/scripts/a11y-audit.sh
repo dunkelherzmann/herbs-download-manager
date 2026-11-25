@@ -11,11 +11,21 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 cat > "$WORK/one.sh" <<SCRIPT
 #!/bin/sh
 D=$WORK/data-\$1; rm -rf "\$D"; mkdir -p "\$D"
-flatpak run --env=HD_DATA_DIR=\$D --env=HD_DOWNLOADS_DIR=\$D org.herbsdownloadmanager.app --add http://127.0.0.1:9/a.bin \
-    --show \$1 http://127.0.0.1:9/b.bin http://127.0.0.1:9/c.bin &
+flatpak run --instance-id-fd=3 --env=HD_DATA_DIR=\$D --env=HD_DOWNLOADS_DIR=\$D org.herbsdownloadmanager.app --add http://127.0.0.1:9/a.bin \
+    --show \$1 http://127.0.0.1:9/b.bin http://127.0.0.1:9/c.bin 3>"\$D/instance" &
 sleep 6
-python3 "$DUMP" herbs-download-manager "\$2" --wait 15 >/dev/null 2>&1
-flatpak kill org.herbsdownloadmanager.app 2>/dev/null
+# By the test copy's own id (a test copy holds org.herbsdownloadmanager.app.Test…, #53): by name it could read the
+# user's copy, which may be running too, and AT-SPI reports a proxy's process, not the app's.
+ID=\$(python3 -c "
+import gi; gi.require_version('Atspi', '2.0'); from gi.repository import Atspi
+d = Atspi.get_desktop(0)
+apps = [d.get_child_at_index(i) for i in range(d.get_child_count())]
+ids = [(a.get_accessible_id() or '') for a in apps if a]
+print(next((x for x in ids if x.startswith('org.herbsdownloadmanager.app.Test')), ''))" 2>/dev/null)
+python3 "$DUMP" "\${ID:-herbs-download-manager}" "\$2" --wait 15 >/dev/null 2>&1
+# Only this test instance: killing by the app id also ended the user's own copy, which keeps running in the
+# background since #44 (2026-11-25).
+flatpak kill "\$(cat "\$D/instance")" 2>/dev/null
 SCRIPT
 chmod +x "$WORK/one.sh"
 for w in main download-window settings new-download add-links batch; do
