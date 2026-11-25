@@ -126,11 +126,14 @@ final class YouTubePage: NSObject, WKScriptMessageHandler, WKNavigationDelegate 
 }
 
 /// Where a page runs out of sight: web views outside a window, or in one the system thinks is hidden, don't play
-/// their video (YouTube's then gives no full token) and slow their timers.
+/// their video (YouTube's then gives no full token) and slow their timers; and how they're named to sites.
 @MainActor
 enum HiddenPage {
     static func keepRunning(_ config: WKWebViewConfiguration) {
         if #available(macOS 14.0, *) { config.preferences.inactiveSchedulingPolicy = .none }
+        // Named as Safari: a web view's own name leaves out "Version/… Safari/…", and sites such as Vimeo then
+        // send no player at all.
+        config.applicationNameForUserAgent = "Version/18.0 Safari/605.1.15"
     }
 
     /// A borderless window far off every screen, fully transparent and ignoring the mouse, holding `view`. It's
