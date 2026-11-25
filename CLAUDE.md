@@ -49,6 +49,10 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
 - AppKit saves window frames, split views and table columns (`setFrameAutosaveName`, `autosaveName`) in the app's
   standard defaults, which test copies share with his copy: name them through `TestCopy.autosave(_:)` so a test run
   never changes his layout. A new list column needs a one-time move into place, since a saved layout puts it last.
+- A web view the app runs out of sight (the page player, YouTube's page; WKWebView, WebKitGTK, WebView2) must sit in
+  a shown but invisible window (off every screen, transparent, ignoring the mouse): outside one its video never
+  really plays, YouTube gives only a cold token and refuses the stream after ~5 MB, and timers slow down. On the Mac
+  it's also named as Safari, or Vimeo sends no player. Check `currentTime` moves before trusting a hidden run (2026-11-25).
 
 ## More notes (read when the step needs them)
 

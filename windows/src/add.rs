@@ -129,6 +129,8 @@ struct Scanned {
     result: Result<hd_core::media::scan::Scan, String>,
     /// Not an answer yet: the page's text had nothing, and its player is being looked at.
     looking: bool,
+    /// What the row says when nothing was found.
+    nothing: String,
 }
 
 fn scan_in_background(window: HWND, manager: Manager, url: String) {
@@ -138,9 +140,9 @@ fn scan_in_background(window: HWND, manager: Manager, url: String) {
             let _ = PostMessageW(Some(HWND(handle as *mut _)), WM_SCANNED, WPARAM(0), LPARAM(Box::into_raw(Box::new(answer)) as isize));
         };
         let mut result = manager.scan_page(&url);
-        if result.as_ref().is_ok_and(|scan| scan.found.is_empty()) {
-            // Nothing in its text: its player may build the address only while it runs.
-            post(Scanned { url: url.clone(), result: Err(String::new()), looking: true });
+        if result.as_ref().is_ok_and(needs_player) {
+            // No video in its text (its pictures don't count): its player may build the address only while it runs.
+            post(Scanned { url: url.clone(), result: Err(String::new()), looking: true, nothing: String::new() });
             let seen = crate::played::run(&url, &crate::data_folder());
             if !seen.is_empty() {
                 let seen: Vec<_> = seen.iter().filter_map(|j| hd_core::media::played::parse(j)).collect();
@@ -148,7 +150,30 @@ fn scan_in_background(window: HWND, manager: Manager, url: String) {
                 result = manager.scan_page_given(&url, given);
             }
         }
-        post(Scanned { url, result, looking: false });
+        post(Scanned { url, result, looking: false, nothing: "Web page: no files found".into() });
+    });
+}
+
+/// Whether a page scan found no video, sound or stream, so the page's player is worth a run (§15): a page's
+/// pictures (a video site's thumbnails) don't stand for its video.
+fn needs_player(scan: &hd_core::media::scan::Scan) -> bool {
+    use hd_core::media::scan::Kind;
+    !scan.found.iter().any(|f| matches!(f.kind, Kind::Stream | Kind::Video | Kind::Audio))
+}
+
+/// A YouTube video (§15): its page is opened out of sight and its player asked; the row gives way to the video.
+fn youtube_in_background(window: HWND, manager: Manager, url: String) {
+    let handle = window.0 as isize;
+    std::thread::spawn(move || {
+        let line = crate::youtube::describe(&url, &crate::data_folder());
+        let quality = manager.settings().stream_choice().quality;
+        let found = line.as_deref().and_then(|l| hd_core::media::youtube::found(l, quality));
+        let nothing = hd_core::media::youtube::why_not(line.as_deref());
+        let result = Ok(hd_core::media::scan::Scan { title: String::new(), found: found.into_iter().collect() });
+        let answer = Box::new(Scanned { url, result, looking: false, nothing });
+        unsafe {
+            let _ = PostMessageW(Some(HWND(handle as *mut _)), WM_SCANNED, WPARAM(0), LPARAM(Box::into_raw(answer) as isize));
+        }
     });
 }
 
@@ -569,7 +594,8 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
             }
         }
         for url in &fresh {
-            f.items.push((url.clone(), link_name(url), None, "Checking…".into(), true));
+            let video = hd_core::media::youtube::video_id(url).is_some();
+            f.items.push((url.clone(), link_name(url), None, if video { "Looking at the video…" } else { "Checking…" }.into(), true));
             if hd_core::media::download::is_stream_link(url) {
                 f.streams.insert(url.clone());
             }
@@ -588,6 +614,10 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         }
     }
     show_items(hwnd);
+    let (videos, fresh): (Vec<String>, Vec<String>) = fresh.into_iter().partition(|u| hd_core::media::youtube::video_id(u).is_some());
+    for url in videos {
+        youtube_in_background(hwnd, ctx.manager.clone(), url);
+    }
     probe_in_background(hwnd, ctx.manager.clone(), fresh);
     unsafe {
         let _ = SetForegroundWindow(hwnd);
@@ -978,9 +1008,10 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                                 .iter()
                                 .filter(|x| !known.contains(&x.url))
                                 .map(|x| {
+                                    let word = if x.url.starts_with("hdm-feed:") { "YouTube video" } else { x.kind.word() };
                                     let text = match x.size {
-                                        Some(n) => format!("{}, {}", format::bytes(n), x.kind.word()),
-                                        None => x.kind.word().to_string(),
+                                        Some(n) => format!("{}, {word}", format::bytes(n)),
+                                        None => word.to_string(),
                                     };
                                     (x.url.clone(), x.name.clone(), x.size, text, true)
                                 })
@@ -991,7 +1022,7 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                             f.items.splice(at..=at, rows);
                         }
                         Ok(_) => {
-                            f.items[at].3 = "Web page: no files found".into();
+                            f.items[at].3 = answer.nothing.clone();
                             f.items[at].4 = false;
                         }
                         Err(e) => {

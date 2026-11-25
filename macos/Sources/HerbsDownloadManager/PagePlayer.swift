@@ -8,6 +8,7 @@ import WebKit
 @MainActor
 final class PagePlayer: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     private var view: WKWebView?
+    private var window: NSWindow?
     private var seen: [String] = []
     private var done: CheckedContinuation<[String], Never>?
     private var stop: DispatchWorkItem?
@@ -24,12 +25,15 @@ final class PagePlayer: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback = []
+        HiddenPage.keepRunning(config)
         config.userContentController.addUserScript(
             WKUserScript(source: playedCatchScript(), injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.add(self, name: "hdmPlayed")
         let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 960, height: 540), configuration: config)
         view.navigationDelegate = self
         self.view = view
+        // In a window nobody sees: outside one, its player wouldn't really play.
+        window = HiddenPage.window(for: view)
         view.load(URLRequest(url: url))
         finish(after: .seconds(Int(playedWait()[0])))
     }
@@ -50,6 +54,8 @@ final class PagePlayer: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         view?.configuration.userContentController.removeScriptMessageHandler(forName: "hdmPlayed")
         view?.navigationDelegate = nil
         view = nil
+        window?.orderOut(nil)
+        window = nil
         done.resume(returning: seen)
     }
 

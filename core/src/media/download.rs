@@ -178,7 +178,7 @@ pub async fn download(client: &reqwest::Client, req: StreamRequest, progress: Ar
     *progress.name.lock().unwrap() = Some(req.name.clone());
     // A stream the browser fetches and hands over piece by piece (YouTube's).
     if super::feed::is_feed_link(&req.url) {
-        return super::feed::run(&req.url, &req.folder, &req.name, &progress, &stop).await;
+        return super::feed::run(&req.url, &req.folder, &req.name, &req.choice, &progress, &stop).await;
     }
     // Pausing keeps the pieces already in (a live recording is saved), so Pause never warns of starting over.
     progress.resumable.store(true, Ordering::SeqCst);

@@ -240,7 +240,8 @@
     const active = tracks.filter(Boolean);
 
     // The player's streamer context with our own playback cookie and contexts.
-    const base = decode(seen.context);
+    let base = decode(seen.context);
+    let baseAt = seen.at;
     let url = new URL(seen.url);
     let cookie = null;
     let backoff = 0;
@@ -259,6 +260,10 @@
       if (stopped()) return null;
       if (active.every((t) => t.end && t.last >= t.end)) break;
       if (backoff) await new Promise((r) => setTimeout(r, Math.min(backoff, 10000)));
+      // The player's newer requests carry its newer token (a page that just started playing gets its full one
+      // after a few seconds): taken as soon as it shows.
+      const latest = playerRequest(response);
+      if (latest && latest.at > baseAt) { base = decode(latest.context); baseAt = latest.at; }
       const elapsed = Date.now() - started;
       // The player's place: where the track that's furthest behind has its pieces up to.
       const playerMs = Math.min(...active.map((t) => t.endMs));
@@ -283,12 +288,26 @@
       ]);
       request += 1;
       url.searchParams.set("rn", String(request));
-      const answer = await originalFetch(url.href, {
-        method: "POST", body, credentials: "include",
-        headers: { "content-type": "application/x-protobuf", accept: "application/vnd.yt-ump" },
-      });
-      if (!answer.ok) throw new Error(`YouTube refused the stream (${answer.status}).`);
-      const bytes = new Uint8Array(await answer.arrayBuffer());
+      // A dropped connection ("Load failed", "Failed to fetch") is asked again, a little later each time.
+      // A connection dropped while asking or while the answer came ("Load failed", "Failed to fetch", "network
+      // error") is asked again, a little later each time.
+      let bytes;
+      for (let attempt = 0; ; attempt++) {
+        let answer;
+        try {
+          answer = await originalFetch(url.href, {
+            method: "POST", body, credentials: "include",
+            headers: { "content-type": "application/x-protobuf", accept: "application/vnd.yt-ump" },
+          });
+          if (answer.ok) bytes = new Uint8Array(await answer.arrayBuffer());
+        } catch (error) {
+          if (attempt >= 5 || stopped()) throw error;
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        if (!answer.ok) throw new Error(`YouTube refused the stream (${answer.status}).`);
+        break;
+      }
       backoff = 0;
       if (trace) {
         const sps = umpParts(bytes).find(([t]) => t === 58);

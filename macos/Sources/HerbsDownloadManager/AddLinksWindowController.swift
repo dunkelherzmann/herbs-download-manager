@@ -180,6 +180,17 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                     let item = queue[next]
                     next += 1
                     let url = item.url
+                    if youtubeVideoId(url: url) != nil {
+                        // A YouTube video: its page is opened out of sight and its player asked (§15).
+                        item.sizeText = "Looking at the video…"
+                        self?.table.reloadData()
+                        let line = await YouTubePage.describe(url: url)
+                        guard let self, !Task.isCancelled else { return }
+                        let found = line.flatMap { manager.youtubeFound(line: $0) }
+                        self.replace(page: item, with: .success(PageScan(title: "", found: found.map { [$0] } ?? [])),
+                                     nothing: youtubeNotFound(line: line))
+                        continue
+                    }
                     let result = await Task.detached { Result { try manager.probe(url: url) } }.value
                     guard let self, !Task.isCancelled else { return }
                     switch result {
@@ -189,8 +200,9 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
                         self.table.reloadData()
                         var scanned = await Task.detached { Result { try manager.scanPage(url: url) } }.value
                         guard !Task.isCancelled else { return }
-                        if case .success(let scan) = scanned, scan.found.isEmpty {
-                            // Nothing in its text: its player may build the address only while it runs.
+                        if case .success(let scan) = scanned, scanNeedsPlayer(scan: scan) {
+                            // No video in its text (its pictures don't count): its player may build the address only
+                            // while it runs.
                             item.sizeText = "Looking at the page's player…"
                             self.table.reloadData()
                             let seen = await PagePlayer.run(url: url)
@@ -221,7 +233,8 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
 
     /// A web page's row gives way to the files and media found on it, each checked; a page with nothing on it, or
     /// that couldn't be read, stays as an unchecked row that says so.
-    private func replace(page item: Item, with scanned: Result<PageScan, Error>) {
+    private func replace(page item: Item, with scanned: Result<PageScan, Error>,
+                         nothing: String = "Web page: no files found") {
         let known = Set(items.map(\.url))
         switch scanned {
         case .success(let scan) where !scan.found.isEmpty:
@@ -230,7 +243,7 @@ final class AddLinksWindowController: NSWindowController, NSTableViewDataSource,
             window?.title = Self.title(items.count)
         case .success:
             item.checked = false
-            item.sizeText = "Web page: no files found"
+            item.sizeText = nothing
         case .failure(let error):
             item.checked = false
             item.sizeText = "Web page: \(errorText(error))"

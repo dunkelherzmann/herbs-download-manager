@@ -620,6 +620,13 @@ impl DownloadManager {
         })
     }
 
+    /// What a YouTube page's bridge said about its video (`line`), as Add Links lists it: the video, downloaded at
+    /// Settings' stream quality, or a live one's playlist. `None` when it can't be downloaded.
+    pub fn youtube_found(&self, line: String) -> Option<FoundLink> {
+        let f = hd_core::media::youtube::found(&line, self.inner.settings().stream_choice().quality)?;
+        Some(FoundLink { stream: true, kind: if f.url.starts_with("hdm-feed:") { "YouTube video".into() } else { f.kind.word().into() }, url: f.url, name: f.name, size: f.size })
+    }
+
     /// The Download window's view (§6), or nothing if the download was removed.
     pub fn detail(&self, id: u64) -> Option<DownloadDetail> {
         let d = self.inner.detail(id)?;
@@ -769,6 +776,86 @@ pub fn played_wait() -> Vec<u64> {
 #[uniffi::export]
 pub fn played_is_playlist(seen: String) -> bool {
     hd_core::media::played::parse(&seen).is_some_and(|s| hd_core::media::played::is_playlist(&s.url, &s.mime))
+}
+
+/// Whether a page scan found no video, sound or stream, so the page's player is worth a hidden run (§15): a page's
+/// pictures (a video site's thumbnails) don't stand for its video.
+#[uniffi::export]
+pub fn scan_needs_player(scan: PageScan) -> bool {
+    !scan.found.iter().any(|f| f.stream || f.kind == "Video" || f.kind == "Sound")
+}
+
+/// The video a YouTube link names, when it names one (§15): the app opens it out of sight with `youtube_script` and
+/// `youtube_bridge` in the page instead of reading the page.
+#[uniffi::export]
+pub fn youtube_video_id(url: String) -> Option<String> {
+    hd_core::media::youtube::video_id(&url)
+}
+
+/// The page the app opens for a YouTube video.
+#[uniffi::export]
+pub fn youtube_watch_url(id: String) -> String {
+    hd_core::media::youtube::watch_url(&id)
+}
+
+/// The browser extension's YouTube script and the app's bridge to it, both run in the page's own world, in its main
+/// frame, at its start.
+#[uniffi::export]
+pub fn youtube_scripts() -> Vec<String> {
+    vec![hd_core::media::youtube::SCRIPT.to_string(), hd_core::media::youtube::BRIDGE.to_string()]
+}
+
+/// What Add Links says when a YouTube link gave nothing to list (`line`: the bridge's line about the video, if any).
+#[uniffi::export]
+pub fn youtube_not_found(line: Option<String>) -> String {
+    hd_core::media::youtube::why_not(line.as_deref())
+}
+
+/// How long a YouTube page is given to start streaming its video, in seconds.
+#[uniffi::export]
+pub fn youtube_wait() -> u64 {
+    hd_core::media::youtube::WAIT_SECS
+}
+
+/// What a download of the bridge's video (`line`) comes to, for its progress.
+#[uniffi::export]
+pub fn youtube_size(line: String, sound_only: bool, lines: u32) -> Option<u64> {
+    hd_core::media::youtube::size(&line, sound_only, lines)
+}
+
+/// A download the app feeds itself from a page it opens out of sight (a YouTube video).
+#[derive(uniffi::Record)]
+pub struct WantedFeed {
+    pub feed: String,
+    pub page: String,
+    pub sound_only: bool,
+    /// The picture's most lines; 0 for the best.
+    pub lines: u32,
+}
+
+/// The app's own fed downloads that have just started and need their page opened (each handed out once per start).
+#[uniffi::export]
+pub fn feeds_wanted() -> Vec<WantedFeed> {
+    hd_core::media::feed::wanted().into_iter().map(|w| WantedFeed { feed: w.feed, page: w.page, sound_only: w.sound_only, lines: w.lines }).collect()
+}
+
+/// One piece of a fed download (`data` in base64, as the page sends it): `None` when kept, else why not ("stopped":
+/// paused, cancelled or gone, so the page stops).
+#[uniffi::export]
+pub fn feed_put(feed: String, track: u32, init: bool, data: String) -> Option<String> {
+    hd_core::media::feed::put_base64(&feed, track as usize, init, &data).err()
+}
+
+/// The size a fed download comes to, once its page says.
+#[uniffi::export]
+pub fn feed_expect(feed: String, size: u64) {
+    hd_core::media::feed::expect(&feed, size)
+}
+
+/// A fed download's page has sent everything (`failed`: it couldn't, and why).
+#[uniffi::export]
+pub fn feed_end(feed: String, failed: Option<String>) {
+    let _ = hd_core::media::feed::end(&feed, failed);
 }
 
 /// Copied HTML with its relative links made whole against the page it was copied from (`base`, §5.2).

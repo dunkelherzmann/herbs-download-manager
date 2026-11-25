@@ -1001,13 +1001,30 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
     come ("YouTube refused the stream (403).").
   - It needs YouTube's player to have started streaming the video (after any advert): before that the list's
     Download says "Play the video for a moment first (after any advert), so YouTube's player starts streaming it."
+  - **Pasted into the app.** A YouTube link (`watch?v=`, `/shorts/`, `/live/`, `/embed/`, `youtu.be/`) pasted, dropped,
+    typed or imported into Add Links isn't read as a page: its row says "Looking at the video…" while the app opens the
+    video's watch page out of sight (as a page's player above, up to 45 seconds) with `youtube.js` and a small bridge
+    of the core's in it (which answers YouTube's cookie question, asked in the EU, with "only the needed cookies",
+    `SOCS=CAI`, and loads the page again once: the question pauses the player). Once its player has played a few seconds (by then YouTube gives the page its full token), the
+    row gives way to the video: its title as the name (`.mp4`), "<size>, YouTube video", the size of the picture
+    Settings' stream quality picks (the best when none is set) and the sound. "Only the sound of streamed videos"
+    applies to it. Downloading it makes a fed download (`hdm-feed:app-yt_…`); when it starts (or starts again after a
+    pause, from the beginning), the app opens the page out of sight once more and feeds it the extension's way, so the
+    file is the same as the extension's. A live video says "Live YouTube video: it can be downloaded once the broadcast
+    has ended" (the extension leaves live videos out too); one whose page never played says "YouTube video: its page
+    didn't play it; try again, or download it from the browser".
+  - A request that drops while YouTube's answer is coming ("Load failed", "Failed to fetch") is asked again, up to
+    five times, a second longer each time; the player's newer token is taken as soon as one of its requests carries it.
 - **Scanning a page:** a web page's address typed in New Download (its size line says "A web page: Download lists
   the files and media on it", and Download or Add opens Add Links for it), or pasted, dropped or imported into Add
   Links, is read and its row gives way to the files and media found on it, each checked already: its name, size and
-  kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). When the page's text names nothing (its player builds
-  the video's address only while it runs), Add Links says "Looking at the page's player…" and opens the page out of
-  sight and muted in the system's own web engine (WebKit on the Mac and Linux, WebView2 on Windows), in a view of its
-  own that keeps no cookies or files, for up to 15 seconds (1.5 seconds more once a playlist turns up). It notes what
+  kind ("78.7 KB, Video", "300 KB, Document", "Video stream"). When the page's text names no video, sound or stream (its
+  player builds the video's address only while it runs; a video site's thumbnails don't count), Add Links says
+  "Looking at the page's player…" and opens the page out of sight and muted in the system's own web engine (WebKit on
+  the Mac and Linux, WebView2 on Windows), in a view of its own that keeps no cookies or files, inside a window nobody
+  sees (off every screen, fully transparent, ignoring the mouse; outside a window the player wouldn't really play), named to sites as the system's
+  browser (on the Mac "Version/… Safari/…" is added: without it Vimeo sends no player),
+  for up to 15 seconds (1.5 seconds more once a playlist turns up). It notes what
   the page and its frames fetch or play, and the scan checks that with the frame as referer, so the row gives way to
   the stream the player would have played. A page with nothing on it even then stays as an unchecked row saying "Web
   page: no files found". A server's folder listing ("Index of /…", Python's "Directory listing for /…",

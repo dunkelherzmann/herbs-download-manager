@@ -101,6 +101,8 @@ final class AppModel {
         observers.forEach { $0() }
         askForLogins()
         QueueDone.check(manager)
+        // A pasted YouTube video that started downloading: its page is opened out of sight to stream it (§15).
+        YouTubePage.feedWanted()
     }
 
     /// Downloads already asked about, so a cancelled prompt isn't shown again until the download runs again.
