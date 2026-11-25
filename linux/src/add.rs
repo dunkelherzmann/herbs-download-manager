@@ -47,17 +47,21 @@ pub fn add_all(ctx: &Ctx, links: Vec<PendingLink>, folder: PathBuf, connections:
                     dialog.set_response_appearance("replace", adw::ResponseAppearance::Destructive);
                     dialog.set_response_appearance("keep", adw::ResponseAppearance::Suggested);
                     dialog.set_default_response(Some("keep"));
-                    // As on the Mac, Esc gives no answer: one of the three buttons must be chosen.
-                    dialog.set_can_close(false);
+                    // As on the Mac, Esc gives no answer: one of the three buttons must be chosen. (Turning off
+                    // closing kept the question up after its answer too.)
+                    let keys = gtk::EventControllerKey::new();
+                    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+                    keys.connect_key_pressed(|_, key, _, _| {
+                        if key == gdk::Key::Escape { glib::Propagation::Stop } else { glib::Propagation::Proceed }
+                    });
+                    dialog.add_controller(keys);
                     let rest = gtk::CheckButton::with_label("Do the same for the rest");
                     if q.more {
                         dialog.set_extra_child(Some(&rest));
                     }
                     // The question goes over the main window, brought back if it was closed (§2).
                     ctx.window.present();
-                    let answer = dialog.clone().choose_future(Some(&ctx.window)).await;
-                    // A dialog that can't be closed stays up after its answer unless closed this way.
-                    dialog.force_close();
+                    let answer = dialog.choose_future(Some(&ctx.window)).await;
                     let choice = match answer.as_str() {
                         "replace" => Choice::Replace,
                         "keep" => Choice::KeepBoth,
