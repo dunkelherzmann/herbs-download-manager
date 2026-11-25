@@ -314,3 +314,4 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [x] **Publish the new extension (1.36) to Microsoft Edge Add-ons.** *Requested 2026-11-25.* Browser extension. Submitted as an update in Partner Center on 2026-11-25; it says "In review", with an answer expected within 7 business days (1.35 stays live until then). `scripts/extension-everywhere.sh` now also leaves the store package in the Mac's Downloads.

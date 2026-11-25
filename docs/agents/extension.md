@@ -64,4 +64,10 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
 - **Right after merging a change to `extension/`, run `sh scripts/extension-everywhere.sh`**: it copies the merged
   version from origin/main into the Downloads folder of the Mac, the Linux machine and the Windows machine. Merges don't install,
   so 1.5–1.10 never reached the Mac's Downloads until he asked where they were (bugs.md, 2026-11-10).
+  On the Mac it also leaves "Herb's DM extension <version> - Edge store.zip" there, the package Partner Center takes
+  (a zip he made from the folder failed the store's check for `key` and `background.scripts`, 2026-11-25).
+- **Publishing an update to Edge Add-ons** (only when Herbert asks): Partner Center ▸ Edge ▸ Herb's Download Manager ▸
+  Update, upload the store zip (he picks the file: the built-in browser can't), Continue, then Publish. The submit
+  page needs notes for certification every time: the ones in `docs/edge-add-ons.md` plus what changed. Wait for
+  the page to leave "Publishing" before moving on; afterwards the overview says "In review" (1.36, 2026-11-25).
 
