@@ -614,6 +614,12 @@ pub fn run() {
                 _ => {}
             }
         }
+        // Test hook: --add-links URL opens Add Links with that link, as a paste would (never touching the clipboard).
+        if let Some(url) = args.iter().position(|a| a == "--add-links").and_then(|i| args.get(i + 1))
+            && let Some(ctx) = add_ctx()
+        {
+            crate::add::add_links(&ctx, vec![url.clone()]);
+        }
         // Test hook: --a11y-report FILE opens every window and lists controls without hover text or a name a screen
         // reader can say (a11y.rs).
         if let Some(i) = args.iter().position(|a| a == "--a11y-report")
@@ -971,6 +977,8 @@ fn refresh() {
             }
         }
     }
+    // A pasted YouTube video that started downloading: its page is opened out of sight to stream it (§15).
+    crate::youtube::feed_wanted(&crate::data_folder());
 }
 
 /// Whether a command applies now (§3: buttons that don't apply are disabled), with the Mac's rules.

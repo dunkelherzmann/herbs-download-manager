@@ -1,6 +1,6 @@
 //! A page whose player builds its video's address only while it runs (SPECIFICATION.md §15): opened out of sight,
-//! muted, in a WebView2 of its own (a user-data folder made for the run and removed after it), for a few seconds,
-//! noting what its frames fetch or play. What it saw goes back to the core's page scan.
+//! muted, in a WebView2 of its own (a user-data folder made for the run and removed after it) in a window nobody sees
+//! (`hidden_window`), for a few seconds, noting what its frames fetch or play. What it saw goes back to the core's page scan.
 //!
 //! The catch script runs in every frame and starts the players; its lines come from the page and from each frame
 //! (`FrameCreated`). The network is watched too, with the frame that asked as the Referer, so a frame whose
@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::*;
-use windows::Win32::Foundation::{E_POINTER, HWND, RECT};
+use windows::Win32::Foundation::{COLORREF, E_POINTER, HWND, RECT};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
@@ -28,73 +28,19 @@ pub fn run(url: &str, data: &Path) -> Vec<String> {
     let seen = Rc::new(RefCell::new(Vec::<String>::new()));
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        // A window that is never shown, for the view to belong to.
-        let parent = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            w!("STATIC"),
-            w!(""),
-            WS_POPUP,
-            0,
-            0,
-            960,
-            540,
-            None,
-            None,
-            None,
-            None,
-        );
+        let parent = hidden_window();
         if let Ok(parent) = parent {
             let _ = watch(parent, url, &folder, &seen);
             let _ = DestroyWindow(parent);
         }
         CoUninitialize();
     }
-    // The browser's own processes let go of the folder a moment after the view closes.
-    for _ in 0..30 {
-        if std::fs::remove_dir_all(&folder).is_ok() || !folder.exists() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    remove_folder(&folder);
     seen.take()
 }
 
 unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<String>>>) -> windows::core::Result<()> {
-    let options = CoreWebView2EnvironmentOptions::default();
-    unsafe {
-        options.set_additional_browser_arguments(
-            "--mute-audio --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
-             --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"
-                .into(),
-        );
-    }
-    let options: ICoreWebView2EnvironmentOptions = options.into();
-    let dir = HSTRING::from(folder.as_os_str());
-    let (tx, rx) = std::sync::mpsc::channel();
-    CreateCoreWebView2EnvironmentCompletedHandler::wait_for_async_operation(
-        Box::new(move |handler| unsafe {
-            CreateCoreWebView2EnvironmentWithOptions(PCWSTR::null(), &dir, &options, &handler).map_err(Error::WindowsError)
-        }),
-        Box::new(move |code, environment| {
-            code?;
-            let _ = tx.send(environment.ok_or_else(|| windows::core::Error::from(E_POINTER)));
-            Ok(())
-        }),
-    )
-    .map_err(to_win)?;
-    let environment = rx.recv().map_err(|_| windows::core::Error::from(E_POINTER))??;
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    CreateCoreWebView2ControllerCompletedHandler::wait_for_async_operation(
-        Box::new(move |handler| unsafe { environment.CreateCoreWebView2Controller(parent, &handler).map_err(Error::WindowsError) }),
-        Box::new(move |code, controller| {
-            code?;
-            let _ = tx.send(controller.ok_or_else(|| windows::core::Error::from(E_POINTER)));
-            Ok(())
-        }),
-    )
-    .map_err(to_win)?;
-    let controller = rx.recv().map_err(|_| windows::core::Error::from(E_POINTER))??;
+    let controller = unsafe { controller(parent, folder)? };
 
     let end = Rc::new(Cell::new(Instant::now() + Duration::from_secs(played::WAIT_SECS)));
     let note = {
@@ -115,8 +61,6 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
     };
 
     unsafe {
-        let _ = controller.SetBounds(RECT { left: 0, top: 0, right: 960, bottom: 540 });
-        let _ = controller.SetIsVisible(true);
         let view = controller.CoreWebView2()?;
         if let Ok(v8) = view.cast::<ICoreWebView2_8>() {
             let _ = v8.SetIsMuted(true);
@@ -236,6 +180,87 @@ unsafe fn watch(parent: HWND, url: &str, folder: &Path, seen: &Rc<RefCell<Vec<St
     Ok(())
 }
 
+/// A window nobody sees for a view to play in (§15): a view in a window that isn't really shown doesn't play its
+/// video (YouTube then gives it no full token) and has its timers slowed. So the window is shown, without taking
+/// the focus, but off every screen, fully transparent, letting the mouse through, and out of the taskbar and Alt+Tab.
+pub(crate) fn hidden_window() -> windows::core::Result<HWND> {
+    unsafe {
+        let window = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+            w!("STATIC"),
+            w!(""),
+            WS_POPUP,
+            -32000,
+            -32000,
+            960,
+            540,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let _ = SetLayeredWindowAttributes(window, COLORREF(0), 0, LWA_ALPHA);
+        let _ = ShowWindow(window, SW_SHOWNOACTIVATE);
+        Ok(window)
+    }
+}
+
+/// A WebView2 in `parent` with a user-data folder of its own (`folder`), muted, playing without a click and never
+/// slowed down for being out of sight; shown at the window's size.
+pub(crate) unsafe fn controller(parent: HWND, folder: &Path) -> windows::core::Result<ICoreWebView2Controller> {
+    let options = CoreWebView2EnvironmentOptions::default();
+    unsafe {
+        options.set_additional_browser_arguments(
+            "--mute-audio --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling \
+             --disable-renderer-backgrounding --disable-backgrounding-occluded-windows \
+             --disable-features=CalculateNativeWinOcclusion"
+                .into(),
+        );
+    }
+    let options: ICoreWebView2EnvironmentOptions = options.into();
+    let dir = HSTRING::from(folder.as_os_str());
+    let (tx, rx) = std::sync::mpsc::channel();
+    CreateCoreWebView2EnvironmentCompletedHandler::wait_for_async_operation(
+        Box::new(move |handler| unsafe {
+            CreateCoreWebView2EnvironmentWithOptions(PCWSTR::null(), &dir, &options, &handler).map_err(Error::WindowsError)
+        }),
+        Box::new(move |code, environment| {
+            code?;
+            let _ = tx.send(environment.ok_or_else(|| windows::core::Error::from(E_POINTER)));
+            Ok(())
+        }),
+    )
+    .map_err(to_win)?;
+    let environment = rx.recv().map_err(|_| windows::core::Error::from(E_POINTER))??;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    CreateCoreWebView2ControllerCompletedHandler::wait_for_async_operation(
+        Box::new(move |handler| unsafe { environment.CreateCoreWebView2Controller(parent, &handler).map_err(Error::WindowsError) }),
+        Box::new(move |code, controller| {
+            code?;
+            let _ = tx.send(controller.ok_or_else(|| windows::core::Error::from(E_POINTER)));
+            Ok(())
+        }),
+    )
+    .map_err(to_win)?;
+    let controller = rx.recv().map_err(|_| windows::core::Error::from(E_POINTER))??;
+    unsafe {
+        let _ = controller.SetBounds(RECT { left: 0, top: 0, right: 960, bottom: 540 });
+        let _ = controller.SetIsVisible(true);
+    }
+    Ok(controller)
+}
+
+/// Removes a run's user-data folder: the browser's own processes let go of it a moment after the view closes.
+pub(crate) fn remove_folder(folder: &Path) {
+    for _ in 0..30 {
+        if std::fs::remove_dir_all(folder).is_ok() || !folder.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn to_win(e: Error) -> windows::core::Error {
     match e {
         Error::WindowsError(e) => e,
@@ -244,7 +269,7 @@ fn to_win(e: Error) -> windows::core::Error {
 }
 
 /// A string WebView2 handed over, freed once read.
-fn take(text: PWSTR) -> String {
+pub(crate) fn take(text: PWSTR) -> String {
     if text.is_null() {
         return String::new();
     }

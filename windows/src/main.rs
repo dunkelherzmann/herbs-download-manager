@@ -29,6 +29,7 @@ mod features;
 mod queuedone;
 #[cfg(windows)]
 mod toast;
+mod youtube;
 
 use std::path::PathBuf;
 
