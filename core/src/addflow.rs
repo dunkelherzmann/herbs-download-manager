@@ -64,9 +64,10 @@ impl Question {
             _ => String::new(),
         };
         format!(
-            "Skip the new link, replace the existing {} (it goes to the Trash), or keep both, the new one as “{}”.{sizes}",
+            "Skip the new link, replace the existing {} (it goes to the {trash}), or keep both, the new one as “{}”.{sizes}",
             if self.clash.finished || self.clash.id.is_none() { "file" } else { "download" },
-            self.clash.kept_name
+            self.clash.kept_name,
+            trash = crate::manager::TRASH
         )
     }
 }
