@@ -43,6 +43,8 @@ pub struct Field<'a> {
     pub value: &'a str,
     pub secret: bool,
     pub help: &'a str,
+    /// The hint in the empty field, as the Mac's placeholder.
+    pub hint: &'a str,
 }
 
 extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -135,6 +137,10 @@ pub fn form_selecting(ctx: &Ctx, owner: HWND, title: &str, note: &str, fields: &
             make(0, w!("STATIC"), &format!("{}:", f.label), LABEL, 14, fy + 3, 150, 20);
             let e = make(F_FIELD + i as u16, w!("EDIT"), f.value, EDIT | if f.secret { ES_PASSWORD } else { 0 }, 170, fy, width - 184, 24);
             crate::a11y::explain(e, f.label, f.help);
+            if !f.hint.is_empty() {
+                let hint = wide(f.hint);
+                SendMessageW(e, EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(hint.as_ptr() as isize)));
+            }
             edits.push(e);
         }
         let check_box = check.map(|(label, on, help)| {
@@ -250,8 +256,8 @@ pub fn ask_for_login(ctx: &Ctx, owner: HWND, host: &str) {
     let remember = format!("Remember for {site}");
     let help = format!("Save this sign-in in the app (encrypted with the Administrator Password) for later downloads from {site}");
     let Some((values, keep)) = form(ctx, owner, "Sign In", &note, &[
-        Field { label: "User name", value: &user_value, secret: false, help: "The user name for this site" },
-        Field { label: "Password", value: "", secret: true, help: "The password for this site" },
+        Field { label: "User name", value: &user_value, secret: false, help: "The user name for this site", hint: "User name" },
+        Field { label: "Password", value: "", secret: true, help: "The password for this site", hint: "Password" },
     ], Some((&remember, true, &help)), "Sign In") else { return };
     let sign = SignIn {
         site: saved.as_ref().map(|s| s.site.clone()).unwrap_or(site),
@@ -329,15 +335,16 @@ pub fn create_or_modify(ctx: &Ctx, owner: HWND) -> bool {
         };
         let mut fields = Vec::new();
         if modifying {
-            fields.push(Field { label: "Current password", value: "", secret: true, help: "The Administrator Password you use now" });
+            fields.push(Field { label: "Current password", value: "", secret: true, help: "The Administrator Password you use now", hint: "Current password" });
         }
         fields.push(Field {
             label: if modifying { "New password" } else { "New password (8 or more)" },
             value: "",
             secret: true,
             help: "The new Administrator Password, at least 8 characters",
+            hint: if modifying { "New password (blank to remove)" } else { "New password (at least 8 characters)" },
         });
-        fields.push(Field { label: "Confirm new password", value: "", secret: true, help: "The new Administrator Password again" });
+        fields.push(Field { label: "Confirm new password", value: "", secret: true, help: "The new Administrator Password again", hint: "Confirm new password" });
         let title = if modifying { "Change Administrator Password" } else { "Create Administrator Password" };
         let Some((v, _)) = form(ctx, owner, title, &note, &fields, None, if modifying { "Change Password" } else { "Create Password" }) else {
             return false;
@@ -378,6 +385,7 @@ pub fn unlock(ctx: &Ctx, owner: HWND, detail: Option<&str>) -> bool {
             value: "",
             secret: true,
             help: "The Administrator Password that encrypts saved sign-ins",
+            hint: "Administrator Password",
         }], None, "Unlock") else {
             return false;
         };
@@ -605,12 +613,13 @@ fn edit_form(hwnd: HWND, ctx: &Ctx, existing: Option<Listed>) {
     };
     loop {
         let Some((v, _)) = form(ctx, hwnd, &title, &note, &[
-            Field { label: "Site", value: &values[0], secret: false, help: "The site these apply to, such as example.com; its subdomains too" },
-            Field { label: "User name", value: &values[1], secret: false, help: "The user name for this site" },
-            Field { label: "Password", value: &values[2], secret: true, help: "The password for this site" },
+            Field { label: "Site", value: &values[0], secret: false, help: "The site these apply to, such as example.com; its subdomains too", hint: "Site, such as example.com" },
+            Field { label: "User name", value: &values[1], secret: false, help: "The user name for this site", hint: "User name" },
+            Field { label: "Password", value: &values[2], secret: true, help: "The password for this site", hint: "Password" },
             Field { label: "Cookies", value: &values[3], secret: false,
-                    help: "The Cookie header downloads from this site send, as name=value pairs separated by semicolons" },
-            Field { label: "Referer", value: &values[4], secret: false, help: "For sites that only allow downloads coming from one of their pages" },
+                    help: "The Cookie header downloads from this site send, as name=value pairs separated by semicolons",
+                    hint: "Cookies, such as session=abc123" },
+            Field { label: "Referer", value: &values[4], secret: false, help: "For sites that only allow downloads coming from one of their pages", hint: "Referer, the page links come from" },
         ], None, "Save") else {
             return;
         };

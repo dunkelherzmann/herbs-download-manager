@@ -103,8 +103,9 @@ fn perform(main: HWND, action: WhenDone) {
         return;
     }
     match action {
+        // Quits, as Quit (Ctrl+Q) does: the close box only hides the window to the tray.
         WhenDone::Quit => unsafe {
-            let _ = PostMessageW(Some(main), WM_CLOSE, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(Some(main), WM_COMMAND, WPARAM(crate::app::C_QUIT as usize), LPARAM(0));
         },
         WhenDone::Sleep => unsafe {
             SetSuspendState(0, 0, 0);
