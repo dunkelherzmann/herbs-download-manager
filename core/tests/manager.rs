@@ -528,6 +528,25 @@ fn the_speed_limit_for_all_downloads_holds() {
 }
 
 #[test]
+fn a_limited_download_s_count_moves_while_it_runs() {
+    // Under 64 KB/s a 256 KB write buffer took seconds to fill, so the count stood still until a pause wrote it.
+    let data = pattern(MIB, 23);
+    let (_rt, s) = server(&data, None);
+    let dir = folder("limit-count");
+    let m = Manager::open(&dir).unwrap();
+    let id = m.add(new(s.url("/f.bin"), &dir, false));
+    m.set_speed_limit(id, Some(64 * 1024));
+    m.resume(&[id]);
+    let row = |m: &Manager| m.rows().into_iter().find(|r| r.id == id).unwrap();
+    std::thread::sleep(Duration::from_millis(2500));
+    let first = row(&m).downloaded;
+    std::thread::sleep(Duration::from_millis(1500));
+    let then = row(&m).downloaded;
+    assert!(first > 0 && then > first && then < MIB as u64, "{first} then {then}");
+    m.pause(&[id]);
+}
+
+#[test]
 fn one_download_s_own_limit_holds_and_can_be_lifted() {
     let data = pattern(MIB / 2, 22);
     let (_rt, s) = server(&data, None);
