@@ -557,7 +557,7 @@ fn draw_segments(area: &gtk::DrawingArea, cr: &gtk::cairo::Context, w: f64, h: f
         #[allow(deprecated)]
         area.style_context().lookup_color(name).unwrap_or_else(|| gtk::gdk::RGBA::parse(fallback).expect("a colour"))
     };
-    let (green, accent, grey) = (named("success_color", "#26a269"), named("accent_bg_color", "#3584e4"), gtk::gdk::RGBA::parse("#9a9996").expect("a colour"));
+    let (green, accent, grey) = (named("success_bg_color", "#26a269"), named("accent_bg_color", "#3584e4"), gtk::gdk::RGBA::parse("#9a9996").expect("a colour"));
     let r = 4.0_f64.min(h / 2.0);
     cr.new_sub_path();
     cr.arc(w - r, r, r, -std::f64::consts::FRAC_PI_2, 0.0);
