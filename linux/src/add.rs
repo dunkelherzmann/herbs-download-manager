@@ -55,7 +55,9 @@ pub fn add_all(ctx: &Ctx, links: Vec<PendingLink>, folder: PathBuf, connections:
                     }
                     // The question goes over the main window, brought back if it was closed (§2).
                     ctx.window.present();
-                    let answer = dialog.choose_future(Some(&ctx.window)).await;
+                    let answer = dialog.clone().choose_future(Some(&ctx.window)).await;
+                    // A dialog that can't be closed stays up after its answer unless closed this way.
+                    dialog.force_close();
                     let choice = match answer.as_str() {
                         "replace" => Choice::Replace,
                         "keep" => Choice::KeepBoth,
