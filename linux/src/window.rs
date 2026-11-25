@@ -462,6 +462,8 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
             footer.set_label(&parts.join("  ·  "));
             enable(&window, &ui, &selected, &rows);
             crate::queuedone::check(&ui.manager, &window);
+            // A pasted YouTube video that started downloading: its page is opened out of sight to stream it (§15).
+            crate::youtube::feed_wanted();
         })
     };
 
@@ -534,6 +536,11 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     // Test hook: `--show new-download|add-links|batch [LINK…]` opens that window over the main one.
     {
         let args: Vec<String> = std::env::args().collect();
+        // Test hook: `--add-links URL` opens Add Links with that link, as a paste would (never touching the clipboard).
+        if let Some(link) = args.iter().position(|a| a == "--add-links").and_then(|i| args.get(i + 1)).cloned() {
+            let ctx = ctx.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || crate::add::add_links(&ctx, vec![link]));
+        }
         if let Some(i) = args.iter().position(|a| a == "--show") {
             let links: Vec<String> = args[i + 2..].iter().take_while(|a| !a.starts_with("--")).cloned().collect();
             let (ctx, what) = (ctx.clone(), args.get(i + 1).cloned().unwrap_or_default());

@@ -387,6 +387,11 @@ impl AddLinks {
                         let mut q = queue.borrow_mut();
                         if q.is_empty() { None } else { Some(q.remove(0)) }
                     }) else { break };
+                    // A YouTube video: its page is opened out of sight and its player asked (§15).
+                    if hd_core::media::youtube::video_id(&url).is_some() {
+                        this.describe_youtube(&url).await;
+                        continue;
+                    }
                     let manager = this.manager.clone();
                     let u = url.clone();
                     let result = gio::spawn_blocking(move || manager.probe(&u)).await;
@@ -462,18 +467,12 @@ impl AddLinks {
     /// Replaces a web page's row with the files and media found on it, each checked already; a page with nothing on
     /// it, or that couldn't be read, stays as an unchecked row that says so.
     async fn scan_page(&self, url: &str) {
-        for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
-            item.size_text = "Scanning page…".into();
-            item.size_label.set_label(&item.size_text);
-        }
+        self.set_size_text(url, "Scanning page…");
         let (manager, u) = (self.manager.clone(), url.to_string());
         let mut scanned = gio::spawn_blocking(move || manager.scan_page(&u)).await.unwrap_or_else(|_| Err("The scan stopped".into()));
-        if matches!(&scanned, Ok(scan) if scan.found.is_empty()) {
-            // Nothing in its text: its player may build the address only while it runs.
-            for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
-                item.size_text = "Looking at the page's player…".into();
-                item.size_label.set_label(&item.size_text);
-            }
+        if matches!(&scanned, Ok(scan) if needs_player(scan)) {
+            // No video in its text (its pictures don't count): its player may build the address only while it runs.
+            self.set_size_text(url, "Looking at the page's player…");
             let seen = crate::played::run(url).await;
             if !seen.is_empty() {
                 let (manager, u) = (self.manager.clone(), url.to_string());
@@ -486,6 +485,29 @@ impl AddLinks {
                 .unwrap_or_else(|_| Err("The scan stopped".into()));
             }
         }
+        self.replace_page(url, scanned, "Web page: no files found");
+    }
+
+    /// Lists the video a YouTube link names, as its page's player streams it; or says why not, unchecked.
+    async fn describe_youtube(&self, url: &str) {
+        self.set_size_text(url, "Looking at the video…");
+        let line = crate::youtube::describe(url).await;
+        let quality = self.manager.settings().stream_choice().quality;
+        let found = line.as_deref().and_then(|l| hd_core::media::youtube::found(l, quality));
+        let scan = hd_core::media::scan::Scan { title: String::new(), found: found.into_iter().collect() };
+        self.replace_page(url, Ok(scan), &hd_core::media::youtube::why_not(line.as_deref()));
+    }
+
+    fn set_size_text(&self, url: &str, text: &str) {
+        for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
+            item.size_text = text.into();
+            item.size_label.set_label(text);
+        }
+    }
+
+    /// A page's row gives way to what was found on it, each checked; with nothing found, or unread, it stays as an
+    /// unchecked row that says so (`nothing`).
+    fn replace_page(&self, url: &str, scanned: Result<hd_core::media::scan::Scan, String>, nothing: &str) {
         match scanned {
             Ok(scan) if !scan.found.is_empty() => {
                 let page_row = self.items.borrow().iter().find(|i| i.url == url).map(|i| i.row.clone());
@@ -495,9 +517,11 @@ impl AddLinks {
                 self.items.borrow_mut().retain(|i| i.url != url);
                 let known: Vec<String> = self.items.borrow().iter().map(|i| i.url.clone()).collect();
                 for f in scan.found.into_iter().filter(|f| !known.contains(&f.url)) {
+                    // A YouTube video the app streams itself says so (§15).
+                    let word = if f.url.starts_with("hdm-feed:") { "YouTube video" } else { f.kind.word() };
                     let text = match f.size {
-                        Some(n) => format!("{}, {}", format::bytes(n), f.kind.word()),
-                        None => f.kind.word().to_string(),
+                        Some(n) => format!("{}, {word}", format::bytes(n)),
+                        None => word.to_string(),
                     };
                     self.append_row(&f.url, f.name, f.size, &text, f.kind == hd_core::media::scan::Kind::Stream, true);
                 }
@@ -506,13 +530,18 @@ impl AddLinks {
             }
             result => {
                 let text = match result {
-                    Ok(_) => "Web page: no files found".to_string(),
+                    Ok(_) => nothing.to_string(),
                     Err(e) => format!("Web page: {e}"),
                 };
+                // Unticked once the list is let go: a checkbox's handler reads the list.
+                let mut untick = Vec::new();
                 for item in self.items.borrow_mut().iter_mut().filter(|i| i.url == url) {
-                    item.check.set_active(false);
+                    untick.push(item.check.clone());
                     item.size_text = text.clone();
                     item.size_label.set_label(&text);
+                }
+                for check in untick {
+                    check.set_active(false);
                 }
             }
         }
@@ -593,6 +622,13 @@ impl AddLinks {
             format!("{n} links checked")
         });
     }
+}
+
+/// Whether a page scan found no video, sound or stream, so the page's player is worth a run out of sight (§15): a
+/// page's pictures (a video site's thumbnails) don't stand for its video. As the core's `scan_needs_player`.
+fn needs_player(scan: &hd_core::media::scan::Scan) -> bool {
+    use hd_core::media::scan::Kind;
+    !scan.found.iter().any(|f| matches!(f.kind, Kind::Stream | Kind::Video | Kind::Audio))
 }
 
 fn title(n: usize) -> String {
