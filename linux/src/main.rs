@@ -25,6 +25,22 @@ pub fn data_folder() -> PathBuf {
     }
 }
 
+/// The name the app holds on the session bus, which makes a second launch bring back the first. A test copy
+/// (HD_DATA_DIR set) holds one of its own, made from its data folder, so it runs beside the user's copy as on the
+/// Mac and Windows (one copy per data folder): since closing the window keeps the app running, the user's copy
+/// otherwise took every test copy's launch and the test copy quit. A sub-name of APP_ID, which the Flatpak may own.
+pub fn app_id() -> String {
+    match std::env::var_os("HD_DATA_DIR") {
+        Some(dir) if !dir.is_empty() => {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            dir.hash(&mut h);
+            format!("{APP_ID}.Test{:016x}", h.finish())
+        }
+        _ => APP_ID.to_string(),
+    }
+}
+
 /// S1 when unset: the Downloads folder ($HD_DOWNLOADS_DIR in tests).
 pub fn downloads_folder() -> PathBuf {
     match std::env::var_os("HD_DOWNLOADS_DIR") {
@@ -90,7 +106,7 @@ fn main() -> gtk::glib::ExitCode {
         println!("core {} connections {} per-server {}", hd_core::version(), s.connections, s.connections_per_server);
         return gtk::glib::ExitCode::SUCCESS;
     }
-    let app = adw::Application::builder().application_id(APP_ID).build();
+    let app = adw::Application::builder().application_id(app_id()).build();
     app.connect_activate(|app| {
         if let Some(window) = app.active_window() {
             window.present();
