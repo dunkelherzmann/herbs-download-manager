@@ -22,13 +22,13 @@ thread_local! {
 type Then = Rc<dyn Fn()>;
 
 fn entry(placeholder: &str, value: &str, help: &str) -> gtk::Entry {
-    let e = gtk::Entry::builder().placeholder_text(placeholder).text(value).width_chars(32).build();
+    let e = gtk::Entry::builder().placeholder_text(placeholder).text(value).width_chars(32).activates_default(true).build();
     crate::explain(&e, placeholder, help);
     e
 }
 
 fn password(placeholder: &str, help: &str) -> gtk::PasswordEntry {
-    let e = gtk::PasswordEntry::builder().placeholder_text(placeholder).show_peek_icon(true).build();
+    let e = gtk::PasswordEntry::builder().placeholder_text(placeholder).show_peek_icon(true).activates_default(true).build();
     crate::explain(&e, placeholder, help);
     e
 }

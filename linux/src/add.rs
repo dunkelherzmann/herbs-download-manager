@@ -148,7 +148,7 @@ fn with_header(window: &adw::Window, body: &impl IsA<gtk::Widget>) {
 /// New Download (§5.1).
 pub fn new_download(ctx: &Ctx, link: Option<String>) {
     let window = dialog_window(ctx, "New Download", 560, 420);
-    let link_entry = gtk::Entry::builder().hexpand(true).placeholder_text("https://example.com/file.zip").build();
+    let link_entry = gtk::Entry::builder().hexpand(true).placeholder_text("https://example.com/file.zip").activates_default(true).build();
     crate::explain(&link_entry, "Link", "Link: the address of the file to download");
     if let Some(l) = link {
         link_entry.set_text(&l);
@@ -157,7 +157,7 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
     crate::explain(&mirrors, "Mirrors", "Mirrors: other servers with the same file, one address per line (optional)");
     mirrors.set_tooltip_text(Some("Mirrors: other servers with the same file, one address per line (optional)"));
     let mirrors_scroll = gtk::ScrolledWindow::builder().child(&mirrors).min_content_height(70).has_frame(true).build();
-    let name = gtk::Entry::builder().hexpand(true).placeholder_text("From the server").build();
+    let name = gtk::Entry::builder().hexpand(true).placeholder_text("From the server").activates_default(true).build();
     crate::explain(&name, "Name", "Name: the file name to save as");
     let folder = Rc::new(RefCell::new(crate::save_folder(&ctx.manager)));
     let connections = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
