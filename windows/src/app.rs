@@ -809,7 +809,7 @@ fn selected() -> Vec<Row> {
 /// Shows the list's rows, the sidebar's counts, the footer and which commands apply.
 fn refresh() {
     let selection = selected();
-    with(|s| unsafe {
+    let finished_now = with(|s| unsafe {
         let rows = s.manager.rows();
         // The sidebar's counts, drawn at the right of each line (chrome.rs).
         let mut counts = vec![0usize; 40];
@@ -886,16 +886,14 @@ fn refresh() {
         if shown.is_empty() {
             let _ = InvalidateRect(Some(s.list), None, false);
         }
-        // S9: a notification for each download that finished since the last refresh.
+        // S9: a notification for each download that finished since the last refresh, shown once the state is let go.
+        let mut newly: Vec<(u64, String)> = Vec::new();
         let finished: std::collections::HashSet<u64> = s.rows.iter().filter(|r| r.status == Status::Finished).map(|r| r.id).collect();
         if let Some(before) = &s.finished_ids
             && s.manager.settings().notify_when_finished
         {
             for r in s.rows.iter().filter(|r| finished.contains(&r.id) && !before.contains(&r.id)) {
-                // A toast with Open and Show in Folder, as on the Mac; the balloon where Windows shows no toast.
-                if !crate::toast::finished(s.window, r.id, &r.name) {
-                    notify(s.window, &mut s.tray_icon, &r.name);
-                }
+                newly.push((r.id, r.name.clone()));
                 LAST_FINISHED.set(Some(r.id));
             }
         }
@@ -924,7 +922,20 @@ fn refresh() {
         for (id, control) in &s.tools {
             let _ = EnableWindow(*control, enabled(*id, &selection, &s.rows));
         }
+        (s.window, newly)
     });
+    // A toast with Open and Show in Folder, as on the Mac; the balloon where Windows shows no toast. Both wait on
+    // other processes, and a message another thread sends this one while they wait must find the state free (the
+    // feature run's steps failed with "no main window" from a finished download onward).
+    if let Some((window, newly)) = finished_now {
+        for (id, name) in newly {
+            if !crate::toast::finished(window, id, &name) {
+                let mut added = with(|s| s.tray_icon).unwrap_or(false);
+                notify(window, &mut added, &name);
+                with(|s| s.tray_icon = added);
+            }
+        }
+    }
 }
 
 /// Whether a command applies now (§3: buttons that don't apply are disabled), with the Mac's rules.
