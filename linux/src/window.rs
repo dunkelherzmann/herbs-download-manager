@@ -570,10 +570,11 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
                 let text = crate::add::clipboard_text(&clipboard).await;
                 let new = seen.borrow().as_deref() != Some(text.as_str());
                 *seen.borrow_mut() = Some(text.clone());
-                // Copies made in this app (its own, or while any of its windows is in front, as the Mac's "app is
-                // active") are left alone: Copy Link in a Download window opened Add Links.
-                let ours = clipboard.is_local()
-                    || ctx.window.application().is_some_and(|a| a.windows().iter().any(|w| w.is_active()));
+                // Copies made in this app, in any of its windows, are left alone (Copy Link in a Download window
+                // opened Add Links); the Mac leaves alone what is copied while it is the active app. Copies made
+                // elsewhere count even when they reach it as it comes to the front: under Wayland an app learns of
+                // the clipboard only once it has the keyboard, so a check for "in front" dropped every one.
+                let ours = clipboard.is_local();
                 if !new || !ctx.manager.settings().watch_clipboard || ours {
                     return;
                 }
