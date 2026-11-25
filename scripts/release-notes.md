@@ -16,8 +16,10 @@ This is a testing app in early development (0.x), shared as is: no support is pr
 - **Import Links** reads Word, OpenDocument, web archive and bookmark files on Linux and Windows too.
 - **Fixes:** a speed-limited download's count moves while it runs; Windows names the Recycle Bin; Windows' Find bar
   shows; Return presses the default button in Linux's dialogs.
-- **The extension** (1.36) asks YouTube again when a connection drops mid-download. It is listed on Microsoft Edge
-  Add-ons.
+- **Edge installs the extension by itself** from Microsoft Edge Add-ons: the app tells Edge about it at launch, and
+  Edge asks to turn it on (on Linux it's on at once). No Developer mode needed in Edge.
+- **The extension** (1.37) asks YouTube again when a connection drops mid-download. When Edge holds both the Edge
+  Add-ons copy and one loaded unpacked, only one of them takes the downloads.
 
 ## Install
 
@@ -40,7 +42,8 @@ To use it without installing, download `Herbs-Download-Manager-VERSION-Windows.z
 
 The extension hands your browser's downloads to the app and lists the media a page plays. It is built into the app: open Settings ▸ Browser extension ▸ **Show Extension Folder**. It is also attached here as `Herbs-DM-extension-EXTENSION.zip`.
 
-- **Chrome, Edge, Brave, Vivaldi:** open Extensions, turn on Developer mode, click **Load Unpacked**, and choose the folder.
+- **Edge:** nothing to do. After you open the app once, Edge installs the extension from [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/claljmehooppmcegokpkiffgknfdknao) at its next start and asks to turn it on.
+- **Chrome, Brave, Vivaldi:** open Extensions, turn on Developer mode, click **Load Unpacked**, and choose the folder.
 - **Firefox:** open `about:debugging`, then This Firefox ▸ **Load Temporary Add-on**, and choose `manifest.json`.
 
 Open the app once before using the extension, so it can register itself with your browsers.
