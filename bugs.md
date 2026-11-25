@@ -191,3 +191,7 @@ No bugs reported yet.
   - [x] Linux
 - [x] **Linux's accessibility audit could end the user's own copy, and read it instead of the test copy** (*found in testing*, 2026-11-25). Linux (`linux/scripts/a11y-audit.sh`). It stopped each test copy with `flatpak kill org.herbsdownloadmanager.app`, which ends every running copy, the user's too (it runs in the background since #44), and read the app by name, which both copies share. It now stops only its own instance and reads the copy by its test id (#53). Run with the user's copy open: all six windows read, 0 controls without a name or hover text, and the user's copy kept running.
   - [x] Linux
+- [ ] **A pasted YouTube link lists the page's thumbnails instead of the video** (2026-11-25). Mac, Linux, Windows. Pasting a YouTube watch link into the app showed "Add 12 Links" with maxresdefault.jpg, hqdefault.jpg and mqdefault_6s.webp, and no video. #47's hidden run of the page's player only happens when the page's text names no files at all, and YouTube's pictures counted. Even run, it would see nothing: YouTube streams only through its own player's protocol, which the browser extension's `youtube.js` speaks. To fix for every video site: run the page's player whenever its text names no video, sound or stream, and for YouTube links run the extension's own script out of sight, list the video by its title, and download it the way the extension does.
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
