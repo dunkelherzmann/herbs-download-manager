@@ -139,10 +139,10 @@ No bugs reported yet.
   - [x] Linux
 - [ ] **The Windows feature run sometimes stops with "no main window"** (*found in testing*, 2026-11-24). Windows (`windows/scripts/features.ps1`). From some feature onward every step fails with "no main window", on main's build too (1 of 2 runs, then 4 passing in a row); the app's state seems to stay borrowed while a nested message loop runs.
   - [ ] Windows
-- [ ] **A running download's count stands still while a speed limit holds it back** (*found in testing*, 2026-11-24). All three systems (the shared core). The downloaded amount only jumps forward when the download is paused.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **A running download's count stands still while a speed limit holds it back** (*found in testing*, 2026-11-24). All three systems (the shared core). The downloaded amount only jumps forward when the download is paused. Fixed in #51: each connection wrote to disk, and counted, only once its 256 KB buffer was full, which under a low limit takes many seconds; it now writes at least once a second (`a_limited_download_s_count_moves_while_it_runs`, which failed on main, passes on all three).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
 - [x] **The name-in-use question says "Trash" on Windows** (*found in testing*, 2026-11-24). Windows. The explanation comes from the shared core, which says "Trash" where Windows calls it the Recycle Bin. Fixed in #50: the core's messages (this question, and `hdm remove --delete-files`) name the Recycle Bin on Windows.
   - [x] Windows
 - [x] **A second launch on Windows started a second copy instead of bringing back the first** (*found in testing*, 2026-11-24). Windows. With the same data folder, the "already running" answer was read after another call had replaced it. Fixed in #43.

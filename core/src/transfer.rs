@@ -1387,6 +1387,8 @@ impl Job {
         stat.received.fetch_add(early.len() as u64, Ordering::SeqCst);
         let mut buf: Vec<u8> = Vec::with_capacity(self.tuning.write_buffer.max(early.len()));
         buf.extend_from_slice(&early);
+        // Written at least once a tick, so the downloaded amount moves while a speed limit makes a buffer fill slowly.
+        let mut flushed = Instant::now();
         let mut stop = self.stop.clone();
         loop {
             let next = tokio::select! {
@@ -1432,10 +1434,14 @@ impl Job {
                         }
                     }
                     let (pos, end) = self.position(id).ok_or(Problem::Stopped)?;
-                    if (buf.len() >= self.tuning.write_buffer || pos + buf.len() as u64 >= end)
-                        && self.flush(id, &source, &mut buf)?
+                    if buf.len() >= self.tuning.write_buffer
+                        || pos + buf.len() as u64 >= end
+                        || flushed.elapsed() >= self.tuning.tick
                     {
-                        return Ok(());
+                        flushed = Instant::now();
+                        if self.flush(id, &source, &mut buf)? {
+                            return Ok(());
+                        }
                     }
                     if !self.sequential {
                         if stat.handoff.load(Ordering::SeqCst) {
