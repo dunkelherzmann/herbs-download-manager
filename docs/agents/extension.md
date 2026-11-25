@@ -74,6 +74,8 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   (a zip he made from the folder failed the store's check for `key` and `background.scripts`, 2026-11-25).
 - **Publishing an update to Edge Add-ons** (only when Herbert asks): Partner Center ▸ Edge ▸ Herb's Download Manager ▸
   Update, upload the store zip (he picks the file: the built-in browser can't), Continue, then Publish. The submit
-  page needs notes for certification every time: the ones in `docs/edge-add-ons.md` plus what changed. Wait for
+  page needs notes for certification every time: the ones in `docs/edge-add-ons.md` plus what changed. Choose "Yes,
+  I need to provide … other info for testers" (the extension needs the app): "No" locks the notes field read-only,
+  and typing into it then silently does nothing (1.37, 2026-11-25). Wait for
   the page to leave "Publishing" before moving on; afterwards the overview says "In review" (1.36, 2026-11-25).
 
