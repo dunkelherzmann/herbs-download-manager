@@ -127,7 +127,8 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **The guard test misses commits in the shared checkout given as a Windows path** (*found in testing*, 2026-11-20). Windows (`tests/guard/guard-bash.test.mjs`). `check` lets `git -C C:\Users\…\Projects\herbs-download-manager commit -m x` through, so "commit, PR merge and branch switch in the shared checkout" fails; the backslash path isn't matched as the shared checkout.
+- [x] **The guard test misses commits in the shared checkout given as a Windows path** (*found in testing*, 2026-11-20). Windows (`tests/guard/guard-bash.test.mjs`). `check` lets `git -C C:\Users\…\Projects\herbs-download-manager commit -m x` through, so "commit, PR merge and branch switch in the shared checkout" fails; the backslash path isn't matched as the shared checkout. Fixed in #49: the guard (`scripts/guard-bash.mjs`) reads an unquoted `C:\…` path as written, since the shell's rules strip its backslashes; the test passes on Windows (it failed on main).
+  - [x] Windows
 - [x] **The Linux list sorted by Mirrors at launch instead of Date Added** (*found in testing*, 2026-11-24). Linux. The default sort picked the eighth column, which is Mirrors. Fixed in #44.
   - [x] Linux
 - [x] **Linux removed the Administrator Password without asking** (*found in testing*, 2026-11-24). Linux. Leaving both new-password fields blank removed it at once; the Mac first asks "Remove the Administrator Password?", with Cancel the default. Fixed in #44.
