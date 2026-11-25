@@ -2095,9 +2095,9 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
 
 /// Destroys this thread's other top-level windows that no window owns (owned ones go with their owners).
 fn close_other_windows(main: HWND) {
-    unsafe extern "system" fn collect(hwnd: HWND, list: LPARAM) -> BOOL {
+    unsafe extern "system" fn collect(hwnd: HWND, list: LPARAM) -> windows::core::BOOL {
         unsafe { (*(list.0 as *mut Vec<HWND>)).push(hwnd) };
-        TRUE
+        windows::core::BOOL(1)
     }
     let mut others: Vec<HWND> = Vec::new();
     unsafe {
