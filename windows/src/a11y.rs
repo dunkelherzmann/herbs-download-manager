@@ -107,6 +107,18 @@ pub fn cell_tips(list: HWND) {
     }
 }
 
+thread_local! {
+    /// Lists whose checkboxes have their own hover text: (when ticked, when not).
+    static CHECK_TIPS: std::cell::RefCell<std::collections::HashMap<isize, (&'static str, &'static str)>> = Default::default();
+}
+
+/// `cell_tips`, and each row's checkbox explains itself: `on` while it is ticked, `off` while not (the Mac's
+/// per-source checkboxes).
+pub fn cell_tips_with_checks(list: HWND, on: &'static str, off: &'static str) {
+    CHECK_TIPS.with(|c| c.borrow_mut().insert(list.0 as isize, (on, off)));
+    cell_tips(list);
+}
+
 unsafe extern "system" fn cell_tip_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _: usize, _: usize) -> LRESULT {
     use windows::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent};
     unsafe {
@@ -118,6 +130,7 @@ unsafe extern "system" fn cell_tip_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
             }
             WM_MOUSELEAVE => cell_tip(hwnd, None),
             WM_DESTROY => {
+                CHECK_TIPS.with(|c| c.borrow_mut().remove(&(hwnd.0 as isize)));
                 if let Some((tips, _)) = CELL_TIPS.with(|c| c.borrow_mut().remove(&(hwnd.0 as isize))) {
                     let _ = DestroyWindow(tips);
                 }
@@ -145,9 +158,12 @@ fn cell_tip(list: HWND, point: Option<POINT>) {
             }
         };
         let mut hit = LVHITTESTINFO { pt: point.unwrap_or_default(), ..Default::default() };
+        let checks = CHECK_TIPS.with(|c| c.borrow().get(&key).copied());
         let cell = point.and_then(|_| {
             let item = SendMessageW(list, LVM_SUBITEMHITTEST, None, Some(LPARAM(&mut hit as *mut _ as isize))).0;
-            (item >= 0 && hit.iSubItem >= 0).then_some((item as i32, hit.iSubItem))
+            // Column -1: the row's checkbox (LVHT_ONITEMSTATEICON).
+            let on_check = checks.is_some() && hit.flags.0 & 0x8 != 0;
+            (item >= 0 && hit.iSubItem >= 0).then_some((item as i32, if on_check { -1 } else { hit.iSubItem }))
         });
         pause(list, cell.is_some());
         CELL_TIPS.with(|c| c.borrow_mut().insert(key, (tips, cell)));
@@ -158,6 +174,23 @@ fn cell_tip(list: HWND, point: Option<POINT>) {
         SendMessageW(tips, TTM_POP, None, None);
         SendMessageW(tips, TTM_DELTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
         let Some((row, column)) = cell else { return };
+        if column == -1
+            && let Some((on, off)) = checks
+        {
+            let ticked = (SendMessageW(list, LVM_GETITEMSTATE, Some(WPARAM(row as usize)), Some(LPARAM(LVIS_STATEIMAGEMASK.0 as isize))).0 >> 12) == 2;
+            let text: Vec<u16> = (if ticked { on } else { off }).encode_utf16().chain(std::iter::once(0)).collect();
+            // The checkbox: from the row's left edge to its label.
+            let mut rect = RECT { left: LVIR_BOUNDS as i32, ..Default::default() };
+            SendMessageW(list, LVM_GETITEMRECT, Some(WPARAM(row as usize)), Some(LPARAM(&mut rect as *mut _ as isize)));
+            let mut label = RECT { left: LVIR_LABEL as i32, ..Default::default() };
+            SendMessageW(list, LVM_GETITEMRECT, Some(WPARAM(row as usize)), Some(LPARAM(&mut label as *mut _ as isize)));
+            rect.right = label.left;
+            info.uFlags = TTF_SUBCLASS;
+            info.rect = rect;
+            info.lpszText = PWSTR(text.as_ptr() as *mut _);
+            SendMessageW(tips, TTM_ADDTOOLW, None, Some(LPARAM(&info as *const _ as isize)));
+            return;
+        }
         let mut buffer = [0u16; 2048];
         let get = LVITEMW { iSubItem: column, pszText: PWSTR(buffer.as_mut_ptr()), cchTextMax: buffer.len() as i32, ..Default::default() };
         let n = SendMessageW(list, LVM_GETITEMTEXTW, Some(WPARAM(row as usize)), Some(LPARAM(&get as *const _ as isize))).0.max(0) as usize;

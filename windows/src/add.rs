@@ -152,14 +152,30 @@ fn scan_in_background(window: HWND, manager: Manager, url: String) {
     });
 }
 
-/// Chooses a folder (the shell's folder browser).
-pub(crate) fn choose_folder(owner: HWND, title: &str) -> Option<PathBuf> {
+/// Chooses a folder (the shell's folder browser), opened at `start` as the Mac's panel opens at the chosen folder,
+/// its message `title` and its OK button `ok`, as the Mac's panel's message and prompt.
+pub(crate) fn choose_folder(owner: HWND, title: &str, start: &std::path::Path, ok: &str) -> Option<PathBuf> {
+    /// Once the browser is up (BFFM_INITIALIZED): selects the start folder (BFFM_SETSELECTIONW) and names the OK
+    /// button (BFFM_SETOKTEXT).
+    unsafe extern "system" fn opened(hwnd: HWND, message: u32, _: LPARAM, data: LPARAM) -> i32 {
+        if message == 1 && data.0 != 0 {
+            let (start, ok) = unsafe { &*(data.0 as *const (Vec<u16>, Vec<u16>)) };
+            unsafe {
+                SendMessageW(hwnd, WM_USER + 103, Some(WPARAM(1)), Some(LPARAM(start.as_ptr() as isize)));
+                SendMessageW(hwnd, WM_USER + 105, Some(WPARAM(0)), Some(LPARAM(ok.as_ptr() as isize)));
+            }
+        }
+        0
+    }
     unsafe {
         let title = wide(title);
+        let data = (wide(&start.display().to_string()), wide(ok));
         let info = BROWSEINFOW {
             hwndOwner: owner,
             lpszTitle: PCWSTR(title.as_ptr()),
             ulFlags: BIF_RETURNONLYFSDIRS | 0x50 /* BIF_USENEWUI */,
+            lpfn: Some(opened),
+            lParam: LPARAM(&data as *const _ as isize),
             ..Default::default()
         };
         let list = SHBrowseForFolderW(&info);
@@ -203,21 +219,22 @@ pub fn clipboard_text(owner: HWND) -> String {
     }
 }
 
-/// Export Links (§5.8): where to save the links, from the Save dialog, starting at `name`.
-pub fn export_file(owner: HWND, name: &str) -> Option<PathBuf> {
+/// Export Links (§5.8): where to save the links, from the Save dialog, starting at `name`, titled with what goes in.
+pub fn export_file(owner: HWND, name: &str, what: &str) -> Option<PathBuf> {
     unsafe {
         let mut buffer = vec![0u16; 32 * 1024];
         for (i, c) in name.encode_utf16().enumerate() {
             buffer[i] = c;
         }
         let filter = wide("Text files (*.txt)\0*.txt\0All files\0*.*\0");
+        let what = wide(what);
         let mut ofn = OPENFILENAMEW {
             lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
             hwndOwner: owner,
             lpstrFilter: PCWSTR(filter.as_ptr()),
             lpstrFile: PWSTR(buffer.as_mut_ptr()),
             nMaxFile: buffer.len() as u32,
-            lpstrTitle: w!("Export Links"),
+            lpstrTitle: PCWSTR(what.as_ptr()),
             lpstrDefExt: w!("txt"),
             Flags: OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST,
             ..Default::default()
@@ -234,7 +251,8 @@ pub fn export_file(owner: HWND, name: &str) -> Option<PathBuf> {
 pub fn import_files(owner: HWND) -> Option<Vec<PathBuf>> {
     unsafe {
         let mut buffer = vec![0u16; 32 * 1024];
-        let filter = wide("Text files (*.txt;*.md;*.csv;*.html;*.htm;*.xml;*.json;*.rtf)\0*.txt;*.md;*.csv;*.html;*.htm;*.xml;*.json;*.rtf\0All files\0*.*\0");
+        // Any file, as on the Mac: the text kinds are there to narrow the list.
+        let filter = wide("All files\0*.*\0Text files (*.txt;*.md;*.csv;*.html;*.htm;*.xml;*.json;*.rtf)\0*.txt;*.md;*.csv;*.html;*.htm;*.xml;*.json;*.rtf\0");
         let mut ofn = OPENFILENAMEW {
             lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
             hwndOwner: owner,
@@ -303,6 +321,8 @@ struct Form {
     streams: std::collections::HashSet<String>,
     /// New Download's link is a web page: Download and Add open Add Links with its files instead.
     page: bool,
+    /// New Download's name was typed by the user: a new link's name from the server doesn't replace it.
+    name_edited: bool,
     shown: Vec<usize>,
     /// Add Links' sort: the column clicked last (0 Name, 1 Size, 2 Folder, 3 Link) and whether A to Z (smallest first).
     sort: Option<(usize, bool)>,
@@ -364,7 +384,8 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
             CW_USEDEFAULT,
             rect.right - rect.left,
             rect.bottom - rect.top,
-            Some(ctx.owner),
+            // Not owned by the main window, as the Mac's are independent: they stay when it hides or minimizes.
+            None,
             None,
             Some(instance.into()),
             None,
@@ -396,6 +417,7 @@ fn open_form(ctx: &Ctx, kind: FormKind, title: &str, size: (i32, i32), controls:
                 items: Vec::new(),
                 streams: Default::default(),
                 page: false,
+                name_edited: false,
                 shown: Vec::new(),
                 sort: None,
                 batch: Vec::new(),
@@ -437,15 +459,15 @@ pub fn new_download(ctx: &Ctx, link: Option<String>) {
         (ID_DOWNLOAD, w!("BUTTON"), "Download", DEFAULT, 455, 324, 85, 30),
     ]);
     explain_ids(hwnd, &[
-        (ID_LINK, "", "The address of the file to download"),
-        (20, "", "Other servers with the same file, one link per line (optional)"),
-        (21, "", "The file's name, from the server; change it to save under another name"),
-        (ID_CHOOSE, "", "Choose the folder the file is saved to"),
-        (23, "", "Connections for this download (1–32)"),
+        (ID_LINK, "", "Link: the address of the file to download"),
+        (20, "", "Mirrors: other servers with the same file, one address per line (optional)"),
+        (21, "", "Name: the file name to save as"),
+        (ID_CHOOSE, "", "Choose the folder to save to"),
+        (23, "", "Connections: how many parts of the file download at once (1–32)"),
         (ID_SOUND, "", "For a streamed video: save just its sound (.m4a, or .mp3), as the site sends it"),
         (ID_CANCEL, "", "Close without adding anything (Esc)"),
-        (ID_ADD, "", "Add: put it in the queue; it starts when the queue runs"),
-        (ID_DOWNLOAD, "", "Download: start now (Enter)"),
+        (ID_ADD, "", "Add: put it in the queue without starting it"),
+        (ID_DOWNLOAD, "", "Download: start it now (Enter)"),
     ]);
     with_form(hwnd, |f| {
         // Set here as well as on EN_CHANGE: setting the link below notifies while this form is borrowed, so the
@@ -516,16 +538,16 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
             // Links dropped on the window while it's open join the list; while dragging, it dims and says so.
             crate::dragdrop::register(h, false, "Drop links to add them");
             explain_ids(h, &[
-                (ID_FILTER, "Filter", "Show only links whose name or address contains this text"),
+                (ID_FILTER, "Filter", "Filter: show links whose name or address contains the text"),
                 (ID_CHECK_ALL, "", "Tick every link shown"),
                 (ID_UNCHECK_ALL, "", "Untick every link shown"),
                 (ID_LIST, "Links", "The links found: untick the ones not to download"),
-                (ID_MIRRORS, "", "Add the checked links as one download, each a source of the same file"),
+                (ID_MIRRORS, "", "Combine the checked links into one download that uses each of them as a source"),
                 (ID_SOUND, "", "Save just the sound of each checked stream (.m4a, or .mp3), as the site sends it"),
                 (ID_CHOOSE, "", "Choose the folder the files are saved to"),
                 (ID_CANCEL, "", "Close without adding anything (Esc)"),
-                (ID_ADD, "", "Add: put them in the queue; they start when the queue runs"),
-                (ID_DOWNLOAD, "", "Download: start now (Enter)"),
+                (ID_ADD, "", "Add: put them in the queue without starting them"),
+                (ID_DOWNLOAD, "", "Download: start them now (Enter)"),
                 (25, "", "Links to the same file (same name and size) are added as one download and its mirrors"),
             ]);
             OPEN_LINKS.with(|o| *o.borrow_mut() = Some(h));
@@ -546,8 +568,7 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
             }
         }
         for url in &fresh {
-            let name = url.trim_end_matches('/').rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(url).to_string();
-            f.items.push((url.clone(), name, None, "Checking…".into(), true));
+            f.items.push((url.clone(), link_name(url), None, "Checking…".into(), true));
             if hd_core::media::download::is_stream_link(url) {
                 f.streams.insert(url.clone());
             }
@@ -555,10 +576,56 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         fresh
     })
     .unwrap_or_default();
+    // Every link already listed: a beep, as on the Mac.
+    if fresh.is_empty() {
+        unsafe {
+            let _ = MessageBeep(MB_OK);
+        }
+    }
     show_items(hwnd);
     probe_in_background(hwnd, ctx.manager.clone(), fresh);
     unsafe {
         let _ = SetForegroundWindow(hwnd);
+    }
+}
+
+/// A link's name before the server answers, as the Mac's: the last part of its path, percent-decoded, without the
+/// query; the whole link when its path has none.
+fn link_name(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let path = rest.split(['?', '#']).next().unwrap_or("");
+    let path = path.find('/').map_or("", |i| &path[i..]);
+    let last = path.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    if last.is_empty() {
+        return url.to_string();
+    }
+    let bytes = last.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        if bytes[i] == b'%'
+            && let (Some(h), Some(l)) = (bytes.get(i + 1).and_then(|&b| hex(b)), bytes.get(i + 2).and_then(|&b| hex(b)))
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| url.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_link_s_name_is_its_last_path_part_decoded_without_the_query() {
+        assert_eq!(super::link_name("https://example.com/files/My%20Movie.mkv?token=abc#t=1"), "My Movie.mkv");
+        assert_eq!(super::link_name("https://example.com/files/dir/"), "dir");
+        assert_eq!(super::link_name("https://example.com/"), "https://example.com/");
+        assert_eq!(super::link_name("https://example.com?x=1"), "https://example.com?x=1");
+        assert_eq!(super::link_name("https://example.com/caf%C3%A9.zip"), "café.zip");
     }
 }
 
@@ -795,7 +862,8 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                     (ID_ADD, _) => submit(hwnd, false),
                     (ID_DOWNLOAD, _) => submit(hwnd, true),
                     (ID_CHOOSE, _) => {
-                        if let Some(dir) = choose_folder(hwnd, "Save to") {
+                        let start = with_form(hwnd, |f| f.folder.clone()).unwrap_or_default();
+                        if let Some(dir) = choose_folder(hwnd, "Save to", &start, "Choose") {
                             let links = with_form(hwnd, |f| {
                                 fill_folder_popup(f.controls[&22], &dir);
                                 f.folder = dir;
@@ -820,6 +888,7 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                         drop_early(hwnd);
                         SetTimer(Some(hwnd), TIMER_PROBE, 500, None);
                     }
+                    (21, EN_CHANGE) => drop(with_form(hwnd, |f| f.name_edited = !text_of(f.controls[&21]).is_empty())),
                     (ID_FILTER, EN_CHANGE) => show_items(hwnd),
                     // Save to's pop-up: the folder, or one of the folders above it.
                     (22, CBN_SELCHANGE) => {
@@ -944,7 +1013,8 @@ extern "system" fn form_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                                 set_text(f.controls[&24], &f.size_text);
                             }
                             Ok(p) => {
-                                if text_of(f.controls[&21]).is_empty() {
+                                // Its notification finds the form borrowed, so the name still counts as not typed.
+                                if !f.name_edited {
                                     set_text(f.controls[&21], &p.name);
                                 }
                                 f.probed_size = p.size;

@@ -141,9 +141,12 @@ fn create(ctx: &Ctx, kind: Kind, title: &str, size: (i32, i32), controls: &[Spec
         let mut rect = RECT { left: 0, top: 0, right: px(size.0), bottom: px(size.1) };
         let _ = AdjustWindowRectEx(&mut rect, WS_CAPTION | WS_SYSMENU | frame, false, WINDOW_EX_STYLE::default());
         let t = wide(title);
+        // The Download window and Settings stand on their own, as the Mac's do (they stay when the main window hides
+        // or minimizes); Add Mirror belongs to the window it was asked from.
+        let owner = matches!(kind, Kind::Mirror { .. }).then_some(ctx.owner);
         // No icon in the title bar, as the Mac's windows have none.
         let hwnd = CreateWindowExW(WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME, w!("HerbsDMDetail"), PCWSTR(t.as_ptr()), WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | frame,
-                                   CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, Some(ctx.owner), None,
+                                   CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, owner, None,
                                    Some(instance.into()), None)
             .unwrap_or_default();
         let mut map = HashMap::new();
@@ -295,21 +298,21 @@ pub fn open(ctx: &Ctx, id: u64, tab: Option<usize>) {
         SendMessageW(w.controls[&D_LIMIT], EM_SETCUEBANNER, Some(WPARAM(1)), Some(LPARAM(w!("500").0 as isize)));
         // Each cell shows its text as its hover text, as on the Mac (a long address cut short can still be read).
         crate::a11y::cell_tips(w.controls[&D_CONNS]);
-        crate::a11y::cell_tips(w.controls[&D_SOURCES]);
+        crate::a11y::cell_tips_with_checks(w.controls[&D_SOURCES], "Turn this source off; its connections move to the others", "Turn this source on");
         show_limit(w.controls[&D_LIMIT_ON], w.controls[&D_LIMIT], w.controls[&D_UNIT], d.speed_limit);
     });
     explain_ids(hwnd, &[
         (D_BAR, "Segments", "The file's ranges: filled parts are downloaded, gaps are still to fetch"),
         (D_TOGGLE, "", "Pause: stop, keeping what's downloaded (Ctrl+.)"),
-        (D_CLOSE, "", "Close this window; the download carries on (Esc)"),
+        (D_CLOSE, "", "Close this window; the download keeps going (Esc)"),
         (D_TABS, "Pages", "Info, Connections, Mirrors and Options"),
         (D_CONNS, "Connections", "Each connection: its server, the part it fetches, how much it got, its speed and state"),
         (D_PLUS, "Add a connection", "Add a connection now"),
         (D_MINUS, "Remove a connection", "Remove a connection now"),
         (D_SOURCES, "Sources", "The link and its mirrors: untick one to stop using it; right-click one to copy it, make it the main link or remove it"),
-        (D_ADD_MIRROR, "", "Add other links to the same file (Ctrl+Alt+M)"),
+        (D_ADD_MIRROR, "", "Add Mirror: another server with the same file (Ctrl+Alt+M)"),
         (D_MAKE_MAIN, "Make the selected mirror the main link", "Make Main Link: the selected mirror becomes the download's link, and the link becomes a mirror. What was downloaded is kept"),
-        (D_REMOVE, "", "Remove the selected mirror (the original link stays)"),
+        (D_REMOVE, "", "Remove the selected mirror; the original link can only be turned off"),
         (D_COPY_LINK, "Copy the selected source's address", "Copy the selected source's address (Ctrl+C)"),
         (D_CONN_COUNT, "Connections", "Connections: how many parts of the file download at once (1–32)"),
         (D_LIMIT_ON, "", "Limit the download speed of this download"),
@@ -418,8 +421,8 @@ fn refresh(hwnd: HWND) {
             r.folder.display().to_string(),
             r.size.map(format::bytes).unwrap_or_else(|| "Unknown".into()),
             if r.resumable { "Yes".into() } else { "No: pausing starts it over".into() },
-            crate::app::date_text(Some(r.added)),
-            r.finished.map(|f| crate::app::date_text(Some(f))).unwrap_or_else(|| "—".into()),
+            crate::app::full_date_text(r.added),
+            r.finished.map(crate::app::full_date_text).unwrap_or_else(|| "—".into()),
             d.verified.clone().unwrap_or_else(|| match &d.checksum {
                 Some(c) => format!("{}, checked when the download finishes", c.algorithm.name()),
                 None => "—".into(),
@@ -490,33 +493,48 @@ fn refresh(hwnd: HWND) {
     });
 }
 
-/// The header's bar: each segment's downloaded part filled (green while a connection works on it), the gaps still to
-/// fetch left grey.
+/// The header's bar, as the Mac's: each segment's downloaded part filled (green once done, the accent colour while a
+/// connection works on it, grey while none does), the gaps still to fetch left as the track, a thin line where each
+/// range starts so the pieces read apart, and all green once the download finished.
 fn draw_bar(item: &DRAWITEMSTRUCT, d: &Detail) {
     unsafe {
         let r = item.rcItem;
-        let brush = |rgb: (u8, u8, u8)| CreateSolidBrush(COLORREF(rgb.0 as u32 | (rgb.1 as u32) << 8 | (rgb.2 as u32) << 16));
-        // The track and the accent colour of the current look (theme.rs); green for parts still being fetched.
         let p = crate::theme::palette();
         let rgb = |c: COLORREF| ((c.0 & 0xff) as u8, ((c.0 >> 8) & 0xff) as u8, ((c.0 >> 16) & 0xff) as u8);
-        let (grey, blue, green) = (brush(rgb(p.track)), brush(rgb(p.accent)), brush((77, 179, 102)));
-        FillRect(item.hDC, &r, grey);
+        let colour = |c: (u8, u8, u8)| COLORREF(c.0 as u32 | (c.1 as u32) << 8 | (c.2 as u32) << 16);
+        let fill = |rect: &RECT, c: (u8, u8, u8)| {
+            let brush = CreateSolidBrush(colour(c));
+            FillRect(item.hDC, rect, brush);
+            let _ = DeleteObject(brush.into());
+        };
+        // macOS's systemGreen and systemGray.
+        let green = if p.dark { (48, 209, 88) } else { (52, 199, 89) };
+        let (grey, track, accent, background) = ((142, 142, 147), rgb(p.track), rgb(p.accent), rgb(p.chrome));
+        fill(&r, track);
         let w = (r.right - r.left) as f64;
         let size = d.row.size.unwrap_or(0);
         if d.row.status == Status::Finished {
-            FillRect(item.hDC, &r, blue);
-        } else if size > 0 {
-            for s in &d.segments {
-                let x0 = r.left + (s.start as f64 / size as f64 * w) as i32;
-                let x1 = r.left + (s.pos as f64 / size as f64 * w) as i32;
-                if x1 > x0 {
-                    let part = RECT { left: x0, top: r.top, right: x1, bottom: r.bottom };
-                    FillRect(item.hDC, &part, if s.owner.is_some() { green } else { blue });
-                }
-            }
+            fill(&r, green);
+            return;
         }
-        for b in [grey, blue, green] {
-            let _ = DeleteObject(b.into());
+        if size == 0 {
+            return;
+        }
+        let x = |at: u64| r.left + (at as f64 / size as f64 * w) as i32;
+        let segment_colour = |s: &hd_core::segments::Segment| {
+            if s.pos >= s.end { green } else if s.owner.is_some() { accent } else { grey }
+        };
+        for s in d.segments.iter().filter(|s| s.pos > s.start) {
+            let x0 = x(s.start);
+            fill(&RECT { left: x0, top: r.top, right: x(s.pos).max(x0 + 1), bottom: r.bottom }, segment_colour(s));
+        }
+        // The window's background at 60% over what is under the line.
+        for s in d.segments.iter().skip(1) {
+            let under = if s.pos > s.start { segment_colour(s) } else { track };
+            let mix = |a: u8, b: u8| ((a as u32 * 6 + b as u32 * 4) / 10) as u8;
+            let line = (mix(background.0, under.0), mix(background.1, under.1), mix(background.2, under.2));
+            let x0 = x(s.start);
+            fill(&RECT { left: x0, top: r.top, right: x0 + 1, bottom: r.bottom }, line);
         }
     }
 }
@@ -1032,10 +1050,22 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                 match kind {
                     Some((0, did)) => match id {
                         D_CLOSE => drop(DestroyWindow(hwnd)),
-                        D_TOGGLE => drop(with_win(hwnd, |w| {
-                            let running = matches!(&w.kind, Kind::Download { detail: Some(d), .. } if d.row.status.is_running());
-                            if running { w.ctx.manager.pause(&[did]) } else { w.ctx.manager.resume(&[did]) }
-                        })),
+                        // Pause asks first when the download can't resume, as the main list's Pause does (§10).
+                        D_TOGGLE => {
+                            let found = with_win(hwnd, |w| match &w.kind {
+                                Kind::Download { detail: Some(d), .. } => (Some(d.row.clone()), w.ctx.manager.clone()),
+                                _ => (None, w.ctx.manager.clone()),
+                            });
+                            match found {
+                                Some((Some(row), manager)) if row.status.is_running() => {
+                                    if crate::app::confirm_pause(hwnd, std::slice::from_ref(&row)) {
+                                        manager.pause(&[did]);
+                                    }
+                                }
+                                Some((_, manager)) => manager.resume(&[did]),
+                                None => {}
+                            }
+                        }
                         D_PLUS | D_MINUS => drop(with_win(hwnd, |w| {
                             if let Kind::Download { detail: Some(d), .. } = &w.kind {
                                 let n = d.row.allowed_connections;
@@ -1105,7 +1135,8 @@ extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -
                     Some((2, _)) => match id {
                         S_CLOSE => drop(DestroyWindow(hwnd)),
                         S_CHOOSE => {
-                            if let Some(dir) = choose_folder(hwnd, "Save downloads to") {
+                            let start = with_win(hwnd, |w| crate::save_folder(&w.ctx.manager)).unwrap_or_default();
+                            if let Some(dir) = choose_folder(hwnd, "Choose the folder new downloads are saved to", &start, "Choose") {
                                 with_win(hwnd, |w| {
                                     w.ctx.manager.set_settings(Settings { save_to: Some(dir.display().to_string()), ..w.ctx.manager.settings() });
                                     set_text(w.controls[&S_FOLDER], &dir.display().to_string());

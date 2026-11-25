@@ -43,7 +43,7 @@ const C_FIND: u16 = 110;
 const C_IMPORT: u16 = 120;
 const C_CLIPBOARD: u16 = 121;
 const C_BATCH: u16 = 122;
-const C_QUIT: u16 = 123;
+pub const C_QUIT: u16 = 123;
 const C_COPY_LINK: u16 = 124;
 const C_SELECT_ALL: u16 = 125;
 const C_ADD_MIRROR: u16 = 126;
@@ -202,6 +202,15 @@ fn keep_on_top_file() -> std::path::PathBuf {
 /// "Today at 10:48", "Yesterday at 09:02", or an older date in the system's short date format with its time, as
 /// the Mac writes dates in its own format.
 pub(crate) fn date_text(seconds: Option<u64>) -> String {
+    dated(seconds, true)
+}
+
+/// The Download window's Info dates, as the Mac's: always the date and time, never Today or Yesterday.
+pub(crate) fn full_date_text(seconds: u64) -> String {
+    dated(Some(seconds), false)
+}
+
+fn dated(seconds: Option<u64>, relative: bool) -> String {
     use windows::Win32::Globalization::{DATE_SHORTDATE, GetDateFormatEx, GetTimeFormatEx, TIME_NOSECONDS};
     use windows::Win32::Foundation::SYSTEMTIME;
     let Some(s) = seconds else { return String::new() };
@@ -220,9 +229,9 @@ pub(crate) fn date_text(seconds: Option<u64>) -> String {
         let n = GetTimeFormatEx(PCWSTR::null(), TIME_NOSECONDS, Some(&time), PCWSTR::null(), Some(&mut buffer));
         String::from_utf16_lossy(&buffer[..(n.max(1) - 1) as usize])
     };
-    if day == today {
+    if relative && day == today {
         format!("Today at {clock}")
-    } else if day + 1 == today {
+    } else if relative && day + 1 == today {
         format!("Yesterday at {clock}")
     } else {
         let date = unsafe {
@@ -632,9 +641,36 @@ pub fn run() {
         let accelerators = accelerator_table();
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            // Tab, Enter and Esc in the add windows (they are dialogs in all but name).
             let root = GetAncestor(msg.hwnd, GA_ROOT);
-            if root != hwnd && !root.is_invalid() && IsDialogMessageW(root, &msg).as_bool() {
+            let other = root != hwnd && !root.is_invalid();
+            // The Main Menu's Ctrl shortcuts work from every window, as on the Mac (InWindowMenu): Ctrl+W closes and
+            // Ctrl+M minimizes the window in front; Ctrl+A, C, V, X and Z stay that window's own (its fields').
+            let ctrl_key = matches!(msg.message, WM_KEYDOWN | WM_SYSKEYDOWN) && GetKeyState(VK_CONTROL.0 as i32) < 0;
+            let in_edit = {
+                let mut class = [0u16; 16];
+                let n = GetClassNameW(GetFocus(), &mut class);
+                String::from_utf16_lossy(&class[..n.max(0) as usize]).eq_ignore_ascii_case("Edit")
+            };
+            // Ctrl+Alt in a field is AltGr typing a character (@, µ, € on many layouts), not a shortcut.
+            let edit_key = ctrl_key
+                && (matches!(msg.wParam.0 as u8, b'A' | b'C' | b'V' | b'X' | b'Z' | b'Y') || (in_edit && GetKeyState(VK_MENU.0 as i32) < 0));
+            if other && ctrl_key && !edit_key {
+                let shift_or_alt = GetKeyState(VK_SHIFT.0 as i32) < 0 || GetKeyState(VK_MENU.0 as i32) < 0;
+                match msg.wParam.0 as u8 {
+                    b'W' if !shift_or_alt => {
+                        let _ = PostMessageW(Some(root), WM_CLOSE, WPARAM(0), LPARAM(0));
+                        continue;
+                    }
+                    b'M' if !shift_or_alt => {
+                        let _ = ShowWindow(root, SW_MINIMIZE);
+                        continue;
+                    }
+                    _ if TranslateAcceleratorW(hwnd, accelerators, &msg) != 0 => continue,
+                    _ => {}
+                }
+            }
+            // Tab, Enter and Esc in the add windows (they are dialogs in all but name).
+            if other && IsDialogMessageW(root, &msg).as_bool() {
                 continue;
             }
             let in_find = with(|s| GetFocus() == s.find_edit).unwrap_or(false);
@@ -644,12 +680,8 @@ pub fn run() {
             }
             // While typing in the find bar, or any text field (a name being edited in the list), Delete, Ctrl+A,
             // Ctrl+C and Ctrl+V are the field's own.
-            let typing = in_find || {
-                let mut class = [0u16; 16];
-                let n = GetClassNameW(GetFocus(), &mut class);
-                String::from_utf16_lossy(&class[..n.max(0) as usize]).eq_ignore_ascii_case("Edit")
-            };
-            if !typing && TranslateAcceleratorW(hwnd, accelerators, &msg) != 0 {
+            let typing = in_find || in_edit;
+            if (!typing || (ctrl_key && !edit_key)) && TranslateAcceleratorW(hwnd, accelerators, &msg) != 0 {
                 continue;
             }
             let _ = TranslateMessage(&msg);
@@ -678,7 +710,7 @@ unsafe fn insert_tree(tree: HWND, parent: HTREEITEM, text: &str, data: isize) ->
 /// The Mac's shortcuts with Ctrl (§3, §4).
 unsafe fn accelerator_table() -> HACCEL {
     let ctrl = FCONTROL | FVIRTKEY;
-    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 28] = [
+    let keys: [(ACCEL_VIRT_FLAGS, u16, u16); 29] = [
         (ctrl, b'O' as u16, C_DOWNLOAD_WINDOW),
         (ctrl | FALT, b'M' as u16, C_ADD_MIRROR),
         (ctrl, b'N' as u16, C_NEW),
@@ -696,6 +728,7 @@ unsafe fn accelerator_table() -> HACCEL {
         (ctrl | FSHIFT, b'N' as u16, C_BATCH),
         (ctrl, b'Q' as u16, C_QUIT),
         (ctrl, b'W' as u16, C_CLOSE_WINDOW),
+        (ctrl, b'M' as u16, C_MINIMIZE),
         (ctrl, b'R' as u16, C_RESUME),
         (ctrl, VK_OEM_PERIOD.0, C_PAUSE),
         (ctrl | FSHIFT, b'R' as u16, C_START_QUEUE),
@@ -1047,12 +1080,13 @@ unsafe fn show_main_menu(hwnd: HWND, button: HWND) {
         ("All Missing Files", C_DELETE_MISSING), ("Entire List", C_DELETE_ALL), (")", 0), (")", 0),
         ("View", 0), (sidebar, C_SIDEBAR), ("Keep on Top\tCtrl+Alt+T", C_KEEP_ON_TOP), ("Columns", 0),
     ];
-    for (i, (name, _, _)) in COLUMNS.iter().enumerate().skip(1) {
-        items.push((name, C_COLUMN + i as u16));
+    // In the list's order, Note second, as on the Mac.
+    for i in COLUMN_ORDER.iter().skip(1).map(|&i| i as usize) {
+        items.push((COLUMNS[i].0, C_COLUMN + i as u16));
     }
     items.extend_from_slice(&[
         (")", 0), ("Show Download Window\tCtrl+O", C_DOWNLOAD_WINDOW), (")", 0),
-        ("Window", 0), ("Minimize", C_MINIMIZE), ("Zoom", C_ZOOM), ("-", 0), ("Bring All to Front", C_BRING_ALL), (")", 0),
+        ("Window", 0), ("Minimize\tCtrl+M", C_MINIMIZE), ("Zoom", C_ZOOM), ("-", 0), ("Bring All to Front", C_BRING_ALL), (")", 0),
         ("Help", 0), ("Herb's Download Manager Help\tF1", C_HELP), (")", 0),
         ("-", 0), ("Settings…\tCtrl+,", C_SETTINGS), ("About Herb's Download Manager", C_ABOUT), ("-", 0),
         ("Hide Herb's DM\tCtrl+H", C_HIDE), ("Quit Herb's DM\tCtrl+Q", C_QUIT),
@@ -1086,7 +1120,7 @@ unsafe fn show_context_menu(hwnd: HWND, x: i32, y: i32, on_header: bool) {
         _ => Vec::new(),
     };
     let items: Vec<(&str, u16)> = if on_header {
-        COLUMNS.iter().enumerate().skip(1).map(|(i, (name, _, _))| (*name, C_COLUMN + i as u16)).collect()
+        COLUMN_ORDER.iter().skip(1).map(|&i| (COLUMNS[i as usize].0, C_COLUMN + i as u16)).collect()
     } else {
         if sel.is_empty() {
             return;
@@ -1191,6 +1225,8 @@ fn open_find() {
         let _ = SetWindowPos(s.find_edit, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         let _ = SetWindowPos(s.find_done, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         let _ = SetFocus(Some(s.find_edit));
+        // Its text selected, as the Mac's, so typing replaces the last search.
+        SendMessageW(s.find_edit, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
     });
 }
 
@@ -1280,7 +1316,12 @@ fn confirm_delete(hwnd: HWND, rows: Vec<Row>, files_gone: bool) {
     .unwrap_or_default();
     if let Some(first) = kept.first() {
         let name = first.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        with(|s| s.notice = Some((format!("“{name}” couldn't go to the Recycle Bin, so it was left where it is"), std::time::Instant::now())));
+        let text = if kept.len() == 1 {
+            format!("“{name}” couldn't go to the Recycle Bin, so it was left where it is")
+        } else {
+            format!("{} files couldn't go to the Recycle Bin, so they were left where they are", kept.len())
+        };
+        with(|s| s.notice = Some((text, std::time::Instant::now())));
     }
     refresh();
 }
@@ -1487,7 +1528,13 @@ fn command(hwnd: HWND, id: u16) {
             C_EXPORT => {
                 let today = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + local_offset()).div_euclid(86_400);
                 let (y, m, d) = civil(today);
-                if let Some(path) = crate::add::export_file(hwnd, &format!("Herb's DM links {y}-{m:02}-{d:02}.txt")) {
+                // What goes in, as the Mac's Save panel says it.
+                let what = match sel.len() {
+                    0 => "Every download's links, under its file's name".to_string(),
+                    1 => "The selected download's links".to_string(),
+                    n => format!("The {n} selected downloads' links"),
+                };
+                if let Some(path) = crate::add::export_file(hwnd, &format!("Herb's DM links {y}-{m:02}-{d:02}.txt"), &what) {
                     let ids: Vec<u64> = sel.iter().map(|r| r.id).collect();
                     let text = with(|s| s.manager.links_tree(&ids)).unwrap_or_default();
                     match std::fs::write(&path, text) {
@@ -1572,8 +1619,8 @@ fn command(hwnd: HWND, id: u16) {
             C_RENAME => {
                 if let Some(r) = sel.first().filter(|r| r.status == Status::Finished)
                     && let Some(ctx) = add_ctx()
-                    && let Some((v, _)) = crate::signins::form_selecting(&ctx, hwnd, "Rename", &format!("Rename “{}”. The file keeps its folder and stays in the list.", r.name),
-                                                               &[crate::signins::Field { label: "New name", value: &r.name, secret: false, help: "The file's new name" }],
+                    && let Some((v, _)) = crate::signins::form_selecting(&ctx, hwnd, &format!("Rename “{}”", r.name), "The file keeps its folder and stays in the list.",
+                                                               &[crate::signins::Field { label: "New name", value: &r.name, secret: false, help: "The file's new name", hint: "" }],
                                                                None, "Rename", true)
                     && v[0] != r.name
                     && let Err(e) = ctx.manager.rename_file(r.id, &v[0])
@@ -1585,9 +1632,10 @@ fn command(hwnd: HWND, id: u16) {
             C_NOTE => {
                 if let Some(r) = sel.first()
                     && let Some(ctx) = add_ctx()
-                    && let Some((v, _)) = crate::signins::form(&ctx, hwnd, "Note",
-                                                               &format!("Note on “{}”. Shown in the Note column and found by the search; leave it blank to remove it.", r.name),
-                                                               &[crate::signins::Field { label: "Note", value: &r.note, secret: false, help: "Your note on this download" }],
+                    && let Some((v, _)) = crate::signins::form(&ctx, hwnd, &format!("Note on “{}”", r.name),
+                                                               "Shown in the Note column and found by the search. Leave it blank to remove it.",
+                                                               &[crate::signins::Field { label: "Note", value: &r.note, secret: false, help: "Your note on this download",
+                                                                                         hint: "What it's for, where it came from…" }],
                                                                None, "Save")
                 {
                     ctx.manager.set_note(r.id, &v[0]);
@@ -1596,7 +1644,8 @@ fn command(hwnd: HWND, id: u16) {
             }
             C_MOVE => {
                 if let Some(r) = sel.first().filter(|r| r.status == Status::Finished)
-                    && let Some(folder) = crate::add::choose_folder(hwnd, &format!("Move “{}” To", r.name))
+                    && let Some(folder) = crate::add::choose_folder(hwnd, &format!("Choose where “{}” goes", r.name),
+                                                                    r.path.as_ref().and_then(|p| p.parent()).unwrap_or(&r.folder), "Move Here")
                     && let Some(manager) = with(|s| s.manager.clone())
                     && let Err(e) = manager.move_file(r.id, &folder.join(&r.name))
                 {
@@ -1928,10 +1977,10 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                         let note = with(|s| {
                             let n = s.manager.add_mirrors(id, &links);
                             let name = s.manager.rows().into_iter().find(|r| r.id == id).map(|r| r.name).unwrap_or_default();
+                            // As the Mac's (AppModel.addMirrors).
                             match n {
-                                0 => format!("“{name}” already has those links"),
-                                1 => format!("Added as a mirror of “{name}”"),
-                                n => format!("Added {n} mirrors of “{name}”"),
+                                0 => format!("“{name}” already uses {}", if links.len() == 1 { "that link" } else { "those links" }),
+                                n => format!("Added {n} mirror{} to “{name}”", if n == 1 { "" } else { "s" }),
                             }
                         });
                         added(note);
@@ -2219,7 +2268,7 @@ fn message(hwnd: HWND, text: &str) {
 }
 
 /// Pausing downloads no source can resume asks first, Cancel the default (§10). True to go ahead.
-fn confirm_pause(hwnd: HWND, rows: &[Row]) -> bool {
+pub fn confirm_pause(hwnd: HWND, rows: &[Row]) -> bool {
     let lost: Vec<&Row> = rows.iter().filter(|r| !r.resumable).collect();
     if lost.is_empty() {
         return true;

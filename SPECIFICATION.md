@@ -137,8 +137,8 @@ Icons use each platform's own monochrome symbols, never another app's artwork:
 Every menu is in the **Main Menu** (☰, T9), as in Herb's Terminal: one submenu per menu below, following AB Download
 Manager's File / Tasks / Tools / Help fitted to each platform's conventions (Edit and Window are the standard menus),
 then Settings…, About Herb's Download Manager, Hide Herb's DM (macOS) and Quit Herb's DM. On macOS the system menu bar
-keeps only the app menu (Herb's DM), which macOS always shows there; every shortcut works from any window, Cut, Copy
-and Paste in text fields included.
+keeps only the app menu (Herb's DM), which macOS always shows there. On every platform the shortcuts work from any of
+the app's windows (Close Window and Minimize act on the window in front), Cut, Copy and Paste in text fields included.
 
 | Menu | Items |
 |---|---|
@@ -147,7 +147,7 @@ and Paste in text fields included.
 | Edit | standard (Undo, Cut, Copy, Paste, Select All) · Find ⌘F (opens the find bar) |
 | Tasks | Resume ⌘R · Pause ⌘. · — · Start Queue ⇧⌘R · Stop Queue · — · Stop All ⌥⌘. · — · Add Mirror… ⌥⌘M · Properties ⌘I · — · Rename… · Move To… · Note… · — · Delete ▸ (Selected ⌘⌫, All Finished, All Unfinished, All Missing Files, Entire List) |
 | View | Show Sidebar ⌃⌘S · Keep on Top ⌃⌘T (checkmark while on: every window of the app stays above other apps' windows, full-screen ones included; remembered) · Columns ▸ · Show Download Window ⌘O |
-| Window | standard (macOS); Minimize · Zoom · — · Bring All to Front (Windows) |
+| Window | standard (macOS); Minimize ⌘M · Zoom · — · Bring All to Front (Windows) |
 | Help | Herb's Download Manager Help ⌘? (F1 on Linux and Windows): opens the guide, `HELP.md`, on the project's page |
 | (end of the Main Menu) | Settings… ⌘, · About Herb's Download Manager · — · Hide Herb's DM ⌘H (macOS; Ctrl+H on Windows, which closes the window to the notification area) · Quit Herb's DM ⌘Q |
 

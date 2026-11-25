@@ -21,7 +21,10 @@ use windows::core::{HSTRING, Interface, PCWSTR, PWSTR, w};
 /// What the page at `url` fetched or played, one line of the catch script each, after `played::WAIT_SECS` (or
 /// `played::AFTER_PLAYLIST_MS` after the first playlist). Blocks: run it on a thread of its own.
 pub fn run(url: &str, data: &Path) -> Vec<String> {
-    let folder = data.join(format!("player-{}", std::process::id()));
+    // A folder per run: two pages scanned at once would otherwise share one, and the first to end would remove it.
+    static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let run = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let folder = data.join(format!("player-{}-{run}", std::process::id()));
     let seen = Rc::new(RefCell::new(Vec::<String>::new()));
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
