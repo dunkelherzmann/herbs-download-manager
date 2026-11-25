@@ -15,7 +15,9 @@ flatpak run --instance-id-fd=3 --env=HD_DATA_DIR=\$D --env=HD_DOWNLOADS_DIR=\$D 
     --show \$1 http://127.0.0.1:9/b.bin http://127.0.0.1:9/c.bin 3>"\$D/instance" &
 sleep 6
 # By the test copy's own process: by name it could read the user's copy, which may be running too.
-PID=\$(flatpak ps --columns=instance,child-pid | awk -v i="\$(cat "\$D/instance")" '\$1 == i {print \$2}')
+# flatpak ps's child-pid is the sandbox's inner helper; the app is its child.
+HELPER=\$(flatpak ps --columns=instance,child-pid | awk -v i="\$(cat "\$D/instance")" '\$1 == i {print \$2}')
+PID=\$(pgrep -P "\$HELPER" | head -1)
 python3 "$DUMP" "\${PID:-herbs-download-manager}" "\$2" --wait 15 >/dev/null 2>&1
 # Only this test instance: killing by the app id also ended the user's own copy, which keeps running in the
 # background since #44 (2026-11-25).
