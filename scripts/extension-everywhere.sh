@@ -29,6 +29,23 @@ else
     tar -xf "$TAR" -C "$WORK" && mkdir -p "$HOME/Downloads" && mv "$WORK/extension" "$DEST" && echo "mac: $VERSION copied" || { echo "mac: FAILED"; failed=1; }
     rm -rf "$WORK"
 fi
+# The Edge Add-ons package beside it (what Partner Center takes: no `key`, no Firefox `background.scripts`, files at
+# the zip's top level). A zip made by hand from the folder fails the store's check (2026-11-25).
+STORE="$HOME/Downloads/$NAME - Edge store.zip"
+if [ -f "$STORE" ]; then
+    echo "mac: $VERSION Edge store zip already there"
+else
+    WORK="$(mktemp -d)"
+    tar -xf "$TAR" -C "$WORK" && python3 -I - "$WORK/extension/manifest.json" <<'PY' && (cd "$WORK/extension" && zip -q -r -X "$STORE" . -x '.*') && echo "mac: $VERSION Edge store zip copied" || { echo "mac: Edge store zip FAILED"; failed=1; }
+import json, sys
+path = sys.argv[1]
+manifest = json.load(open(path, encoding="utf-8"))
+manifest.pop("key", None)
+manifest["background"].pop("scripts", None)
+json.dump(manifest, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+PY
+    rm -rf "$WORK"
+fi
 
 # Linux: its Downloads folder by xdg-user-dir.
 scp -q "$TAR" "$LINUX_HOST:/tmp/hdm-extension.tar" &&
