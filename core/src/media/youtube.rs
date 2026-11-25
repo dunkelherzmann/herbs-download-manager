@@ -25,6 +25,12 @@ const FEED_PREFIX: &str = "app-yt_";
 /// The app starts a download with `__hdmYouTube.download(soundOnly, lines)` (lines 0 for the best).
 pub const BRIDGE: &str = r#"(() => {
   if (window.__hdmYouTube || window.top !== window) return;
+  // YouTube's cookie question (asked in the EU) pauses the player: its answer "only the needed cookies" (SOCS=CAI)
+  // is set and the page loaded again once, before anything else runs.
+  if (!/(^|; )SOCS=/.test(document.cookie)) {
+    document.cookie = 'SOCS=CAI; domain=.youtube.com; path=/; max-age=31536000; secure; samesite=lax';
+    if (!sessionStorage.getItem('hdmConsent')) { sessionStorage.setItem('hdmConsent', '1'); location.reload(); return; }
+  }
   const post = (m) => { try { const s = JSON.stringify(m);
     if (window.webkit && webkit.messageHandlers && webkit.messageHandlers.hdmPlayed) webkit.messageHandlers.hdmPlayed.postMessage(s);
     else if (window.chrome && chrome.webview) chrome.webview.postMessage(s); } catch (e) {} };

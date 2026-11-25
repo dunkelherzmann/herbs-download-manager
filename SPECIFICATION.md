@@ -1004,7 +1004,8 @@ Only** (under ▾, streams) adds just its sound (see Sound only above). A stream
   - **Pasted into the app.** A YouTube link (`watch?v=`, `/shorts/`, `/live/`, `/embed/`, `youtu.be/`) pasted, dropped,
     typed or imported into Add Links isn't read as a page: its row says "Looking at the video…" while the app opens the
     video's watch page out of sight (as a page's player above, up to 45 seconds) with `youtube.js` and a small bridge
-    of the core's in it. Once its player has played a few seconds (by then YouTube gives the page its full token), the
+    of the core's in it (which answers YouTube's cookie question, asked in the EU, with "only the needed cookies",
+    `SOCS=CAI`, and loads the page again once: the question pauses the player). Once its player has played a few seconds (by then YouTube gives the page its full token), the
     row gives way to the video: its title as the name (`.mp4`), "<size>, YouTube video", the size of the picture
     Settings' stream quality picks (the best when none is set) and the sound. "Only the sound of streamed videos"
     applies to it. Downloading it makes a fed download (`hdm-feed:app-yt_…`); when it starts (or starts again after a
