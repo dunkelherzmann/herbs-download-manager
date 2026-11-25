@@ -35,6 +35,12 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   opened there is no tab, so the extension can't see it. Edge keeps an extension's service worker script cached by
   version: after editing the extension without raising its version, delete the test profile's `Default/Service
   Worker` folder (2026-11-15).
+- **Edge's store registration (§13)** is tested the same way: on the Mac and Linux its per-user `External Extensions`
+  folder lives in the user-data-dir, so a scratch profile's own folder tests it. Run the profile once first: Edge
+  turns on, with no prompt, what it installs in a brand-new profile. Never test with uBlock Origin: his Mac and
+  Windows Edge force-install it by policy, which looks like a pass (Dark Reader `ifoakfbpdcdoeenechcleahebpibofpc` is
+  live and in no policy). On Windows Edge reads and watches `HKCU\Software\Microsoft\Edge\Extensions`, so a key
+  there reaches his running Edge at once: test with an id he wouldn't mind getting, and remove the key after (2026-11-20).
 - **A signed-in test with Herbert's Edge profile** needs a copy of it (Edge refuses DevTools on its default profile
   folder): copy `~/.config/microsoft-edge` whole, `Default/Service Worker` included. A copy without `ScriptCache`
   (an rsync excluding `*Cache*`) never starts the extension's worker ("Receiving end does not exist"). Point the

@@ -589,7 +589,7 @@ test("after an update the page scripts go into every open web page, so its butto
 test("the background script answers hello with its own version, which is manifest.json's", async () => {
   const manifest = JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "..", "extension", "manifest.json"), "utf8"));
   const b = load();
-  assert.deepEqual(plain(await b.ask({ type: "hello" })), { script: manifest.version }, "raise SCRIPT_VERSION in background.js with the manifest's version");
+  assert.deepEqual(plain(await b.ask({ type: "hello" })), { script: manifest.version, aside: false }, "raise SCRIPT_VERSION in background.js with the manifest's version");
   const resources = manifest.web_accessible_resources.flatMap((r) => r.resources);
   assert.ok(resources.includes("restart.html"), "the page's button opens restart.html in a frame");
   const fs = require("node:fs");
@@ -597,4 +597,35 @@ test("the background script answers hello with its own version, which is manifes
   for (const page of ["popup.html", "options.html", "restart.html"]) {
     assert.match(fs.readFileSync(require("node:path").join(ext, page), "utf8"), /<script src="fresh\.js"><\/script>/, `${page} checks the background script`);
   }
+});
+
+test("with both copies in Edge, the older one steps aside, the unpacked one when they're the same", async () => {
+  const STORE = "claljmehooppmcegokpkiffgknfdknao", UNPACKED = "clhikpnhhffblbcgfcpebhiholmchidg";
+  const copy = (id, other) => load({ id, otherCopy: (to, m) => (m.type === "hdm-copy" ? other : undefined) });
+  const mine = load().get("SCRIPT_VERSION");
+  const steps = async (b) => (await b.ask({ type: "hello" })).aside;
+  assert.equal(await steps(copy(UNPACKED, { version: mine, on: true })), true, "unpacked, same version as the store's");
+  assert.equal(await steps(copy(STORE, { version: mine, on: true })), false, "the store's, same version");
+  assert.equal(await steps(copy(STORE, { version: "99.0", on: true })), true, "the store's, older than the unpacked one");
+  assert.equal(await steps(copy(UNPACKED, { version: "1.2", on: true })), false, "unpacked, newer than the store's");
+  assert.equal(await steps(copy(UNPACKED, { version: mine, on: false })), false, "the other copy's switch is off");
+  assert.equal(await steps(copy(UNPACKED, undefined)), false, "no other copy, or it's turned off in Edge");
+  assert.equal(await steps(load()), false, "another browser's id");
+
+  // The copy that steps aside hands nothing over and adds no menu; its popup says why.
+  const b = copy(UNPACKED, { version: mine, on: true });
+  b.chrome.downloads.onCreated.fire({ id: 5, url: "https://a.com/f.zip", state: "in_progress" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(b.sent.length, 0);
+  await b.get("makeMenu")();
+  assert.equal(b.menus.size, 0);
+  const state = await b.ask({ type: "state", tabId: 1 });
+  assert.equal(state.on, false);
+  assert.equal(state.aside, true);
+
+  // Each copy answers the other with its version and its own switch, and nobody else.
+  const s = copy(STORE, undefined);
+  const answer = (from) => new Promise((reply) => { if (!s.chrome.runtime.onMessageExternal.fire({ type: "hdm-copy" }, { id: from }, reply)[0]) reply(null); });
+  assert.deepEqual(plain(await answer(UNPACKED)), { version: mine, on: true });
+  assert.equal(await answer("someoneelse"), null);
 });

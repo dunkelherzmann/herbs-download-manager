@@ -12,18 +12,51 @@ const HOST = "org.herbsdownloadmanager.hdm";
 // old background script from its cache after the extension's files were replaced by a newer version: the page's
 // button and the list then got no answer (bugs.md, 2026-11-16). The extension's pages and the page's button ask
 // "hello" first, and restart the extension (fresh.js) when no answer comes or it names another version.
-const SCRIPT_VERSION = "1.36";
+const SCRIPT_VERSION = "1.37";
 const NAME = "Herb's Download Manager";
 
 async function isOn() {
   const { on } = await api.storage.local.get({ on: true });
-  return on;
+  return on && !(await steppedAside());
+}
+
+// Edge can hold two copies at once: the one from Edge Add-ons, which the app registers (§13), and one loaded unpacked
+// (its manifest's key gives it the Chrome id). Both would hand over each download and add their menu and the page's
+// button. While both run with their switch on, the older version steps aside, the unpacked one when they're the same.
+const STORE_ID = "claljmehooppmcegokpkiffgknfdknao";
+const UNPACKED_ID = "clhikpnhhffblbcgfcpebhiholmchidg";
+const OTHER_COPY = { [STORE_ID]: UNPACKED_ID, [UNPACKED_ID]: STORE_ID }[api.runtime.id];
+function versionOrder(a, b) {
+  const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+  return 0;
+}
+let aside = { at: 0, value: false };
+async function steppedAside() {
+  if (!OTHER_COPY) return false;
+  if (Date.now() - aside.at < 10000) return aside.value;
+  const other = await Promise.race([
+    api.runtime.sendMessage(OTHER_COPY, { type: "hdm-copy" }).catch(() => null),
+    new Promise((done) => setTimeout(() => done(null), 1500)),
+  ]);
+  const order = other && other.on ? versionOrder(other.version, SCRIPT_VERSION) : -1;
+  aside = { at: Date.now(), value: order > 0 || (order === 0 && api.runtime.id === UNPACKED_ID) };
+  return aside.value;
+}
+// The other copy asks whether this one runs, and as which version (its own switch, not whether it steps aside).
+if (api.runtime.onMessageExternal) {
+  api.runtime.onMessageExternal.addListener((message, sender, reply) => {
+    if (!OTHER_COPY || sender.id !== OTHER_COPY || !message || message.type !== "hdm-copy") return false;
+    api.storage.local.get({ on: true }).then(({ on }) => reply({ version: SCRIPT_VERSION, on }));
+    return true;
+  });
 }
 
 async function showState() {
   const on = await isOn();
   await api.action.setBadgeText({ text: on ? "" : "off" });
-  await api.action.setTitle({ title: on ? NAME : `${NAME}: the browser keeps its downloads` });
+  await api.action.setTitle({ title: on ? NAME : (await steppedAside()) ? `${NAME}: its other copy in this browser takes the downloads`
+    : `${NAME}: the browser keeps its downloads` });
   await showBrowserDownloads();
 }
 
@@ -43,7 +76,7 @@ async function keptDownloads() {
   return (await api.storage.session.get({ [keptKey]: [] }))[keptKey];
 }
 async function showBrowserDownloads() {
-  if (!api.downloads.setUiOptions) return;
+  if (!api.downloads.setUiOptions || (await steppedAside())) return;
   const shown = !(await isOn()) || (await keptDownloads()).length > 0;
   await api.downloads.setUiOptions({ enabled: shown }).catch(() => {});
 }
@@ -183,6 +216,7 @@ api.downloads.onCreated.addListener(async (item) => {
 // Right-click a link: download it now with Herb's Download Manager, or add it to the queue.
 async function makeMenu() {
   await api.contextMenus.removeAll();
+  if (await steppedAside()) return;
   const contexts = ["link", "image", "video", "audio"];
   api.contextMenus.create({ id: "hdm-link", title: `Download Now with ${NAME}`, contexts });
   api.contextMenus.create({ id: "hdm-link-queue", title: `Add to Queue in ${NAME}`, contexts });
@@ -786,12 +820,12 @@ function nameFor(item, title) {
 api.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     if (message.type === "hello") {
-      reply({ script: SCRIPT_VERSION });
+      reply({ script: SCRIPT_VERSION, aside: await steppedAside() });
     } else if (message.type === "state") {
       const tab = await api.tabs.get(message.tabId).catch(() => null);
       const order = await orderSetting();
       const rule = tab ? ruleFor(await rulesSetting(), tab.url) : null;
-      reply({ on: await isOn(), items: await listed(message.tabId, tab, order), order, panel: await panelSetting(), panelOffered: !!api.sidePanel,
+      reply({ on: await isOn(), aside: await steppedAside(), items: await listed(message.tabId, tab, order), order, panel: await panelSetting(), panelOffered: !!api.sidePanel,
               minSize: await minSizeSetting(), gone: (await removedOf(message.tabId)).filter((k) => /^https?:/.test(k)),
               action: (rule && rule.action) || "download", site: tab && web(tab.url) ? new URL(tab.url).hostname.replace(/^www\./, "") : "" });
     } else if (message.type === "name") {

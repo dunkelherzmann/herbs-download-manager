@@ -24,13 +24,16 @@
   });
   relisten.observe(document, { childList: true });
   // Once the extension is gone (updated, restarted, turned off), this copy stops and takes its button away.
+  // Or while the browser's other copy of the extension does the work (background.js, steppedAside).
+  let aside = false;
   function orphaned() {
-    if (alive()) return false;
+    if (alive() && !aside) return false;
     relisten.disconnect();
     for (const [target, type, fn, options] of listeners) target.removeEventListener(type, fn, options);
     host.remove();
     return true;
   }
+  api.runtime.sendMessage({ type: "hello" }).then((a) => { if (a && a.aside) { aside = true; orphaned(); } }).catch(() => {});
   const SIZE = 22;
   // Pictures smaller than this (icons, avatars, spacers) get no button.
   const PICTURE_MIN = 48;
