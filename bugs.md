@@ -137,8 +137,8 @@ No bugs reported yet.
   - [x] Windows
 - [x] **Linux's accessibility audit read only one control in the main window** (*found in testing*, 2026-11-24). Linux (`linux/scripts/a11y-audit.sh`). It reported 12 Settings controls without hover text (the scheduler's days and times), but missed the main window's: it didn't count GTK's "button" role. Fixed in #44; it now reads every window.
   - [x] Linux
-- [ ] **The Windows feature run sometimes stops with "no main window"** (*found in testing*, 2026-11-24). Windows (`windows/scripts/features.ps1`). From some feature onward every step fails with "no main window", on main's build too (1 of 2 runs, then 4 passing in a row); the app's state seems to stay borrowed while a nested message loop runs.
-  - [ ] Windows
+- [x] **The Windows feature run sometimes stops with "no main window"** (*found in testing*, 2026-11-24). Windows (`windows/scripts/features.ps1`). From some feature onward every step fails with "no main window", on main's build too (1 of 2 runs, then 4 passing in a row); the app's state seems to stay borrowed while a nested message loop runs. Fixed in #52: when a download finished, the main window showed its toast (or balloon) while still holding the app's state; both wait on other processes, and the step the test thread sent meanwhile found the state taken. They are now shown after it is let go. Reproduced on main (run 1 of 6 failed two steps), then 8 runs of 8 passed 22 of 22.
+  - [x] Windows
 - [x] **A running download's count stands still while a speed limit holds it back** (*found in testing*, 2026-11-24). All three systems (the shared core). The downloaded amount only jumps forward when the download is paused. Fixed in #51: each connection wrote to disk, and counted, only once its 256 KB buffer was full, which under a low limit takes many seconds; it now writes at least once a second (`a_limited_download_s_count_moves_while_it_runs`, which failed on main, passes on all three).
   - [x] Mac
   - [x] Linux
