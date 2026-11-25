@@ -100,7 +100,7 @@ fn the_command_line_adds_lists_notes_pauses_resumes_and_removes() {
     assert!(dir.join("files/small.bin").exists(), "remove without --delete-files keeps the file");
     assert_eq!(ask(&dir, &["list"]).downloads.unwrap().len(), 1);
     let gone = ask(&dir, &["remove", &slow.id.to_string(), "--delete-files"]);
-    assert_eq!(gone.message.as_deref(), Some("Removed 1 download from the list and moved their files to the Trash."));
+    assert_eq!(gone.message.as_deref(), Some(format!("Removed 1 download from the list and moved their files to the {}.", hd_core::manager::TRASH).as_str()));
     assert!(ask(&dir, &["list"]).downloads.unwrap().is_empty());
     assert!(std::fs::read_dir(dir.join("Trash")).unwrap().count() > 0, "the partial file went to the Trash");
 

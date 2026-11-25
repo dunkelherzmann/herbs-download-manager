@@ -143,8 +143,8 @@ No bugs reported yet.
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
-- [ ] **The name-in-use question says "Trash" on Windows** (*found in testing*, 2026-11-24). Windows. The explanation comes from the shared core, which says "Trash" where Windows calls it the Recycle Bin.
-  - [ ] Windows
+- [x] **The name-in-use question says "Trash" on Windows** (*found in testing*, 2026-11-24). Windows. The explanation comes from the shared core, which says "Trash" where Windows calls it the Recycle Bin. Fixed in #50: the core's messages (this question, and `hdm remove --delete-files`) name the Recycle Bin on Windows.
+  - [x] Windows
 - [x] **A second launch on Windows started a second copy instead of bringing back the first** (*found in testing*, 2026-11-24). Windows. With the same data folder, the "already running" answer was read after another call had replaced it. Fixed in #43.
   - [x] Windows
 - [x] **A streaming page the browser extension handles finds no video when its link is pasted into the app** (2026-11-24). Mac, Linux, Windows. An anime episode page (animeav1.com) shows "Web page: no files" in Add Links. Its player is a frame whose script builds the stream's address when it plays (`player.zilla-networks.com/play/ID` plays `…/m3u8/ID`); the extension sees the browser's request for it, but the app only reads the page's text and the frames' HTML, which never name it. Fixed in #47: when a page's text names nothing, the app opens it out of sight in the system's web engine for a few seconds and scans what its player fetched.

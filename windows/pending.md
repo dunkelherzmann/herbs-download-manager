@@ -76,7 +76,7 @@ A code audit against the Mac source, and a test copy driven on Windows, found th
 ## Bugs to fix
 
 - [ ] **A running download's count stands still while a speed limit holds it back** (bugs.md, 2026-11-24): the downloaded amount only moves when the download is paused (shared core).
-- [ ] **The name-in-use question says "Trash"** (bugs.md, 2026-11-24): the shared core's explanation should say Recycle Bin on Windows.
+- [x] **The name-in-use question says "Trash"** (bugs.md, 2026-11-24): the shared core's explanation should say Recycle Bin on Windows. Fixed in #50.
 - [ ] **The feature run sometimes stops with "no main window"** (bugs.md, 2026-11-24): `windows/scripts/features.ps1`, from some feature onward, 1 run in 6.
 - [x] **The guard test misses commits in the shared checkout given as a Windows path** (bugs.md, 2026-11-20): `tests/guard/guard-bash.test.mjs`, developer tooling. Fixed in #49.
 - [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.

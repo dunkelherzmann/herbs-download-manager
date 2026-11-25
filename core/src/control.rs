@@ -577,10 +577,10 @@ pub fn handle(manager: &Manager, downloads: &Path, r: &Request) -> Answer {
             let left = manager.remove(&r.ids, r.delete_files);
             if r.delete_files && !left.is_empty() {
                 let names: Vec<String> = left.iter().map(|p| p.display().to_string()).collect();
-                Answer::message(format!("Removed {} from the list. These files couldn't go to the Trash and were left where they are: {}",
-                                        count(r.ids.len()), names.join(", ")))
+                Answer::message(format!("Removed {} from the list. These files couldn't go to the {} and were left where they are: {}",
+                                        count(r.ids.len()), crate::manager::TRASH, names.join(", ")))
             } else if r.delete_files {
-                Answer::message(format!("Removed {} from the list and moved their files to the Trash.", count(r.ids.len())))
+                Answer::message(format!("Removed {} from the list and moved their files to the {}.", count(r.ids.len()), crate::manager::TRASH))
             } else {
                 Answer::message(format!("Removed {} from the list; the files stay where they are.", count(r.ids.len())))
             }

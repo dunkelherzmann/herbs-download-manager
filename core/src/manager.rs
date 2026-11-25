@@ -34,6 +34,9 @@ impl Status {
     }
 }
 
+/// What the system calls the place deleted files go, for messages: the Recycle Bin on Windows, the Trash elsewhere.
+pub const TRASH: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
+
 /// One download as saved.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Entry {
