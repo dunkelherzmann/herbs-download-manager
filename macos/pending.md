@@ -13,6 +13,7 @@ releases.
 
 ## Bugs to fix
 
+- [ ] **A running download's count stands still while a speed limit holds it back** (bugs.md, 2026-11-24): the downloaded amount only moves when the download is paused (shared core).
 - [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.
 
 ## To build

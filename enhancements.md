@@ -189,7 +189,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Paste a link into the main window to add it:** ⌘V on the Mac, Ctrl+V on Linux and Windows, opens Add Links with the clipboard's links, as Add from Clipboard does. *Requested 2026-11-10.* Built in #80; the find field keeps its own paste (on Linux its Ctrl+A and Ctrl+C too, which the list's shortcuts used to take). Tried with real keys on Linux and Windows; the Mac's ⌘V wasn't pressed in a test (no keystrokes on the Mac), so it waited; pressed in a Mac test copy on 2026-11-24 (#46), it opened Add Links with the copied page's files.
-  - [ ] Mac
+  - [x] Mac
   - [x] Linux
   - [x] Windows
 - [x] **The browser extension's code is tested in the three-machine check:** its background script runs in Node with a stand-in browser (detection, the DASH-piece rule, hinted streams, order, the right-click menu, naming rules, hand-over, page headers). *Requested 2026-11-10.* Done in #85.
@@ -311,6 +311,6 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Paste links into the main window to have them scanned for downloadable files, as JDownloader's link crawler does:** ⌘V on the Mac, Ctrl+V on Linux and Windows, takes every link on the clipboard, reads each one and lists the files it leads to. *Requested 2026-11-24.* Mac, Linux, Windows. Pasting already opens Add Links, which checks each link and replaces a web page with the files and media on it (#80, #121); compared with JDownloader's crawler (its source): HDM already reads pages deeper; #42 adds what JDownloader does better on ordinary sites (masked, run-together and scheme-less links, links inside a link, split archives and small companion files, server folder listings), in the shared core. #46 makes copied HTML's relative links count against the page the copy came from (the address Chrome, Edge and Firefox store with a copy, names taken from their source). Pasted live on each machine after a real Edge copy of a test page: a relative file link, a sub-page's file, a server folder listing's files, a masked `hxxp` link and a `www.` link were all listed.
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

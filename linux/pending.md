@@ -51,6 +51,7 @@ Still different from the Mac:
 
 ## Bugs to fix
 
+- [ ] **A running download's count stands still while a speed limit holds it back** (bugs.md, 2026-11-24): the downloaded amount only moves when the download is paused (shared core).
 - [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.
 - [x] **Feature tests failed once under load** (bugs.md, found in testing 2026-11-10): 4 of 17 failed while the machine was busy; probably a timing assumption in the scenario.
 
