@@ -576,10 +576,14 @@ pub fn add_links(ctx: &Ctx, links: Vec<String>) {
         fresh
     })
     .unwrap_or_default();
-    // Every link already listed: a beep, as on the Mac.
+    // Every link already listed: a beep, as on the Mac (MessageBeep is in user32, outside the enabled features).
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn MessageBeep(kind: u32) -> i32;
+    }
     if fresh.is_empty() {
         unsafe {
-            let _ = MessageBeep(MB_OK);
+            MessageBeep(0);
         }
     }
     show_items(hwnd);
