@@ -703,6 +703,11 @@ downloads to the app. The browser keeps a download the app doesn't take.
   Edge is installed (on Windows, always). Uninstalling the app on Windows removes the key, and Edge then removes the
   extension. Chrome, Brave and Vivaldi take an extension this way only from the Chrome Web Store, where it isn't
   listed, so in them it's loaded unpacked.
+  When Edge holds both copies, the one from Edge Add-ons and one loaded unpacked, and both are turned on with their
+  switch on, only one does the work: the older version steps aside (the unpacked one when they're the same), adding no
+  menu or page button and handing over no download; its popup says "This copy of the extension steps aside: its other
+  copy in this browser takes the downloads", with its switch dimmed. Turning off the other copy, or its switch, brings
+  it back within seconds.
 - Settings ▸ Browser extension ▸ **Show Extension Folder** writes the extension to `Browser Extension` in the app's
   data folder and shows it, with how to load it: Chrome, Edge, Brave and Vivaldi load it unpacked (Extensions ▸
   Developer mode ▸ Load Unpacked, for a version newer than Edge Add-ons has, or in Chrome, Brave and Vivaldi), with

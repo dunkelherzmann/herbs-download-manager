@@ -35,7 +35,7 @@ function area() {
   };
 }
 
-function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "", cookies = [], tabMessage = () => undefined } = {}) {
+function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), native = () => ({ ok: true }), script = () => "", cookies = [], tabMessage = () => undefined, id, otherCopy } = {}) {
   // What the tab's content script answered: `tabMessage(tabId, message)`, each message kept in `toTabs`.
   const toTabs = [];
   const sent = [];
@@ -61,6 +61,15 @@ function load({ tabs = [], fetch: answer = () => ({ status: 404, body: "" }), na
                  search: async () => [], setUiOptions: async (o) => { ui.push(o.enabled); } },
     runtime: {
       lastError: undefined,
+      // The extension's own id, and what its other copy in the browser answers (`otherCopy(id, message)`; none when
+      // it isn't installed or is turned off, which the browser reports by failing the message).
+      id,
+      sendMessage: async (to, message) => {
+        const answer = otherCopy && otherCopy(to, message);
+        if (answer === undefined) throw new Error("Could not establish connection. Receiving end does not exist.");
+        return answer;
+      },
+      onMessageExternal: event(),
       onInstalled: event(),
       onStartup: event(),
       onMessage: event(),

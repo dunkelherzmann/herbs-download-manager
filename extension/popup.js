@@ -95,6 +95,8 @@ async function show() {
   if (!state) return;
   // The switch sets "Take downloads" to its own state (never flips it), and isn't redrawn while that's under way.
   if (!switching) $("on").checked = state.on;
+  $("on").disabled = !!state.aside;
+  $("aside-note").hidden = !state.aside;
   $("on").onchange = async () => {
     switching = true;
     const answer = await ask({ type: "set-on", on: $("on").checked, tabId: tab.id }).catch(() => null);
