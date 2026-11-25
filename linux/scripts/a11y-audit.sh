@@ -14,11 +14,15 @@ D=$WORK/data-\$1; rm -rf "\$D"; mkdir -p "\$D"
 flatpak run --instance-id-fd=3 --env=HD_DATA_DIR=\$D --env=HD_DOWNLOADS_DIR=\$D org.herbsdownloadmanager.app --add http://127.0.0.1:9/a.bin \
     --show \$1 http://127.0.0.1:9/b.bin http://127.0.0.1:9/c.bin 3>"\$D/instance" &
 sleep 6
-# By the test copy's own process: by name it could read the user's copy, which may be running too.
-# flatpak ps's child-pid is the sandbox's inner helper; the app is its child.
-HELPER=\$(flatpak ps --columns=instance,child-pid | awk -v i="\$(cat "\$D/instance")" '\$1 == i {print \$2}')
-PID=\$(pgrep -P "\$HELPER" | head -1)
-python3 "$DUMP" "\${PID:-herbs-download-manager}" "\$2" --wait 15 >/dev/null 2>&1
+# By the test copy's own id (a test copy holds org.herbsdownloadmanager.app.Test…, #53): by name it could read the
+# user's copy, which may be running too, and AT-SPI reports a proxy's process, not the app's.
+ID=\$(python3 -c "
+import gi; gi.require_version('Atspi', '2.0'); from gi.repository import Atspi
+d = Atspi.get_desktop(0)
+apps = [d.get_child_at_index(i) for i in range(d.get_child_count())]
+ids = [(a.get_accessible_id() or '') for a in apps if a]
+print(next((x for x in ids if x.startswith('org.herbsdownloadmanager.app.Test')), ''))" 2>/dev/null)
+python3 "$DUMP" "\${ID:-herbs-download-manager}" "\$2" --wait 15 >/dev/null 2>&1
 # Only this test instance: killing by the app id also ended the user's own copy, which keeps running in the
 # background since #44 (2026-11-25).
 flatpak kill "\$(cat "\$D/instance")" 2>/dev/null
