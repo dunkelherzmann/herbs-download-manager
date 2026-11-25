@@ -169,3 +169,19 @@ No bugs reported yet.
   - [x] Windows
 - [x] **Two page scans at once on Windows could remove each other's player folder** (*found in testing*, 2026-11-25). Windows. Every out-of-sight player run used one folder per app run, and the first to finish removed it while the other still played. Fixed in #54: each run has a folder of its own.
   - [x] Windows
+- [x] **Watch the clipboard opened Add Links for the app's own copies** (*found in testing*, 2026-11-25). Linux. Copy Link in a Download window's Mirrors tab opened Add Links with that link: only the main window counted as "the app is in front". Fixed in #55: copies the app makes itself, in any of its windows, are left alone, as on the Mac. Checked in a test copy: Copy Link put the link on the clipboard and opened nothing.
+  - [x] Linux
+- [x] **Watch the clipboard never saw copies made in other apps** (*found in testing*, 2026-11-25). Linux. Under Wayland an app hears of the clipboard only once it has the keyboard, so every copy made elsewhere reached the app as it came to the front, and was dropped as made "while the app is in front". Fixed in #55: only the app's own copies are left alone, and what is on the clipboard at launch. Checked in a test copy: a link copied while another app was in front opened Add Links when the window came forward; the link on the clipboard at launch didn't.
+  - [x] Linux
+- [x] **New Download kept the previous link's name when the link changed** (*found in testing*, 2026-11-25). Linux. The server's name filled the Name field only while it was empty. Fixed in #55: as on the Mac, each new link's name replaces it unless you typed one. Checked in a test copy: changing b.bin's link to a.bin's changed the name to a.bin.
+  - [x] Linux
+- [x] **Double-clicking a finished download whose file is gone did nothing** (*found in testing*, 2026-11-25). Linux. It tried to open the missing file. Fixed in #55: it opens the Download window, as on the Mac. Checked in a test copy with the file deleted.
+  - [x] Linux
+- [x] **Web-page text dragged onto the app lost its links** (*found in testing*, 2026-11-25). Linux. Only the plain text was read, so selected text whose links sit behind words gave nothing. Fixed in #55: a drop's HTML is read too, relative links made whole against the page, as a paste does (#46), on the window, Add Links and a download's row. Checked by dragging "Files: first and second" from a page in Edge onto Add Links: a.bin and /b.bin were listed.
+  - [x] Linux
+- [x] **With the main window closed, Add Links and questions couldn't be seen** (*found in testing*, 2026-11-25). Linux. They attached to the hidden window. Fixed in #55: Add Links, the name-in-use question and the sign-in prompt bring the window back first, as on the Mac. Checked in a test copy with its window closed: a text file opened with the app brought back the window with Add Links, and a download meeting a sign-in brought it back with the prompt.
+  - [x] Linux
+- [x] **The Download window's speed-limit controls had no hover text** (*found in testing*, 2026-11-25). Linux. Fixed in #55 with the Mac's texts. Checked on screen.
+  - [x] Linux
+- [x] **Nothing showed the app was still running once its window was closed** (*found in testing*, 2026-11-25). Linux. The Mac keeps its Dock icon, Windows its notification-area icon. Fixed in #55: an icon in the status area (a StatusNotifierItem, shown by Ubuntu's AppIndicator extension) while the window is closed, with Show Herb's Download Manager and Quit Herb's DM. Checked on Ubuntu: the icon appeared when the window closed, its Show brought the window back, and it went away.
+  - [x] Linux
