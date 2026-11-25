@@ -75,6 +75,7 @@ A code audit against the Mac source, and a test copy driven on Windows, found th
 
 ## Bugs to fix
 
+- [x] **A pasted YouTube link listed the page's thumbnails instead of the video** (bugs.md, 2026-11-25): fixed in #58 (the page's player runs whenever its text names no video; YouTube links are opened out of sight with the extension's `youtube.js`); Big Buck Bunny 4K downloaded whole in a test copy.
 - [x] **A running download's count stands still while a speed limit holds it back** (bugs.md, 2026-11-24): the downloaded amount only moves when the download is paused (shared core). Fixed in #51.
 - [x] **The name-in-use question says "Trash"** (bugs.md, 2026-11-24): the shared core's explanation should say Recycle Bin on Windows. Fixed in #50.
 - [x] **The feature run sometimes stops with "no main window"** (bugs.md, 2026-11-24): `windows/scripts/features.ps1`, from some feature onward, 1 run in 6. Fixed in #52.

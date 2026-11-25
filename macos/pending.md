@@ -13,6 +13,7 @@ releases.
 
 ## Bugs to fix
 
+- [x] **A pasted YouTube link listed the page's thumbnails instead of the video** (bugs.md, 2026-11-25): fixed in #58 (the page's player runs whenever its text names no video; YouTube links are opened out of sight with the extension's `youtube.js`); Big Buck Bunny 4K downloaded whole in a test copy.
 - [x] **A running download's count stands still while a speed limit holds it back** (bugs.md, 2026-11-24): the downloaded amount only moves when the download is paused (shared core). Fixed in #51.
 - [x] **A stream from a page refused with 403** (bugs.md, 2026-11-11): fixed in #110 and extension 1.18; Herbert's test passed.
 

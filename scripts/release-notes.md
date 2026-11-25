@@ -2,19 +2,22 @@ A download manager for macOS, Linux and Windows. It downloads a file over many c
 
 This is a testing app in early development (0.x), shared as is: no support is promised or given. What's reported and what's done is tracked in [bugs.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/bugs.md) and [enhancements.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/enhancements.md).
 
-## What's new since 0.1.132
+## What's new since 0.1.171
 
-- **Windows looks and works like the Mac app:** the title row, toolbar, sidebar and list, light and dark, drag and
-  drop, Add Links, Batch Download, the Download window, and a finish notification with **Open** and **Show in
-  Folder**. A per-user installer (no administrator password) comes beside the zip, and it can update a running copy.
-- **YouTube:** videos, Shorts included, download through the extension, which streams them in YouTube's own page
-  while the app joins the pieces.
-- **The extension's list** shows a thumbnail for every picture and video, and has **Select All**, **Delete All**,
-  **Reload** and a size threshold. A download button sits on the files a page shows, embedded ones included, and finds
-  Instagram stories and feed reels.
-- **A name in use:** Keep Both names the new file "name 2.ext".
-- **Connections and Mirrors** show what a download used, also when it isn't running.
-- The extension can also come from Microsoft Edge Add-ons once it's listed there; the app accepts both copies.
+- **Paste links to have them scanned,** as JDownloader's link crawler does: ⌘V on the Mac, Ctrl+V on Linux and
+  Windows. Every link on the clipboard opens in Add Links, a web page gives way to the files and media on it, and a
+  server's folder listing is read with its subfolders. Copied web-page text brings the links behind it.
+- **YouTube links pasted into the app** list the video by its title and size and download it, without the browser.
+  Other video pages have their player run out of sight when their text names no video, so a streaming page finds its
+  stream.
+- **Linux and Windows work like the Mac app,** checked feature by feature: the Download window, Settings, Sign-ins,
+  Add Links, the clipboard watch, shortcuts, Quit and Pause questions, drag and drop, and on Linux a status-area icon
+  while the window is closed.
+- **Import Links** reads Word, OpenDocument, web archive and bookmark files on Linux and Windows too.
+- **Fixes:** a speed-limited download's count moves while it runs; Windows names the Recycle Bin; Windows' Find bar
+  shows; Return presses the default button in Linux's dialogs.
+- **The extension** (1.36) asks YouTube again when a connection drops mid-download. It is listed on Microsoft Edge
+  Add-ons.
 
 ## Install
 
