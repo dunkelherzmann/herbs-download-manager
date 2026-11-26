@@ -6,7 +6,7 @@
 #   scripts/check.sh [BRANCH]    (default: the current branch, which must be pushed)
 #
 # - Mac (here): macos/scripts/build.sh and scripts/test.sh, as the old macOS job did, on the current checkout.
-# - Linux and Windows, over ssh: `cargo test --workspace` in a throwaway worktree of
+# - Linux and Windows, through Master Control (mc-exec): `cargo test --workspace` in a throwaway worktree of
 #   origin/BRANCH (/tmp/hdm-check-BRANCH, %TEMP%\hdm-check-BRANCH), so their own checkouts stay on main; builds are cached in
 #   ~/.cache/hdm-check-target.
 # - On every machine, after the tests: `cargo clippy --workspace --all-targets`. It fails only on clippy's deny-level
@@ -16,13 +16,13 @@
 # Prints one line per machine and exits non-zero if any failed. Logs go to .build/check/<machine>.log.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# The Linux and Windows machines, by the names ssh knows them under: from the environment, or from an untracked
-# scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or in the main one.
+# The Linux and Windows machines, by their Master Control names (`mctl machines`): linux and windows, or others from the
+# environment or an untracked scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or the main one.
 for hosts in "$ROOT/scripts/hosts.env" "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../scripts/hosts.env"; do
     if [ -f "$hosts" ]; then . "$hosts"; break; fi
 done
-LINUX_HOST="${HDM_LINUX_HOST:-linux}"
-WINDOWS_HOST="${HDM_WINDOWS_HOST:-windows}"
+LINUX_MACHINE="${HDM_LINUX_HOST:-linux}"
+WINDOWS_MACHINE="${HDM_WINDOWS_HOST:-windows}"
 BRANCH="${1:-$(git -C "$ROOT" branch --show-current)}"
 LOGS="$ROOT/.build/check"
 mkdir -p "$LOGS"
@@ -58,15 +58,15 @@ DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"
 # The worktree stays after the run, so cargo's exit code is the command's. Branches are checked once or twice and
 # then merged, so each run first removes check folders over a day old (any branch's): they were piling up, one a
 # branch (2026-11-11). A day leaves alone the checks other sessions are running now.
-(ssh "$LINUX_HOST" "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH \
+(mc-exec "$LINUX_MACHINE" "cd ~/Projects/herbs-download-manager && git fetch -q origin $BRANCH \
     && (find /tmp -maxdepth 1 -name 'hdm-check-*' -mmin +1440 -exec rm -rf {} + || true) && rm -rf /tmp/$DIR \
     && git worktree prune && git worktree add -q --detach /tmp/$DIR FETCH_HEAD && cd /tmp/$DIR \
     && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo test --workspace 2>&1 \
     && PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/.cache/hdm-check-target cargo clippy --workspace --all-targets 2>&1" \
     >"$LOGS/linux.log" 2>&1; echo $? >"$LOGS/linux.status") &
 
-# Windows' ssh shell is cmd. Rust goes in with rustup, into %USERPROFILE%\.cargo\bin.
-(ssh "$WINDOWS_HOST" "cd /d %USERPROFILE%\\Projects\\herbs-download-manager && git fetch -q origin $BRANCH \
+# Master Control runs Windows commands in cmd. Rust goes in with rustup, into %USERPROFILE%\.cargo\bin.
+(mc-exec "$WINDOWS_MACHINE" "cd /d %USERPROFILE%\\Projects\\herbs-download-manager && git fetch -q origin $BRANCH \
     && (forfiles /p %TEMP% /m hdm-check-* /d -1 /c \"cmd /c if @isdir==TRUE rmdir /s /q @path\" >nul 2>&1) \
     & (if exist %TEMP%\\$DIR rmdir /s /q %TEMP%\\$DIR) & git worktree prune \
     && git worktree add -q --detach %TEMP%\\$DIR FETCH_HEAD && cd /d %TEMP%\\$DIR \

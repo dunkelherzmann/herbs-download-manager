@@ -1,6 +1,7 @@
 #!/bin/sh
 # Makes a release of Herb's Download Manager from the commit origin/main is at (Herbert, 2026-11-10: "Create
-# releases for HDM"). Run on the Mac; Linux and Windows build over ssh on the Linux and Windows machines.
+# releases for HDM"). Run on the Mac; Linux and Windows build on the Linux and Windows machines,
+# driven through Master Control (mc-exec).
 #   scripts/release.sh             builds the five files into dist/release-<version>/ and checks each one
 #   scripts/release.sh --publish   then tags v<version> on GitHub and creates the release with them, marked Latest
 # Files: Herbs-Download-Manager-<version>-macOS.zip (the .app, ad-hoc signed, not notarized),
@@ -12,13 +13,13 @@
 # HDM_RELEASE_REF=origin/BRANCH builds a pushed branch instead, to try the files before merging (never with --publish).
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# The Linux and Windows machines, by the names ssh knows them under: from the environment, or from an untracked
-# scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or in the main one.
+# The Linux and Windows machines, by their Master Control names (`mctl machines`): linux and windows, or others from the
+# environment or an untracked scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or the main one.
 for hosts in "$ROOT/scripts/hosts.env" "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../scripts/hosts.env"; do
     if [ -f "$hosts" ]; then . "$hosts"; break; fi
 done
-LINUX_HOST="${HDM_LINUX_HOST:-linux}"
-WINDOWS_HOST="${HDM_WINDOWS_HOST:-windows}"
+LINUX_MACHINE="${HDM_LINUX_HOST:-linux}"
+WINDOWS_MACHINE="${HDM_WINDOWS_HOST:-windows}"
 PUBLISH=0
 [ "${1:-}" = "--publish" ] && PUBLISH=1
 REF="${HDM_RELEASE_REF:-origin/main}"
@@ -42,10 +43,14 @@ EXTZIP="Herbs-DM-extension-$EXT.zip"
 echo "Release $VERSION from $(git -C "$ROOT" log -1 --format='%h %s' "$COMMIT")"
 
 # Linux and Windows build at the same time as the Mac.
-ssh "$LINUX_HOST" "set -e; cd ~/Projects/herbs-download-manager && git fetch -q origin && rm -rf ~/Projects/wt-hdm-release && git worktree prune && git worktree add -q --detach ~/Projects/wt-hdm-release $COMMIT && cd ~/Projects/wt-hdm-release && sh linux/scripts/build.sh --bundle ~/$LIN && cd ~/Projects/herbs-download-manager && git worktree remove --force ~/Projects/wt-hdm-release" >"$LOGS/linux.log" 2>&1 &
+# Master Control copies files by absolute path, so first each machine's home folder.
+LIN_HOME="$(mc-exec "$LINUX_MACHINE" 'echo $HOME')"
+WIN_HOME="$(mc-exec "$WINDOWS_MACHINE" "echo %USERPROFILE%" | tr -d '\r\n')"
+[ -n "$LIN_HOME" ] && [ -n "$WIN_HOME" ] || { echo "release.sh: Master Control can't reach $LINUX_MACHINE or $WINDOWS_MACHINE" >&2; exit 1; }
+mc-exec "$LINUX_MACHINE" "set -e; cd ~/Projects/herbs-download-manager && git fetch -q origin && rm -rf ~/Projects/wt-hdm-release && git worktree prune && git worktree add -q --detach ~/Projects/wt-hdm-release $COMMIT && cd ~/Projects/wt-hdm-release && sh linux/scripts/build.sh --bundle ~/$LIN && cd ~/Projects/herbs-download-manager && git worktree remove --force ~/Projects/wt-hdm-release" >"$LOGS/linux.log" 2>&1 &
 LINUX=$!
-scp -q "$WT/windows/scripts/release.ps1" "$WINDOWS_HOST:hdm-release.ps1"
-ssh "$WINDOWS_HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File hdm-release.ps1 -Commit $COMMIT -Zip $WIN -Setup $SETUP" >"$LOGS/windows.log" 2>&1 &
+mc-exec "$WINDOWS_MACHINE" --put "$WT/windows/scripts/release.ps1" "$WIN_HOME\\hdm-release.ps1"
+mc-exec "$WINDOWS_MACHINE" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\hdm-release.ps1\" -Commit $COMMIT -Zip $WIN -Setup $SETUP" >"$LOGS/windows.log" 2>&1 &
 WINDOWS=$!
 
 failed=0
@@ -61,12 +66,13 @@ if "$WT/macos/scripts/build.sh" --zip >"$LOGS/mac.log" 2>&1; then
 else
     echo "mac: build failed (see $LOGS/mac.log)"; failed=1
 fi
-if wait $LINUX && scp -q "$LINUX_HOST:$LIN" "$OUT/"; then
+if wait $LINUX && mc-exec "$LINUX_MACHINE" --get "$LIN_HOME/$LIN" "$OUT/$LIN"; then
     echo "linux: $LIN"
 else
     echo "linux: build failed (see $LOGS/linux.log)"; failed=1
 fi
-if wait $WINDOWS && scp -q "$WINDOWS_HOST:$WIN" "$WINDOWS_HOST:$SETUP" "$OUT/"; then
+if wait $WINDOWS && mc-exec "$WINDOWS_MACHINE" --get "$WIN_HOME\\$WIN" "$OUT/$WIN" \
+    && mc-exec "$WINDOWS_MACHINE" --get "$WIN_HOME\\$SETUP" "$OUT/$SETUP"; then
     echo "windows: $WIN, $SETUP"
 else
     echo "windows: build failed (see $LOGS/windows.log)"; failed=1

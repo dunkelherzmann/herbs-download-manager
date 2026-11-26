@@ -30,7 +30,7 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   works (Edge on the desktop's `DISPLAY`, its host a script running `flatpak run --env=HD_DATA_DIR=… --command=hdm`).
   Edge on Windows reads hosts only from the registry, never the profile: there the test Edge reaches whatever
   Herbert's registration names (the Desktop `hdm.exe`, which `build.ps1` replaces), and `HD_DATA_DIR` in its
-  environment steers it to the test copy; start it in the desktop session (an `/IT` scheduled task), not ssh's
+  environment steers it to the test copy; start it in the desktop session (Master Control's `exec`, or an `/IT` scheduled task), not
   session 0. Drive the tab whose URL is `about:blank`: Edge on Windows lists a hidden built-in page first, and a video
   opened there is no tab, so the extension can't see it. Edge keeps an extension's service worker script cached by
   version: after editing the extension without raising its version, delete the test profile's `Default/Service
