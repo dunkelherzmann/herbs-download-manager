@@ -112,13 +112,17 @@ function Install-HerbsDownloadManager {
     Unblock-File $Installer
 
     # 4. A copy installed for this account only is replaced by the all-users one (its data stays in %LOCALAPPDATA%).
-    $running = @(Get-Process HerbsDownloadManager -ErrorAction SilentlyContinue)
+    $mine = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId" -ErrorAction SilentlyContinue
+    $old = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId" -ErrorAction SilentlyContinue
+    # Only installed copies are closed; a copy run from a zip or a build folder is left alone.
+    $dirs = @($mine.InstallLocation, $old.InstallLocation) | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') + '\' }
+    $running = @(Get-Process HerbsDownloadManager -ErrorAction SilentlyContinue | Where-Object {
+        $path = $_.Path; $path -and @($dirs | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count })
     if ($running) {
         Write-Host "Closing the running $appName for the update."
         $running | Stop-Process -Force
         Start-Sleep -Seconds 1
     }
-    $mine = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId" -ErrorAction SilentlyContinue
     if ($mine -and $mine.UninstallString) {
         Write-Host "Removing the copy installed for this account only ($($mine.InstallLocation))."
         $uninstaller = $mine.UninstallString.Trim('"')
