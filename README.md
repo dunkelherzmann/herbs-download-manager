@@ -38,8 +38,8 @@ It downloads the latest installer, checks it against the release's `SHA256SUMS.t
 in Program Files, then opens it. Windows SmartScreen doesn't step in, because it only checks files a browser marked as
 downloaded from the internet, and the script removes that mark. It changes no security setting. Run it again to
 update. If you'd rather run a saved copy, download `install-windows.ps1` from the Releases page and run
-`powershell -ExecutionPolicy Bypass -File install-windows.ps1` as administrator; with an installer beside it, it
-installs that one. Notes:
+`powershell -ExecutionPolicy Bypass -File install-windows.ps1` as administrator (`-Installer PATH` installs a Setup.exe
+you already have, once it matches its release's checksum). Notes:
 
 - **Administrator rights are needed.** If you start it without them, Windows asks (the UAC prompt).
 - **Smart App Control** (Windows 11) blocks every unsigned program. If it's On, the script stops and says so. It

@@ -18,8 +18,10 @@ on:
       request:
         description: A name for the run, which release.sh uses to find it
         required: false
+# Read-only by default: the build runs third-party code (cargo build scripts, Inno Setup from Chocolatey), so only
+# the job that attaches files to a release can write.
 permissions:
-  contents: write
+  contents: read
   actions: read
 jobs:
   decide:
@@ -54,6 +56,7 @@ jobs:
         with:
           ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Build the app and hdm.exe
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File windows\scripts\build.ps1 -NoDesktop
@@ -97,15 +100,30 @@ jobs:
           name: windows-release
           path: release/
           if-no-files-found: error
-      # A tag's release made without the Windows files (by hand) gets them, and their lines in SHA256SUMS.txt.
+  # A tag's release made without the Windows files (by hand) gets them, and their lines in SHA256SUMS.txt (replacing
+  # any older lines for the same names).
+  attach:
+    needs: windows
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release
       - name: Attach to the tag's release
-        if: github.event_name == 'push'
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || { echo "No release for $GITHUB_REF_NAME yet: the files are in this run's windows-release artifact."; exit 0; }
           cd release
           gh release download "$GITHUB_REF_NAME" -p SHA256SUMS.txt 2>/dev/null || : > SHA256SUMS.txt
-          sha256sum -- *-Windows-Setup.exe install-windows.ps1 *-Windows.zip >> SHA256SUMS.txt
+          names="$(ls -- *-Windows-Setup.exe install-windows.ps1 *-Windows.zip)"
+          grep -v -F -f <(printf '%s\n' $names | sed 's/^/  /') SHA256SUMS.txt > sums.tmp || :
+          sha256sum -- $names >> sums.tmp
+          mv sums.tmp SHA256SUMS.txt
           gh release upload "$GITHUB_REF_NAME" --clobber -- *-Windows-Setup.exe install-windows.ps1 *-Windows.zip SHA256SUMS.txt
