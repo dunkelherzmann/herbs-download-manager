@@ -195,3 +195,4 @@ No bugs reported yet.
   - [x] Mac
   - [x] Linux
   - [x] Windows
+- [ ] **The core test `an_early_download_is_adopted_in_another_folder_without_fetching_again` fails now and then on Windows** (about 1 run in 5 to 10: the server sent 14.9–16.3 MB of an 8 MiB file, over the 14.7 MB it allows, so the early download was fetched again). *Found in testing 2026-11-26* (scripts/check.sh through Master Control; the same commit passes on the Mac and Linux, and the other runs pass on Windows). Core, Windows.
