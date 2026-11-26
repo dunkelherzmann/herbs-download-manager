@@ -1,11 +1,12 @@
 ; The Windows installer (SPECIFICATION.md §1): puts the app and hdm.exe (the browser extension's helper, which must
 ; stay beside it) in the user's own Programs folder, adds Start menu and optional desktop shortcuts, and an uninstaller
-; in Settings ▸ Apps. No administrator rights; nothing outside the user's account. Built by windows\scripts\installer.ps1
-; with Inno Setup from the files build.ps1 put in dist\.
+; in Settings ▸ Apps. No administrator rights; nothing outside the user's account. With /ALLUSERS on its command line
+; (windows/install-windows.ps1, run as administrator) it installs for every account in Program Files instead.
+; Built by windows\scripts\installer.ps1 with Inno Setup from the files build.ps1 put in dist\.
 ;
-; Release installers are built by .github/workflows/release-windows.yml, which has SignPath sign them once SignPath
-; Foundation's signing is set up; until then SmartScreen stops them the first time with "Windows protected your PC":
-; More info ▸ Run anyway lets them run (README.md, the release notes).
+; Release installers are built by .github/workflows/release-windows.yml and aren't code-signed: opened from a browser
+; download, SmartScreen stops them the first time with "Windows protected your PC" (More info ▸ Run anyway lets them
+; run); install-windows.ps1 installs without that warning (README.md, the release notes).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -25,16 +26,17 @@ AppSupportURL={#Repo}
 AppUpdatesURL={#Repo}/releases
 AppCopyright=Copyright (c) 2026 Herbert Cisneros
 VersionInfoVersion={#AppVersion}
-; The product name and version are the app's, the same as in its programs' file details (SignPath Foundation's rule
-; for signed files: README.md, "Code signing policy").
+; The product name and version are the app's, the same as in its programs' file details.
 VersionInfoTextVersion={#AppVersion}
 VersionInfoProductName={#AppName}
 VersionInfoProductTextVersion={#AppVersion}
 VersionInfoDescription={#AppName} Setup
-DefaultDirName={localappdata}\Programs\{#AppName}
+; {autopf} is %LOCALAPPDATA%\Programs for one account, Program Files with /ALLUSERS.
+DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=commandline
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763

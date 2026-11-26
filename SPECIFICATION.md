@@ -23,7 +23,7 @@ Section 12 summarizes the reference apps this design was drawn from, with source
 | Platform | App | Build |
 |---|---|---|
 | macOS 15+, Apple silicon | Swift 6 + AppKit host over the shared core | Built on Mac |
-| Windows 11 | Rust Win32 host (`windows` crate) over the shared core: one static `.exe` (with `hdm.exe` beside it), installed for the user by an installer (`windows/installer`, Inno Setup; no administrator rights) or run as is from the zip | Built on Windows; release files on GitHub's Windows runner, signed through SignPath |
+| Windows 11 | Rust Win32 host (`windows` crate) over the shared core: one static `.exe` (with `hdm.exe` beside it), installed for the user by an installer (`windows/installer`, Inno Setup; no administrator rights), for all users by `windows/install-windows.ps1` (as administrator, without SmartScreen's warning), or run as is from the zip | Built on Windows; release files on GitHub's Windows runner (not code-signed) |
 | Linux | Rust GTK 4 + libadwaita host (`gtk4-rs`) over the shared core, Flatpak `org.herbsdownloadmanager.app` | Built on Linux |
 
 - **Shared core** (`core/`, Rust, one Cargo workspace): the download engine (sources, segments, connections,

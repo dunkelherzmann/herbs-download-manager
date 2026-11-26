@@ -1,15 +1,15 @@
 #!/bin/sh
 # Makes a release of Herb's Download Manager from the commit origin/main is at (Herbert, 2026-11-10: "Create
 # releases for HDM"). Run on the Mac; Linux builds on the Linux machine, driven through Master Control (mc-exec), and
-# Windows on GitHub's Windows runner (.github/workflows/release-windows.yml, started here for the same commit), so that
-# SignPath Foundation can sign its files: SignPath signs only what a GitHub-hosted workflow built. Once signing is set
-# up, the run waits until Herbert approves its two signing requests in SignPath.
-#   scripts/release.sh             builds the five files into dist/release-<version>/ and checks each one
+# Windows on GitHub's Windows runner (.github/workflows/release-windows.yml, started here for the same commit).
+#   scripts/release.sh             builds the six files into dist/release-<version>/ and checks each one
 #   scripts/release.sh --publish   then tags v<version> on GitHub and creates the release with them, marked Latest
 # Files: Herbs-Download-Manager-<version>-macOS.zip (the .app, ad-hoc signed, not notarized),
-# …-Linux.flatpak (a bundle that installs the GNOME runtime from Flathub), …-Windows-Setup.exe (the installer, signed
-# through SignPath once that's set up), …-Windows.zip (the same app and hdm.exe to run without installing; they
-# must stay side by side: hdm is the browser's native host), and Herbs-DM-extension-<extension version>.zip.
+# …-Linux.flatpak (a bundle that installs the GNOME runtime from Flathub), …-Windows-Setup.exe (the installer, not
+# code-signed), install-windows.ps1 (installs it as administrator without SmartScreen's warning; its name never changes,
+# so releases/latest/download/install-windows.ps1 always finds the newest), …-Windows.zip (the same app and hdm.exe to
+# run without installing; they must stay side by side: hdm is the browser's native host), and
+# Herbs-DM-extension-<extension version>.zip.
 # Every build runs in a throwaway worktree of that commit, so no checkout changes and Herbert's running copies are
 # never touched. The notes are scripts/release-notes.md with VERSION and EXTENSION filled in.
 # HDM_RELEASE_REF=origin/BRANCH builds a pushed branch instead, to try the files before merging (never with --publish).
@@ -42,6 +42,7 @@ MAC="Herbs-Download-Manager-$VERSION-macOS.zip"
 LIN="Herbs-Download-Manager-$VERSION-Linux.flatpak"
 WIN="Herbs-Download-Manager-$VERSION-Windows.zip"
 SETUP="Herbs-Download-Manager-$VERSION-Windows-Setup.exe"
+PS1="install-windows.ps1"
 EXTZIP="Herbs-DM-extension-$EXT.zip"
 echo "Release $VERSION from $(git -C "$ROOT" log -1 --format='%h %s' "$COMMIT")"
 
@@ -67,7 +68,7 @@ windows_release() {
     gh run watch "$run" --repo "$REPO" --exit-status --interval 30 >/dev/null || return 1
     gh run download "$run" --repo "$REPO" -n windows-release -D "$OUT"
 }
-rm -f "$OUT/$WIN" "$OUT/$SETUP"
+rm -f "$OUT/$WIN" "$OUT/$SETUP" "$OUT/$PS1"
 windows_release >"$LOGS/windows.log" 2>&1 &
 WINDOWS=$!
 echo "windows: building on GitHub Actions (see $LOGS/windows.log for the run's address)"
@@ -90,8 +91,8 @@ if wait $LINUX && mc-exec "$LINUX_MACHINE" --get "$LIN_HOME/$LIN" "$OUT/$LIN"; t
 else
     echo "linux: build failed (see $LOGS/linux.log)"; failed=1
 fi
-if wait $WINDOWS && [ -f "$OUT/$WIN" ] && [ -f "$OUT/$SETUP" ]; then
-    echo "windows: $WIN, $SETUP"
+if wait $WINDOWS && [ -f "$OUT/$WIN" ] && [ -f "$OUT/$SETUP" ] && [ -f "$OUT/$PS1" ]; then
+    echo "windows: $WIN, $SETUP, $PS1"
 else
     echo "windows: build failed (see $LOGS/windows.log)"; failed=1
 fi
@@ -99,10 +100,10 @@ git -C "$ROOT" archive --format=zip --prefix="Herbs-DM-extension-$EXT/" -o "$OUT
 echo "extension: $EXTZIP"
 sed -e "s/VERSION/$VERSION/g" -e "s/EXTENSION/$EXT/g" "$WT/scripts/release-notes.md" >"$OUT/notes.md"
 [ "$failed" = 0 ] || exit 1
-(cd "$OUT" && shasum -a 256 "$MAC" "$LIN" "$SETUP" "$WIN" "$EXTZIP" >SHA256SUMS.txt)
+(cd "$OUT" && shasum -a 256 "$MAC" "$LIN" "$SETUP" "$PS1" "$WIN" "$EXTZIP" >SHA256SUMS.txt)
 
 if [ "$PUBLISH" = 1 ]; then
     gh release create "v$VERSION" --repo dunkelherzmann/herbs-download-manager --target "$COMMIT" --latest \
         --title "Herb's Download Manager $VERSION" --notes-file "$OUT/notes.md" \
-        "$OUT/$MAC" "$OUT/$LIN" "$OUT/$SETUP" "$OUT/$WIN" "$OUT/$EXTZIP" "$OUT/SHA256SUMS.txt"
+        "$OUT/$MAC" "$OUT/$LIN" "$OUT/$SETUP" "$OUT/$PS1" "$OUT/$WIN" "$OUT/$EXTZIP" "$OUT/SHA256SUMS.txt"
 fi

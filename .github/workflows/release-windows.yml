@@ -1,12 +1,8 @@
-# The Windows release files, built on GitHub's own Windows runner so SignPath Foundation can sign them (README.md,
-# "Code signing policy": SignPath signs only what a GitHub-hosted workflow built). scripts/release.sh starts it for the
-# commit it releases, waits, and takes its two files; the Mac, Linux and extension files still come from release.sh.
-#   Herbs-Download-Manager-<version>-Windows-Setup.exe   the installer (Inno Setup)
+# The Windows release files, built on GitHub's own Windows runner. scripts/release.sh starts it for the commit it
+# releases, waits, and takes its files; the Mac, Linux and extension files still come from release.sh.
+#   Herbs-Download-Manager-<version>-Windows-Setup.exe   the installer (Inno Setup), not code-signed
+#   install-windows.ps1                                  installs it as administrator without SmartScreen's warning
 #   Herbs-Download-Manager-<version>-Windows.zip         the same app and hdm.exe, to run without installing
-# Signing runs only once the repository variable SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set;
-# until then the files come out unsigned. When it runs there are two signing requests, each approved by hand in
-# SignPath: the programs first (so the installer carries signed copies), then the installer. Their artifact
-# configurations are in windows/signpath/.
 # A tag pushed without the Windows files on its release (one made by hand) gets them built and attached; a release
 # made by release.sh already has them, so the tag's run stops at once.
 name: Windows release
@@ -48,10 +44,7 @@ jobs:
     needs: decide
     if: needs.decide.outputs.build == 'true'
     runs-on: windows-2022
-    # Long enough for SignPath's two approvals by hand.
-    timeout-minutes: 360
-    env:
-      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
@@ -67,32 +60,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = (Get-Content version.txt -Raw).Trim()
           "VERSION=$version" >> $env:GITHUB_ENV
-          New-Item -ItemType Directory -Force out\programs | Out-Null
-          Copy-Item dist\HerbsDownloadManager.exe, dist\hdm.exe out\programs
-      - id: unsigned-programs
-        uses: actions/upload-artifact@v4
-        with:
-          name: unsigned-programs
-          path: out/programs/
-          if-no-files-found: error
-      - name: Sign the programs
-        if: env.SIGN == 'true'
-        uses: signpath/github-action-submit-signing-request@v3
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'herbs-download-manager' }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
-          artifact-configuration-slug: programs
-          github-artifact-id: ${{ steps.unsigned-programs.outputs.artifact-id }}
-          parameters: |
-            version: "${{ env.VERSION }}"
-          wait-for-completion: true
-          wait-for-completion-timeout-in-seconds: 10800
-          output-artifact-directory: signed/programs
-      - name: Use the signed programs
-        if: env.SIGN == 'true'
-        run: Copy-Item signed\programs\HerbsDownloadManager.exe, signed\programs\hdm.exe dist -Force
       - name: Build the installer
         run: |
           if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
@@ -100,32 +67,6 @@ jobs:
           }
           powershell -NoProfile -ExecutionPolicy Bypass -File windows\scripts\installer.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force out\installer | Out-Null
-          Copy-Item "dist\Herbs-Download-Manager-$env:VERSION-Windows-Setup.exe" out\installer
-      - id: unsigned-installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: unsigned-installer
-          path: out/installer/
-          if-no-files-found: error
-      - name: Sign the installer
-        if: env.SIGN == 'true'
-        uses: signpath/github-action-submit-signing-request@v3
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'herbs-download-manager' }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
-          artifact-configuration-slug: installer
-          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
-          parameters: |
-            version: "${{ env.VERSION }}"
-          wait-for-completion: true
-          wait-for-completion-timeout-in-seconds: 10800
-          output-artifact-directory: signed/installer
-      - name: Use the signed installer
-        if: env.SIGN == 'true'
-        run: Copy-Item "signed\installer\Herbs-Download-Manager-$env:VERSION-Windows-Setup.exe" dist -Force
       # The zip holds a folder with both programs: hdm.exe must stay beside the app (the browser's native host).
       - name: Zip the app and check both files
         run: |
@@ -134,7 +75,10 @@ jobs:
           New-Item -ItemType Directory -Force release, stage\'Herbs Download Manager' | Out-Null
           Copy-Item dist\HerbsDownloadManager.exe, dist\hdm.exe stage\'Herbs Download Manager'
           Compress-Archive -Path stage\'Herbs Download Manager' -DestinationPath release\$zip
-          Copy-Item dist\$setup release\
+          Copy-Item dist\$setup, windows\install-windows.ps1 release\
+          $errors = $null
+          [void][Management.Automation.Language.Parser]::ParseFile("$PWD\release\install-windows.ps1", [ref]$null, [ref]$errors)
+          if ($errors) { throw "install-windows.ps1 doesn't parse: $errors" }
           Expand-Archive release\$zip check
           & 'check\Herbs Download Manager\HerbsDownloadManager.exe' --self-check | Out-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -143,12 +87,10 @@ jobs:
             $info = (Get-Item $f).VersionInfo
             $name = "$($info.ProductName)".Trim()
             $version = "$($info.ProductVersion)".Trim()
-            $sig = (Get-AuthenticodeSignature $f).Status
-            Write-Host "$f : $name $version, signature: $sig"
+            Write-Host "$f : $name $version"
             if ($name -ne "Herb's Download Manager" -or $version -ne $env:VERSION) {
               throw "$f says $name $version, not Herb's Download Manager $env:VERSION"
             }
-            if ($env:SIGN -eq 'true' -and $sig -ne 'Valid') { throw "$f isn't validly signed: $sig" }
           }
       - uses: actions/upload-artifact@v4
         with:
@@ -165,5 +107,5 @@ jobs:
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || { echo "No release for $GITHUB_REF_NAME yet: the files are in this run's windows-release artifact."; exit 0; }
           cd release
           gh release download "$GITHUB_REF_NAME" -p SHA256SUMS.txt 2>/dev/null || : > SHA256SUMS.txt
-          sha256sum -- *-Windows-Setup.exe *-Windows.zip >> SHA256SUMS.txt
-          gh release upload "$GITHUB_REF_NAME" --clobber -- *-Windows-Setup.exe *-Windows.zip SHA256SUMS.txt
+          sha256sum -- *-Windows-Setup.exe install-windows.ps1 *-Windows.zip >> SHA256SUMS.txt
+          gh release upload "$GITHUB_REF_NAME" --clobber -- *-Windows-Setup.exe install-windows.ps1 *-Windows.zip SHA256SUMS.txt
