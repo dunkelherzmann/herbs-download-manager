@@ -295,6 +295,32 @@ test("the page's button on a streamed video takes the tab's stream", async () =>
   assert.deepEqual([add.urls[0], add.stream], ["https://cdn.example.com/v/index.m3u8", true]);
 });
 
+test("the page's button on a file the page holds itself (WhatsApp Web) has the page send its copy", async () => {
+  const WHATSAPP = { id: 1, url: "https://web.whatsapp.com/", title: "WhatsApp" };
+  const b = load({ tabs: [WHATSAPP], native: () => ({ ok: true }), tabMessage: () => ({ ok: true }) });
+  // What the tab fetched is the encrypted file, never listed; the page plays its decrypted copy at a blob: address.
+  await b.respond({ url: "https://mmg.whatsapp.net/v/t62.7161-24/1_2_n.enc?ccb=11-4&mms3=true", type: "xmlhttprequest",
+    responseHeaders: [{ name: "content-type", value: "application/octet-stream" }, { name: "content-length", value: "4000000" }] });
+  assert.equal((await b.items()).length, 0, "the encrypted file isn't listed");
+  const player = { src: "blob:https://web.whatsapp.com/5f2c", kind: "video", seconds: 21, blob: { size: 3876543, type: "video/mp4" } };
+  const answer = await b.ask({ type: "page-button", player }, { tab: WHATSAPP, frameId: 0 });
+  assert.equal(answer.ok, true);
+  const add = b.sent.find((m) => m.command === "add");
+  assert.match(add.feed, /^file-/, "a whole-file feed, kept as it is");
+  assert.deepEqual([add.size, add.queue, add.urls, /\.mp4$/.test(add.name)], [3876543, false, undefined, true]);
+  // The page is asked to send that blob, on the feed the app made.
+  const ask = b.toTabs.find((m) => m.type === "blob-download");
+  assert.deepEqual([ask.feed, ask.src], [add.feed, player.src]);
+  // Its pieces and end go on to the app.
+  await b.ask({ type: "feed-piece", feed: add.feed, track: 0, init: false, data: "AAEC" }, { tab: WHATSAPP });
+  await b.ask({ type: "feed-end", feed: add.feed, failed: null }, { tab: WHATSAPP });
+  const fed = b.sent.filter((m) => m.command === "feed");
+  assert.deepEqual(fed.map((m) => [m.feed, m.track, m.data, !!m.end]), [[add.feed, 0, "AAEC", false], [add.feed, undefined, undefined, true]]);
+  // A sound the page holds is named by its type.
+  await b.ask({ type: "page-button", player: { src: "blob:https://web.whatsapp.com/77", kind: "audio", seconds: 9, blob: { size: 9000, type: "audio/ogg" } } }, { tab: WHATSAPP });
+  assert.match(b.sent.filter((m) => m.command === "add")[1].name, /\.ogg$/);
+});
+
 test("Take downloads is set to the switch's state, never flipped", async () => {
   const b = load({ tabs: [PAGE] });
   assert.equal((await b.ask({ type: "set-on", on: true, tabId: 1 })).on, true);

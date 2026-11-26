@@ -155,6 +155,29 @@ fn a_fed_stream_is_joined_from_the_pieces_the_browser_sends() {
 }
 
 #[test]
+fn a_whole_file_from_a_page_is_kept_as_it_is() {
+    // A video the page decrypted itself (WhatsApp Web): its bytes, in pieces, are the file; nothing is joined.
+    let dir = common::Scratch::new("feed-whole");
+    std::fs::create_dir_all(dir.join("files")).unwrap();
+    let m = Manager::open(&dir).unwrap();
+    let file: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+    let id = m.add(NewDownload { url: feed::link("file-test-1", Some(file.len() as u64)), folder: dir.join("files"), name: Some("Status.mp4".into()), stream: true, start: true, ..NewDownload::default() });
+    for piece in file.chunks(1 << 20) {
+        put("file-test-1", 0, false, piece);
+    }
+    feed::end("file-test-1", None).unwrap();
+    match wait(&m, id, |s| matches!(s, Status::Finished | Status::Failed(_))) {
+        Status::Finished => {}
+        other => panic!("{other:?}"),
+    }
+    let path = m.rows().into_iter().find(|r| r.id == id).unwrap().path.unwrap();
+    assert_eq!(path.file_name().unwrap(), "Status.mp4");
+    assert!(std::fs::read(&path).unwrap() == file, "the file is the page's bytes, unchanged");
+    assert!(!path.with_file_name("Status.mp4.hdparts").exists(), "the pieces' folder goes");
+    assert!(m.quit(Duration::from_secs(5)));
+}
+
+#[test]
 fn a_fed_stream_is_never_a_mirror_of_another_download() {
     let dir = common::Scratch::new("feed-own");
     std::fs::create_dir_all(dir.join("files")).unwrap();
