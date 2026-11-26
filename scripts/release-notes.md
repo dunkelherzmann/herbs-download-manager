@@ -2,24 +2,15 @@ A download manager for macOS, Linux and Windows. It downloads a file over many c
 
 This is a testing app in early development (0.x), shared as is: no support is promised or given. What's reported and what's done is tracked in [bugs.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/bugs.md) and [enhancements.md](https://github.com/dunkelherzmann/herbs-download-manager/blob/main/enhancements.md).
 
-## What's new since 0.1.171
+## What's new since 0.1.200
 
-- **Paste links to have them scanned,** as JDownloader's link crawler does: ⌘V on the Mac, Ctrl+V on Linux and
-  Windows. Every link on the clipboard opens in Add Links, a web page gives way to the files and media on it, and a
-  server's folder listing is read with its subfolders. Copied web-page text brings the links behind it.
-- **YouTube links pasted into the app** list the video by its title and size and download it, without the browser.
-  Other video pages have their player run out of sight when their text names no video, so a streaming page finds its
-  stream.
-- **Linux and Windows work like the Mac app,** checked feature by feature: the Download window, Settings, Sign-ins,
-  Add Links, the clipboard watch, shortcuts, Quit and Pause questions, drag and drop, and on Linux a status-area icon
-  while the window is closed.
-- **Import Links** reads Word, OpenDocument, web archive and bookmark files on Linux and Windows too.
-- **Fixes:** a speed-limited download's count moves while it runs; Windows names the Recycle Bin; Windows' Find bar
-  shows; Return presses the default button in Linux's dialogs.
-- **Edge installs the extension by itself** from Microsoft Edge Add-ons: the app tells Edge about it at launch, and
-  Edge asks to turn it on (on Linux it's on at once). No Developer mode needed in Edge.
-- **The extension** (1.37) asks YouTube again when a connection drops mid-download. When Edge holds both the Edge
-  Add-ons copy and one loaded unpacked, only one of them takes the downloads.
+- **Windows: install without the "Windows protected your PC" warning.** The new `install-windows.ps1`, attached
+  here, installs the app for all users when run as administrator: paste the one line under Install into an
+  administrator PowerShell. It downloads the installer, checks its checksum and installs it silently, without changing
+  any security setting. The installer can still be opened the usual way (More info ▸ Run anyway).
+- **The Windows files are built on GitHub** from the tagged commit. They aren't code-signed: the free signing program
+  turned the project down, and paid signing isn't planned.
+- **More tests** for file names, sizes and filter titles, found with mutation testing.
 
 ## Install
 
