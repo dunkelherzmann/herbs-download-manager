@@ -54,6 +54,14 @@ test("pkill -f inside ssh", () => {
     allowed("pkill -f hd-mock");
 });
 
+test("pkill -f inside mc-exec", () => {
+    blocked("mc-exec linux 'pkill -f hd-mock; cargo test'");
+    blocked('mc-exec linux --cwd /tmp --timeout 60 "pkill -9 -f hd-mock"');
+    blocked("rtk mc-exec linux 'pkill -fx hd-mock'");
+    allowed("mc-exec linux 'pkill -f [h]d-mock'");
+    allowed("mc-exec linux --put step.sh /tmp/step.sh");
+});
+
 test("commit, PR merge and branch switch in the shared checkout", () => {
     blocked("git commit -m x", shared);
     blocked("rtk git commit -am x", path.join(shared, "core"));
@@ -85,6 +93,13 @@ test('an unquoted "Herb\'s" in ssh', () => {
     allowed(`ssh windows-box "powershell -ExecutionPolicy Bypass -File C:\\t\\step.ps1"`);
     allowed(`ls "$HOME/Library/Application Support/Herb's Download Manager"`);
     allowed(`scp step.ps1 windows-box:step.ps1`);
+});
+
+test('an unquoted "Herb\'s" in mc-exec', () => {
+    blocked(`mc-exec windows 'dir "%LOCALAPPDATA%\\Herb's Download Manager"'`);
+    blocked(`mc-exec linux --timeout 60 "rm -rf /tmp/Herb's"`);
+    allowed(`mc-exec linux "ls \\"$HOME/Herb's Download Manager\\""`);
+    allowed(`mc-exec windows --put step.ps1 "C:\\t\\step.ps1"`);
 });
 
 test("the hook: exit 2 with a reason, 0 otherwise", () => {

@@ -5,13 +5,13 @@
 # A version already there is left alone. Prints what each machine has now.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# The Linux and Windows machines, by the names ssh knows them under: from the environment, or from an untracked
-# scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or in the main one.
+# The Linux and Windows machines, by their Master Control names (`mctl machines`): linux and windows, or others from the
+# environment or an untracked scripts/hosts.env (HDM_LINUX_HOST=name, HDM_WINDOWS_HOST=name) in this checkout or the main one.
 for hosts in "$ROOT/scripts/hosts.env" "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../scripts/hosts.env"; do
     if [ -f "$hosts" ]; then . "$hosts"; break; fi
 done
-LINUX_HOST="${HDM_LINUX_HOST:-linux}"
-WINDOWS_HOST="${HDM_WINDOWS_HOST:-windows}"
+LINUX_MACHINE="${HDM_LINUX_HOST:-linux}"
+WINDOWS_MACHINE="${HDM_WINDOWS_HOST:-windows}"
 git -C "$ROOT" fetch -q origin main || { echo "extension-everywhere: can't fetch origin/main" >&2; exit 1; }
 VERSION="$(git -C "$ROOT" show origin/main:extension/manifest.json | sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' | head -1)"
 [ -n "$VERSION" ] || { echo "extension-everywhere: no version in extension/manifest.json" >&2; exit 1; }
@@ -48,8 +48,8 @@ PY
 fi
 
 # Linux: its Downloads folder by xdg-user-dir.
-scp -q "$TAR" "$LINUX_HOST:/tmp/hdm-extension.tar" &&
-ssh "$LINUX_HOST" "D=\"\$(xdg-user-dir DOWNLOAD 2>/dev/null)\"; [ -n \"\$D\" ] && [ \"\$D\" != \"\$HOME\" ] || D=\"\$HOME/Downloads\";
+mc-exec "$LINUX_MACHINE" --put "$TAR" /tmp/hdm-extension.tar &&
+mc-exec "$LINUX_MACHINE" "D=\"\$(xdg-user-dir DOWNLOAD 2>/dev/null)\"; [ -n \"\$D\" ] && [ \"\$D\" != \"\$HOME\" ] || D=\"\$HOME/Downloads\";
     T=\"\$D/$NAME\"; if [ -d \"\$T\" ]; then echo 'linux: $VERSION already there'; else W=\$(mktemp -d) && tar -xf /tmp/hdm-extension.tar -C \$W \
     && mkdir -p \"\$D\" && mv \$W/extension \"\$T\" && rm -rf \$W && echo 'linux: $VERSION copied'; fi; rm -f /tmp/hdm-extension.tar" \
     || { echo "linux: FAILED"; failed=1; }
@@ -69,7 +69,9 @@ if (Test-Path \$dest) { "windows: $VERSION already there" } else {
 }
 Remove-Item (Join-Path \$env:USERPROFILE 'hdm-extension.tar'), (Join-Path \$env:USERPROFILE 'hdm-extension.ps1') -ErrorAction SilentlyContinue
 PS
-scp -q "$TAR" "$WINDOWS_HOST:hdm-extension.tar" && scp -q "$PS1" "$WINDOWS_HOST:hdm-extension.ps1" &&
-ssh "$WINDOWS_HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File hdm-extension.ps1" | tr -d '\r' || { echo "windows: FAILED"; failed=1; }
+# Master Control copies to absolute paths, so the home folder comes first.
+WIN_HOME="$(mc-exec "$WINDOWS_MACHINE" "echo %USERPROFILE%" | tr -d '\r\n')" && [ -n "$WIN_HOME" ] &&
+mc-exec "$WINDOWS_MACHINE" --put "$TAR" "$WIN_HOME\\hdm-extension.tar" && mc-exec "$WINDOWS_MACHINE" --put "$PS1" "$WIN_HOME\\hdm-extension.ps1" &&
+mc-exec "$WINDOWS_MACHINE" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\hdm-extension.ps1\"" | tr -d '\r' || { echo "windows: FAILED"; failed=1; }
 rm -f "$TAR" "$PS1"
 exit $failed

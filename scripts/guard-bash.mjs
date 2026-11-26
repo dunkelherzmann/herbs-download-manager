@@ -3,10 +3,11 @@
 // stops. It reads the hook's JSON on stdin and exits 2 with a one-line reason when the command would
 //   - run `cargo fmt` (no rustfmt.toml: it rewrites the whole workspace);
 //   - pipe scripts/check.sh into tail or head (the pipe's status is tail's: #89 merged with machines failing);
-//   - run `pkill -f` inside `ssh host '…'` (the remote shell's command line matches the pattern: it kills itself);
+//   - run `pkill -f` inside `ssh host '…'` or `mc-exec machine '…'` (the remote shell's command line matches the
+//     pattern: it kills itself);
 //   - commit, merge a PR or switch branches in the shared checkout ~/Projects/herbs-download-manager instead of a
 //     wt-hdm-* worktree (another session switched the branch under a running task: #64);
-//   - send an ssh command with an unquoted "Herb's" (the apostrophe ends the quoting and vanishes).
+//   - send an ssh or mc-exec command with an unquoted "Herb's" (the apostrophe ends the quoting and vanishes).
 // RTK's global hook rewrites commands (`git status` → `rtk git status`), so a leading `rtk` is looked through.
 // Anything it can't parse is let through: the hook must never stop ordinary work.
 // Tests: node --test tests/guard/*.test.mjs
@@ -130,6 +131,16 @@ function sshRemote(words) {
     return words.slice(i + 1).map((w) => w.value).join(" ");
 }
 
+// mc-exec's remote command (Master Control, ~/.agents/bin/mc-exec): the words after the machine and its options, or
+// null for --put and --get, which copy files.
+const MC_ARG_OPTS = new Set(["--cwd", "--timeout"]);
+function mcExecRemote(words) {
+    let i = 2;
+    if (["--put", "--get"].includes(words[i]?.value)) return null;
+    while (i < words.length && words[i].value.startsWith("--")) i += MC_ARG_OPTS.has(words[i].value) ? 2 : 1;
+    return i < words.length ? words.slice(i).map((w) => w.value).join(" ") : null;
+}
+
 // True when the text, as a shell reads it, has an apostrophe of "Herb's" outside double quotes and unescaped.
 function unquotedHerbs(text) {
     let dq = false;
@@ -168,7 +179,7 @@ export function check(command, cwd, home = os.homedir(), depth = 0) {
     let tokens;
     try { tokens = lex(command); } catch {
         // The outer command isn't even valid: only an ssh line broken by "Herb's" is worth naming.
-        return /\bssh\b/.test(command) && /Herb's/i.test(command) ? herbsReason : null;
+        return /\b(ssh|mc-exec)\b/.test(command) && /Herb's/i.test(command) ? herbsReason : null;
     }
     const cmds = commands(tokens);
     let dir = cwd;
@@ -203,14 +214,14 @@ export function check(command, cwd, home = os.homedir(), depth = 0) {
             const r = check(v[2], dir, home, depth + 1);
             if (r) return r;
         }
-        if (name === "ssh") {
-            const remote = sshRemote(words);
+        if (name === "ssh" || name === "mc-exec") {
+            const remote = name === "ssh" ? sshRemote(words) : mcExecRemote(words);
             if (remote) {
                 if (unquotedHerbs(remote)) return herbsReason;
                 let inner = null;
                 try { inner = commands(lex(remote)); } catch { /* not sh syntax (cmd): nothing more to check */ }
                 if (inner && inner.some((c) => pkillF(strip(c.words)))) {
-                    return "pkill -f inside ssh host '…' is blocked: the remote shell's own command line contains the pattern, so it kills itself and the later steps silently don't run. Save the PID when starting (echo $! > file) and kill that, or write the pattern as '[h]d-mock'";
+                    return "pkill -f inside ssh host '…' or mc-exec machine '…' is blocked: the remote shell's own command line contains the pattern, so it kills itself and the later steps silently don't run. Save the PID when starting (echo $! > file) and kill that, or write the pattern as '[h]d-mock'";
                 }
             }
             continue;
@@ -245,7 +256,7 @@ export function check(command, cwd, home = os.homedir(), depth = 0) {
     return null;
 }
 
-const herbsReason = "an unquoted \"Herb's\" in an ssh command is blocked: the apostrophe ends the shell's quoting and vanishes (a command made a new \"Herbs Download Manager\" folder). Put the step in a .ps1/.sh (Join-Path $env:LOCALAPPDATA \"Herb's Download Manager\"), copy it over with scp and run that (docs/agents/linux-windows.md)";
+const herbsReason = "an unquoted \"Herb's\" in an ssh or mc-exec command is blocked: the apostrophe ends the shell's quoting and vanishes (a command made a new \"Herbs Download Manager\" folder). Put the step in a .ps1/.sh (Join-Path $env:LOCALAPPDATA \"Herb's Download Manager\"), copy it over with mc-exec MACHINE --put and run that (docs/agents/linux-windows.md)";
 
 if (process.argv[1] && realish(process.argv[1]) === realish(fileURLToPath(import.meta.url))) {
     let input = "";
