@@ -43,11 +43,22 @@ COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
 git -C "$ROOT" fetch -q origin main || { echo "check.sh: can't fetch origin/main" >&2; exit 2; }
 BASE="$(git -C "$ROOT" merge-base HEAD origin/main)"
 if ! git -C "$ROOT" diff --quiet "$BASE" HEAD -- extension/; then
-    ext_version() { git -C "$ROOT" show "$1:extension/manifest.json" 2>/dev/null | sed -n 's/^ *"version" *: *"\([^"]*\)".*/\1/p'; }
+    ext_version() { git -C "$ROOT" show "${1}:extension/manifest.json" 2>/dev/null | sed -n 's/^ *"version" *: *"\([^"]*\)".*/\1/p'; }
     OLD_EXT="$(ext_version "$BASE")"
     NEW_EXT="$(ext_version HEAD)"
     if [ "$OLD_EXT" = "$NEW_EXT" ]; then
         echo "extension: FAILED ($COMMIT), extension/ changed but its manifest's version is still ${NEW_EXT:-unknown}: raise it (docs/agents/extension.md)"
+        exit 1
+    fi
+    # A new version only for a real change: with the version left out (the manifest's and SCRIPT_VERSION in
+    # background.js), the extension must differ from main's, or the new version would be an empty update (Herbert, 2026-11-26).
+    unversioned() {
+        git -C "$ROOT" ls-tree -r "$1" extension | grep -v -E '	extension/(manifest\.json|background\.js)$'
+        git -C "$ROOT" show "${1}:extension/manifest.json" | grep -v -E '^ *"version" *:'
+        git -C "$ROOT" show "${1}:extension/background.js" | grep -v -E '^const SCRIPT_VERSION = '
+    }
+    if [ "$(unversioned "$BASE" | shasum)" = "$(unversioned HEAD | shasum)" ]; then
+        echo "extension: FAILED ($COMMIT), only the version changed ($OLD_EXT to $NEW_EXT): leave it at $OLD_EXT; a new version needs a real change (docs/agents/extension.md)"
         exit 1
     fi
 fi

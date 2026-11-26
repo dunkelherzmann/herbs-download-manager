@@ -15,6 +15,8 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
 - Every change to `extension/` raises `version` in `extension/manifest.json` (1.1 → 1.2): each install step copies a
   version Herbert hasn't got yet into his Downloads folder as "Herb's DM extension <version>" (his request,
   2026-11-10), and the app's Show Extension Folder copy is rewritten from the same files.
+  Only a real change raises it: a branch whose `extension/` differs from main's in nothing but the version (the
+  manifest's and `SCRIPT_VERSION`) fails `scripts/check.sh` (his rule, 2026-11-26: an identical new version is cosmetic).
 - To see the extension in a real browser without touching Herbert's: start Edge headless with a scratch profile
   (`--headless=new --user-data-dir=<scratch> --remote-debugging-port=9333 --load-extension=<ext>
   --disable-extensions-except=<ext> --disable-features=DisableLoadExtensionCommandLineSwitch`), save its PID, and
@@ -71,7 +73,9 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   version from origin/main into the Downloads folder of the Mac, the Linux machine and the Windows machine. Merges don't install,
   so 1.5–1.10 never reached the Mac's Downloads until he asked where they were (bugs.md, 2026-11-10).
   On the Mac it also leaves "Herb's DM extension <version> - Edge store.zip" there, the package Partner Center takes
-  (a zip he made from the folder failed the store's check for `key` and `background.scripts`, 2026-11-25).
+  (a zip he made from the folder failed the store's check for `key` and `background.scripts`, 2026-11-25); the Mac
+  install (`macos/scripts/build.sh --install`) leaves it too, so each new version's zip is there even when this script
+  was missed (1.38's was, 2026-11-26). Both use `scripts/edge-store-package.sh --zip-only`.
 - **Publishing an update to Edge Add-ons** (only when Herbert asks): Partner Center ▸ Edge ▸ Herb's Download Manager ▸
   Update, upload the store zip (he picks the file: the built-in browser can't), Continue, then Publish. The submit
   page needs notes for certification every time: the ones in `docs/edge-add-ons.md` plus what changed. Choose "Yes,

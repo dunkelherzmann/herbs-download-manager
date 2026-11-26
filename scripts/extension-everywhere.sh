@@ -36,14 +36,8 @@ if [ -f "$STORE" ]; then
     echo "mac: $VERSION Edge store zip already there"
 else
     WORK="$(mktemp -d)"
-    tar -xf "$TAR" -C "$WORK" && python3 -I - "$WORK/extension/manifest.json" <<'PY' && (cd "$WORK/extension" && zip -q -r -X "$STORE" . -x '.*') && echo "mac: $VERSION Edge store zip copied" || { echo "mac: Edge store zip FAILED"; failed=1; }
-import json, sys
-path = sys.argv[1]
-manifest = json.load(open(path, encoding="utf-8"))
-manifest.pop("key", None)
-manifest["background"].pop("scripts", None)
-json.dump(manifest, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-PY
+    tar -xf "$TAR" -C "$WORK" && PACKAGE="$STORE" SOURCE="$WORK/extension" sh "$ROOT/scripts/edge-store-package.sh" --zip-only >/dev/null \
+        && echo "mac: $VERSION Edge store zip copied" || { echo "mac: Edge store zip FAILED"; failed=1; }
     rm -rf "$WORK"
 fi
 
