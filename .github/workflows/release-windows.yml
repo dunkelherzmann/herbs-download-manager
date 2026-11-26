@@ -139,11 +139,14 @@ jobs:
           & 'check\Herbs Download Manager\HerbsDownloadManager.exe' --self-check | Out-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($f in "release\$setup", 'check\Herbs Download Manager\HerbsDownloadManager.exe', 'check\Herbs Download Manager\hdm.exe') {
+            # Inno Setup pads its installer's text fields with spaces.
             $info = (Get-Item $f).VersionInfo
+            $name = "$($info.ProductName)".Trim()
+            $version = "$($info.ProductVersion)".Trim()
             $sig = (Get-AuthenticodeSignature $f).Status
-            Write-Host "$f : $($info.ProductName) $($info.ProductVersion), signature: $sig"
-            if ($info.ProductName -ne "Herb's Download Manager" -or $info.ProductVersion -ne $env:VERSION) {
-              throw "$f says $($info.ProductName) $($info.ProductVersion), not Herb's Download Manager $env:VERSION"
+            Write-Host "$f : $name $version, signature: $sig"
+            if ($name -ne "Herb's Download Manager" -or $version -ne $env:VERSION) {
+              throw "$f says $name $version, not Herb's Download Manager $env:VERSION"
             }
             if ($env:SIGN -eq 'true' -and $sig -ne 'Valid') { throw "$f isn't validly signed: $sig" }
           }
