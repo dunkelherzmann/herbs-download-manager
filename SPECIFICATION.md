@@ -645,7 +645,8 @@ downloads to the app. The browser keeps a download the app doesn't take.
   once, opening the app in the background when it isn't running, as the right-click menu does; the page doesn't see
   the click. A file with its own address is handed over as it is (a picture or another file keeps its own name; a
   video or sound follows its site's naming rule, which applies to videos, sounds and streams only). A video played
-  through a `blob:` address is matched against what the tab fetched, as §15 says; with nothing to match the button
+  through a `blob:` address is matched against what the tab fetched, as §15 says, or taken from the page's own copy;
+  with nothing to match the button
   turns red with "Nothing to download yet: play it first." The button turns green with a ✓ for 2 seconds when the
   app took it, red with "!" and the reason for 5 seconds when not. It sits in its own closed shadow root, so the
   page's styles can't change it. Embedded content works as the page itself does: frames from other sites, frames a
@@ -969,7 +970,12 @@ second; the closest wins) and picture size, against each file the tab fetched, r
 512 KB with the page's cookies; then the video in the page's data closest to it in length (within 1.5 s); then the
 tab's stream that the list shows first. Before length, a video in the page's data whose post or story the page names
 wins: the button hands over the parts of the page's address (`/stories/<user>/<id>/`) and of the links to posts
-around the video (`/p/<code>/`, `/reel/<code>/`), so stories of the same length (many are 15 s) are told apart. A file whose link has no file's name in it is listed under its page's title, as the app
+around the video (`/p/<code>/`, `/reel/<code>/`), so stories of the same length (many are 15 s) are told apart. When no
+fetched file matches and the `blob:` address holds a whole file (a video or sound the page decrypted itself, as
+WhatsApp Web plays them: what the tab fetched is encrypted), the page sends its own copy to the app, a megabyte at a
+time, and the app keeps it as it is, named by the page's title and the file's type (`.mp4`, `.webm`, `.mov`, `.ogg`,
+`.m4a`, `.mp3`); the tab must stay open until it's done. A stream played through `blob:` can't be read that way and
+goes on to the page's data and the tab's stream. A file whose link has no file's name in it is listed under its page's title, as the app
 names it.
 **Download** starts an item at once and says "Downloading"; **Add to Queue** (under ▾) lets it wait its turn. **Sound
 Only** (under ▾, streams) adds just its sound (see Sound only above). A stream is named after

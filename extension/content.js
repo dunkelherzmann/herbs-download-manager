@@ -66,6 +66,71 @@
     if (manifests.length) api.runtime.sendMessage({ type: "page-manifests", manifests }).catch(() => {});
   });
 
+  const base64 = (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768));
+    return btoa(s);
+  };
+
+  // A whole file the page holds at a blob: address (a video it decrypted itself, as WhatsApp Web plays them): its
+  // size and type, or null when it isn't one (a stream's MediaSource can't be read). Only its start is fetched.
+  async function blobFacts(src) {
+    const stop = new AbortController();
+    try {
+      const r = await fetch(src, { signal: stop.signal });
+      const size = Number(r.headers.get("content-length")) || 0;
+      return r.ok && size > 0 ? { size, type: (r.headers.get("content-type") || "").split(";")[0].trim().toLowerCase() } : null;
+    } catch {
+      return null;
+    } finally {
+      stop.abort();
+    }
+  }
+
+  // Sends that file to the app, a piece at a time (background.js passes each on before the next is read).
+  const PIECE = 1 << 20;
+  async function feedBlob(feed, src) {
+    let failed = null;
+    try {
+      const reader = (await fetch(src)).body.getReader();
+      let held = [];
+      let length = 0;
+      const send = async () => {
+        const piece = new Uint8Array(length);
+        let at = 0;
+        for (const part of held) {
+          piece.set(part, at);
+          at += part.length;
+        }
+        held = [];
+        length = 0;
+        const answer = await api.runtime.sendMessage({ type: "feed-piece", feed, track: 0, init: false, data: base64(piece) });
+        if (!(answer && answer.ok)) throw new Error((answer && answer.error) || "stopped");
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (value) {
+          held.push(value);
+          length += value.length;
+        }
+        if (length >= PIECE || (done && length)) await send();
+        if (done) break;
+      }
+    } catch (e) {
+      // Stopped in the app: nothing more to say to it.
+      if (e && e.message === "stopped") return;
+      failed = "The page's copy of the file couldn't be read: play it again and download anew.";
+    }
+    api.runtime.sendMessage({ type: "feed-end", feed, failed }).catch(() => {});
+  }
+  api.runtime.onMessage.addListener((message, sender, reply) => {
+    if (message.type !== "blob-download") return false;
+    feedBlob(message.feed, message.src);
+    reply({ ok: true });
+    return false;
+  });
+
   // YouTube (youtube.js, in the page's world): what the page plays, and downloads it streams piece by piece. Asked by
   // background.js; each piece goes to it (and on to the app) before the page sends the next.
   if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
@@ -76,12 +141,6 @@
       window.postMessage({ herbsDmYouTubeAsk: { ...extra, type, id } }, location.origin);
       setTimeout(() => { if (pending.delete(id)) resolve(null); }, 3000);
     });
-    const base64 = (buffer) => {
-      const bytes = new Uint8Array(buffer);
-      let s = "";
-      for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768));
-      return btoa(s);
-    };
     const feeds = new Map();
     on(window, "message", async (e) => {
       const a = e.source === window && e.data && e.data.herbsDmYouTubeAnswer;
@@ -345,6 +404,8 @@
       // The page that holds it: this frame's (a frame written by its page, about:blank or srcdoc, has its page's).
       page: web(location.href) ? location.href : document.baseURI,
     };
+    // A file the page holds itself: background.js takes the page's copy when it finds no file of its own for it.
+    if (/^blob:/.test(player.src) && (kind === "video" || kind === "audio")) player.blob = await blobFacts(player.src);
     clearTimeout(resetTimer);
     button.className = "shown busy";
     let answer;

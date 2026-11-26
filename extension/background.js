@@ -12,7 +12,7 @@ const HOST = "org.herbsdownloadmanager.hdm";
 // old background script from its cache after the extension's files were replaced by a newer version: the page's
 // button and the list then got no answer (bugs.md, 2026-11-16). The extension's pages and the page's button ask
 // "hello" first, and restart the extension (fresh.js) when no answer comes or it names another version.
-const SCRIPT_VERSION = "1.37";
+const SCRIPT_VERSION = "1.38";
 const NAME = "Herb's Download Manager";
 
 async function isOn() {
@@ -619,6 +619,12 @@ async function itemForPlayer(tab, player, frame = null) {
   const off = (f) => Math.abs(factsOf.get(f.url).seconds - player.seconds);
   const file = same.sort((a, b) => off(a) - off(b) || (b.seen || 0) - (a.seen || 0))[0];
   if (file) return file;
+  // A whole file the page holds itself (content.js read its size): the page's copy, sent to the app by the page. A
+  // video WhatsApp Web decrypted is only there: what the tab fetched is encrypted.
+  if (player.blob && player.blob.size > 0) {
+    return { kind: player.kind, pageFile: true, src: player.src, url: "", size: player.blob.size, mime: player.blob.type || "",
+             seconds: player.seconds || 0, frameId: frame && frame.id ? frame.id : 0, seen: Date.now(), hidden: false };
+  }
   const streams = items.filter((i) => STREAMED.includes(i.kind));
   const near = (i) => Math.abs((i.seconds || 0) - player.seconds);
   // A video in the page's data whose post or story the page names (its address, or the links around the video):
@@ -812,8 +818,7 @@ function nameFor(item, title) {
   if (item.kind !== "video" && item.kind !== "audio") return null;
   const last = decodeURIComponent(pathOf(item.url).split("/").pop() || "");
   if (MEDIA_EXT.test(last)) return null; // the app names it from the link
-  const ext = /webm/.test(item.mime) ? "webm" : item.kind === "audio" ? (/mpeg/.test(item.mime) ? "mp3" : "m4a") : "mp4";
-  return `${page}.${ext}`;
+  return `${page}.${extensionFor(item)}`;
 }
 
 // The popup's questions.
@@ -857,10 +862,11 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
     } else if (message.type === "set-min-size") {
       await api.storage.local.set({ minSize: Math.max(0, Number(message.minSize) || 0) });
       reply({ ok: true });
-    } else if (message.type === "yt-piece") {
-      // A piece of a YouTube video its page streams (content.js): on to the app, asked again while the app starts.
+    } else if (message.type === "yt-piece" || message.type === "feed-piece") {
+      // A piece of a YouTube video its page streams, or of a file a page holds (content.js): on to the app, asked
+      // again while the app starts.
       reply(await feedApp({ command: "feed", feed: message.feed, track: message.track, init: !!message.init, data: message.data }));
-    } else if (message.type === "yt-end") {
+    } else if (message.type === "yt-end" || message.type === "feed-end") {
       reply(await feedApp({ command: "feed", feed: message.feed, end: true, failed: message.failed || null }));
     } else if (message.type === "page-manifests") {
       // Manifests the page received in its data replies (content-main.js): kept for the tab, as its own videos.
@@ -977,7 +983,10 @@ async function addItem(tab, item, message) {
   // From the right-click menu: open the app first when it isn't running.
   if (message.open) options.open = true;
   let answer;
-  if (item.kind === "youtube") {
+  if (item.pageFile) {
+    // A file the page holds itself: the page sends it, the app keeps it as it is.
+    answer = await addPageFile(tab, item, options);
+  } else if (item.kind === "youtube") {
     // YouTube: the page streams it and hands it over piece by piece; the app makes the download and joins it.
     answer = await addYouTube(tab, item, options, message);
   } else if (item.kind === "page-dash") {
@@ -1065,6 +1074,28 @@ async function addYouTube(tab, item, options, message) {
   return answer;
 }
 
+// Adds a file the page holds at a blob: address (`itemForPlayer`): the app makes a download fed as one whole file
+// (its id starts with "file-"), started at once, then the page sends it.
+async function addPageFile(tab, item, options) {
+  if (!tab) return { ok: false, error: "The tab is gone." };
+  const feed = `file-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  let answer;
+  try {
+    answer = await api.runtime.sendNativeMessage(HOST, { command: "add", feed, size: item.size, name: options.name, referer: tab.url,
+      subfolder: options.subfolder, open: options.open, queue: false });
+  } catch {
+    return { ok: false, error: `${NAME} isn't set up for this browser, or isn't installed.` };
+  }
+  if (!(answer && answer.ok)) return answer;
+  try {
+    await api.tabs.sendMessage(tab.id, { type: "blob-download", feed, src: item.src }, { frameId: item.frameId || 0 });
+  } catch {
+    await feedApp({ command: "feed", feed, end: true, failed: "The tab couldn't be reached: play it again and download anew." });
+    return { ok: false, error: "The tab couldn't be reached: load it again." };
+  }
+  return answer;
+}
+
 // ---- naming rules (§13) -------------------------------------------------------------------------------------
 
 const rulesSetting = async () => (await api.storage.local.get({ rules: [] })).rules;
@@ -1075,7 +1106,11 @@ function extensionFor(item) {
   const last = decodeURIComponent(pathOf(item.url || "").split("/").pop() || "");
   const own = /\.([a-z0-9]{2,5})$/i.exec(last);
   if (own && MEDIA_EXT.test(last)) return own[1].toLowerCase();
-  return /webm/.test(item.mime || "") ? "webm" : item.kind === "audio" ? (/mpeg/.test(item.mime || "") ? "mp3" : "m4a") : "mp4";
+  const mime = item.mime || "";
+  if (/webm/.test(mime)) return "webm";
+  if (/ogg|opus/.test(mime)) return "ogg";
+  if (/quicktime/.test(mime)) return "mov";
+  return item.kind === "audio" ? (/mpeg/.test(mime) ? "mp3" : "m4a") : "mp4";
 }
 
 // The name a site's rule gives an item, the selector's text read from the page when the pattern uses it.

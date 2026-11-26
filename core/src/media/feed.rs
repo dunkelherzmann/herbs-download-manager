@@ -2,7 +2,9 @@
 //! only through its own player's protocol, so the browser extension downloads it in YouTube's page and sends each
 //! piece here. Such a download's link is `hdm-feed:<id>?size=<bytes>`; while it runs, `put` stores each piece of
 //! each track (0 the picture, 1 the sound) in its `.hdparts` folder, in order, and `end` says it's complete, after
-//! which the tracks are joined into one MP4 like any stream's.
+//! which the tracks are joined into one MP4 like any stream's. A whole file a page holds (a video it decrypted itself,
+//! as WhatsApp Web plays them) is fed the same way under an id starting with `WHOLE`: its pieces, all on track 0, are
+//! the file as it is, saved without joining.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -20,6 +22,9 @@ pub const SCHEME: &str = "hdm-feed:";
 /// How long a fed download waits for the browser's next piece before it fails: the tab was closed, or the browser
 /// stopped (a resumed download, which only its page can feed again).
 const SILENCE: Duration = Duration::from_secs(90);
+
+/// The start of a fed download's id whose pieces are one whole file, kept as it is.
+pub const WHOLE: &str = "file-";
 
 /// The browser's answer when a piece can't be taken.
 pub const STOPPED: &str = "stopped";
@@ -225,12 +230,23 @@ pub async fn run(url: &str, folder: &Path, name: &str, choice: &super::StreamCho
         let s = feed.state.lock().unwrap();
         (s.lengths.clone(), s.has_init.clone())
     };
-    let joined = tokio::task::spawn_blocking(move || join(&parts, &dest, &lengths, &has_init)).await;
+    let whole = id.starts_with(WHOLE);
+    let joined = tokio::task::spawn_blocking(move || if whole { keep_whole(&parts, &dest, &lengths) } else { join(&parts, &dest, &lengths, &has_init) }).await;
     match joined {
         Ok(Ok(path)) => Outcome::Finished(path),
         Ok(Err(e)) => Outcome::Failed(e),
         Err(e) => Outcome::Failed(format!("The pieces couldn't be joined: {e}")),
     }
+}
+
+/// Keeps a whole file's pieces (track 0, already stored in order) as `dest`, then removes the pieces' folder.
+fn keep_whole(parts: &Path, dest: &Path, lengths: &[Vec<u64>]) -> Result<PathBuf, String> {
+    if lengths.len() != 1 || lengths[0].is_empty() {
+        return Err("Nothing was received".into());
+    }
+    std::fs::rename(track_file(parts, 0, false), dest).map_err(|e| format!("Can't name the file {}: {e}", dest.display()))?;
+    let _ = std::fs::remove_dir_all(parts);
+    Ok(dest.to_path_buf())
 }
 
 /// Joins the stored tracks into `dest` (an `.m4a` when there's only sound), then removes the pieces.
@@ -288,6 +304,15 @@ mod tests {
         assert_eq!(link("a/b?c", None), "hdm-feed:abc");
         assert_eq!(parse("hdm-feed:ab?size=42"), ("ab".to_string(), Some(42)));
         assert!(is_feed_link("hdm-feed:x") && !is_feed_link("https://x"));
+    }
+
+    #[test]
+    fn a_whole_file_with_nothing_received_fails() {
+        let dir = std::env::temp_dir().join(format!("hd-feed-whole-{}", std::process::id()));
+        let dest = dir.join("Nothing.mp4");
+        assert_eq!(keep_whole(&dir, &dest, &[]), Err("Nothing was received".into()));
+        assert_eq!(keep_whole(&dir, &dest, &[vec![]]), Err("Nothing was received".into()), "a track with no pieces");
+        assert!(!dest.exists());
     }
 
     #[test]
