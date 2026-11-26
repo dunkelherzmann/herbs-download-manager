@@ -11,6 +11,8 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+; Windows' numeric file version can't hold a branch build's "+dev.N" (scripts/version.sh): it gets the part before.
+#define NumVersion (Pos("+", AppVersion) > 0 ? Copy(AppVersion, 1, Pos("+", AppVersion) - 1) : AppVersion)
 #define AppName "Herb's Download Manager"
 #define AppExe "HerbsDownloadManager.exe"
 #define Repo "https://github.com/dunkelherzmann/herbs-download-manager"
@@ -25,7 +27,7 @@ AppPublisherURL={#Repo}
 AppSupportURL={#Repo}
 AppUpdatesURL={#Repo}/releases
 AppCopyright=Copyright (c) 2026 Herbert Cisneros
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#NumVersion}
 ; The product name and version are the app's, the same as in its programs' file details.
 VersionInfoTextVersion={#AppVersion}
 VersionInfoProductName={#AppName}
