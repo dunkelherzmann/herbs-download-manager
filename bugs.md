@@ -196,7 +196,7 @@ No bugs reported yet.
   - [x] Linux
   - [x] Windows
 - [ ] **The core test `an_early_download_is_adopted_in_another_folder_without_fetching_again` fails now and then on Windows** (about 1 run in 5 to 10: the server sent 14.9–16.3 MB of an 8 MiB file, over the 14.7 MB it allows, so the early download was fetched again). *Found in testing 2026-11-26* (scripts/check.sh through Master Control; the same commit passes on the Mac and Linux, and the other runs pass on Windows). Core, Windows.
-- [ ] **Videos playing on WhatsApp Web couldn't be downloaded** (2026-11-26). Mac, Linux, Windows (browser extension). The page's button said "Nothing to download yet: play it first." on a status video that was playing. WhatsApp encrypts every video; the page fetches the encrypted `.enc` file and plays its own decrypted copy from a `blob:` address, so nothing the tab fetched matched it. Fixed (extension 1.38): when no fetched file matches and the `blob:` address holds a whole file, the page sends its copy to the app, which keeps it as it is. Checked in Edge with a stand-in page: the extension read a page's 3,000,000-byte `blob:` video whole, and a streamed one was refused (it keeps the stream path).
-  - [ ] Mac
-  - [ ] Linux
-  - [ ] Windows
+- [x] **Videos playing on WhatsApp Web couldn't be downloaded** (2026-11-26). Mac, Linux, Windows (browser extension). The page's button said "Nothing to download yet: play it first." on a status video that was playing. WhatsApp encrypts every video; the page fetches the encrypted `.enc` file and plays its own decrypted copy from a `blob:` address, so nothing the tab fetched matched it. Fixed (extension 1.38, #73): when no fetched file matches and the `blob:` address holds a whole file, the page sends its copy to the app, which keeps it as it is. Checked in Edge with a stand-in page: the extension read a page's 3,000,000-byte `blob:` video whole, and a streamed one was refused (it keeps the stream path).
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows
