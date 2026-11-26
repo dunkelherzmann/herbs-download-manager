@@ -39,7 +39,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   branch switches (other than back to `main`) in the shared checkout, and ssh or mc-exec commands with an unquoted "Herb's"
   (tests in `tests/guard`, run by `scripts/test.sh`). It applies to sessions opened in this folder or a worktree of
   it; a session started elsewhere (`~/Projects`) doesn't load it. `scripts/check.sh` also fails a branch that
-  changed `extension/` without raising the manifest's version.
+  changed `extension/` without raising the manifest's version, and one that raised it with nothing else in
+  `extension/` changed (a new version only for a real difference, his rule, 2026-11-26).
 
 ## Trying the app
 
