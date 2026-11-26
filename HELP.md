@@ -141,8 +141,8 @@ hdm scan PAGE [--add]
 - **"The server asks for a user name and password":** enter them when asked, or add them under Settings ▸ Sign-ins.
 - **macOS won't open the app:** it isn't notarized by Apple. Right-click it and choose Open, or click Open Anyway in
   System Settings ▸ Privacy & Security.
-- **Windows says "Windows protected your PC" when you open the installer:** that's SmartScreen. The installer isn't
-  signed, so Windows doesn't know it yet. Click More info, then Run anyway.
+- **Windows says "Windows protected your PC" when you open the installer:** that's SmartScreen. Until the installer is
+  signed, Windows doesn't know it yet. Click More info, then Run anyway.
 
 Herb's Download Manager is a testing app, shared as is: no support is promised or given. What's reported and what's
 done is tracked in [bugs.md](bugs.md) and [enhancements.md](enhancements.md); how everything works in detail is in

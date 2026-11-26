@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "programs": the app and hdm.exe, which .github/workflows/release-windows.yml
+     uploads as the artifact unsigned-programs. Paste it into the SignPath project's artifact configuration of that
+     slug. The product name and version must be the app's in every signed file (SignPath Foundation's rule). -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="Herb's Download Manager" product-version="${version}">
+      <include path="HerbsDownloadManager.exe" />
+      <include path="hdm.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

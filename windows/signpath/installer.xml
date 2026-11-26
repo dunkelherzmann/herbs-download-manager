@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "installer": the Inno Setup installer, built from the signed programs, which
+     .github/workflows/release-windows.yml uploads as the artifact unsigned-installer. Paste it into the SignPath
+     project's artifact configuration of that slug. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="Herb's Download Manager" product-version="${version}">
+      <include path="Herbs-Download-Manager-*-Windows-Setup.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>
