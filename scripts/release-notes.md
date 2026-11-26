@@ -34,7 +34,15 @@ flatpak run org.herbsdownloadmanager.app
 
 This installs the GNOME runtime from Flathub if you don't already have it.
 
-**Windows** (10 or 11, 64-bit): download `Herbs-Download-Manager-VERSION-Windows-Setup.exe` and open it. Until the Windows files are signed, Windows SmartScreen stops the installer the first time with "Windows protected your PC": click **More info**, then **Run anyway**. It installs the app for your account only (no administrator password) and adds it to the Start menu; Settings ▸ Apps removes it.
+**Windows** (10 or 11, 64-bit): the files aren't code-signed, so the simplest way is the install script. Open PowerShell as administrator (right-click Start ▸ **Terminal (Admin)**) and paste:
+
+```powershell
+irm https://github.com/dunkelherzmann/herbs-download-manager/releases/latest/download/install-windows.ps1 | iex
+```
+
+It downloads the installer, checks it against `SHA256SUMS.txt`, installs the app for all users and opens it, with no SmartScreen warning (SmartScreen only checks files a browser marked as downloaded, and the script removes the mark; no security setting is changed). It needs administrator rights and asks for them if you didn't start it that way. If Windows 11's Smart App Control is On, it blocks every unsigned program: the script stops and tells you. `install-windows.ps1` is also attached here, to run as `powershell -ExecutionPolicy Bypass -File install-windows.ps1`.
+
+Or download `Herbs-Download-Manager-VERSION-Windows-Setup.exe` and open it: it installs the app for your account only (no administrator password), after SmartScreen's "Windows protected your PC" (click **More info**, then **Run anyway**). Settings ▸ Apps removes it.
 
 To use it without installing, download `Herbs-Download-Manager-VERSION-Windows.zip` instead and extract it. Keep `HerbsDownloadManager.exe` and `hdm.exe` in the same folder, because `hdm.exe` is what the browser extension talks to. SmartScreen may stop it the same way.
 
@@ -49,9 +57,3 @@ The extension hands your browser's downloads to the app and lists the media a pa
 Open the app once before using the extension, so it can register itself with your browsers.
 
 `SHA256SUMS.txt` has each file's checksum.
-
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
-
-It covers the Windows installer and programs, built from the repository by GitHub Actions. Team roles: author, reviewer and approver [dunkelherzmann](https://github.com/dunkelherzmann) (Herbert Cisneros). Privacy: this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it; it connects only to the addresses you give it, and has no update check, no analytics and no crash reports. The details are in the [README](https://github.com/dunkelherzmann/herbs-download-manager#code-signing-policy).

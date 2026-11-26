@@ -27,10 +27,27 @@ each. Or build it yourself (below).
 
 ### Installing on Windows
 
-Download `Herbs-Download-Manager-<version>-Windows-Setup.exe` from the Releases page and open it. Until the Windows
-files are signed (see [Code signing policy](#code-signing-policy)), Windows SmartScreen stops the installer the first
-time with "Windows protected your PC". Click **More info**, then **Run anyway**. It installs the app for your account only, so it needs no administrator password, and adds it to
-the Start menu. You can remove it in Settings ▸ Apps like any other app.
+The Windows files aren't code-signed, so the simplest way to install is the install script. Open PowerShell as
+administrator (right-click Start ▸ **Terminal (Admin)**) and paste:
+
+```powershell
+irm https://github.com/dunkelherzmann/herbs-download-manager/releases/latest/download/install-windows.ps1 | iex
+```
+
+It downloads the latest installer, checks it against the release's `SHA256SUMS.txt` and installs the app for all users
+in Program Files, then opens it. Windows SmartScreen doesn't step in, because it only checks files a browser marked as
+downloaded from the internet, and the script removes that mark. It changes no security setting. Run it again to
+update. If you'd rather run a saved copy, download `install-windows.ps1` from the Releases page and run
+`powershell -ExecutionPolicy Bypass -File install-windows.ps1` as administrator; with an installer beside it, it
+installs that one. Notes:
+
+- **Administrator rights are needed.** If you start it without them, Windows asks (the UAC prompt).
+- **Smart App Control** (Windows 11) blocks every unsigned program. If it's On, the script stops and says so. It
+  doesn't turn it off for you.
+
+Or download `Herbs-Download-Manager-<version>-Windows-Setup.exe` and open it. It installs the app for your account
+only, with no administrator password. SmartScreen stops it the first time with "Windows protected your PC": click
+**More info**, then **Run anyway**. Either way you can remove the app in Settings ▸ Apps.
 
 If you'd rather not install anything, the `…-Windows.zip` file holds the same app. Keep `HerbsDownloadManager.exe` and
 `hdm.exe` in the same folder. What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
@@ -99,22 +116,9 @@ powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1
 powershell -ExecutionPolicy Bypass -File windows\scripts\installer.ps1
 ```
 
-## Code signing policy
+## Privacy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
-
-This covers the Windows release files: the installer and the two programs (`HerbsDownloadManager.exe`, `hdm.exe`).
-GitHub Actions builds them from this repository ([release-windows.yml](.github/workflows/release-windows.yml)), and
-each signing request is approved by hand. The Mac and Linux files aren't covered.
-
-Team roles:
-
-- Author (committer): [dunkelherzmann](https://github.com/dunkelherzmann) (Herbert Cisneros)
-- Reviewer: [dunkelherzmann](https://github.com/dunkelherzmann)
-- Approver: [dunkelherzmann](https://github.com/dunkelherzmann)
-
-Privacy: this program will not transfer any information to other networked systems unless specifically requested by
-the user or the person installing or operating it. It connects only to the addresses you give it: the files, pages and
+The app connects only to the addresses you give it: the files, pages and
 links you add, paste or drop (and links you copy while Watch the clipboard is on), their mirrors, and the sites you
 sign in to through it. It has no update check, no analytics, no crash reports and no account. When it opens, it tells
 Microsoft Edge where to find its extension on Edge Add-ons, and Edge downloads it from Microsoft. The browser

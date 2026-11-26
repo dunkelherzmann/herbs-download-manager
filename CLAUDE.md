@@ -9,8 +9,8 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   origin/main (HDM_RELEASE_REF=origin/BRANCH to try a branch), and `scripts/release.sh --publish` tags v<version> and
   publishes the release, marked Latest (a repo with only pre-releases shows none on its front page). The two Windows
   files come from `.github/workflows/release-windows.yml` on GitHub's runner (release.sh starts it and downloads them),
-  because SignPath Foundation signs only what a GitHub-hosted workflow built: once signing is set up, each release
-  waits for Herbert to approve two signing requests in SignPath (`windows/signpath/` holds their configurations). On Linux, run a command in a build folder with `flatpak build build CMD`, not
+  with `windows/install-windows.ps1` (installs as administrator without SmartScreen's warning; the files aren't
+  code-signed: SignPath Foundation declined, and paid signing isn't wanted). On Linux, run a command in a build folder with `flatpak build build CMD`, not
   `flatpak-builder --run`: since fusermount3 3.18 on the Linux machine, `--run` fails with "Failure spawning rofiles-fuse"
   (2026-11-20; it also exits 1 even for `true`).
 
