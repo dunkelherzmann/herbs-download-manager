@@ -28,10 +28,6 @@ impl FileKind {
     pub fn of(name: &str) -> FileKind {
         let lower = name.to_ascii_lowercase();
         let ext = lower.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
-        // Two-part endings first.
-        if lower.ends_with(".tar.gz") || lower.ends_with(".tar.xz") || lower.ends_with(".tar.bz2") {
-            return FileKind::Compressed;
-        }
         match ext {
             "zip" | "rar" | "7z" | "gz" | "tgz" | "xz" | "bz2" | "zst" | "tar" | "lz" | "lzma" | "cab" | "z" => {
                 FileKind::Compressed
@@ -175,6 +171,8 @@ mod tests {
     fn sorts_files_into_groups() {
         assert_eq!(FileKind::of("a.ZIP"), FileKind::Compressed);
         assert_eq!(FileKind::of("linux.tar.gz"), FileKind::Compressed);
+        assert_eq!(FileKind::of("linux.tar.xz"), FileKind::Compressed);
+        assert_eq!(FileKind::of("linux.tar.bz2"), FileKind::Compressed);
         assert_eq!(FileKind::of("Report.pdf"), FileKind::Documents);
         assert_eq!(FileKind::of("song.flac"), FileKind::Music);
         assert_eq!(FileKind::of("cat.heic"), FileKind::Pictures);
@@ -185,7 +183,10 @@ mod tests {
 
     #[test]
     fn writes_sizes_speeds_and_times() {
+        assert_eq!(bytes(1), "1 byte");
         assert_eq!(bytes(12), "12 bytes");
+        assert_eq!(bytes(999), "999 bytes");
+        assert_eq!(bytes(1_000), "1.0 KB");
         assert_eq!(bytes(1_234), "1.2 KB");
         assert_eq!(bytes(340_000), "340 KB");
         assert_eq!(bytes(1_200_000_000), "1.2 GB");
@@ -199,6 +200,23 @@ mod tests {
         assert_eq!(time_left_text(Some(700)), "12 min");
         assert_eq!(time_left_text(Some(3900)), "1 h 05 min");
         assert_eq!(time_left_text(Some(277_200)), "3 d 5 h");
+    }
+
+    #[test]
+    fn names_groups_and_filters() {
+        let kinds: Vec<&str> = FileKind::ALL.iter().map(|k| k.title()).collect();
+        assert_eq!(kinds, ["Compressed", "Documents", "Music", "Pictures", "Video", "Programs", "Other"]);
+        let filters: Vec<&str> = Filter::ALL.iter().map(|f| f.title()).collect();
+        assert_eq!(filters, ["All", "Downloading", "Paused", "Finished", "Unfinished"]);
+    }
+
+    #[test]
+    fn filters_pick_their_downloads() {
+        assert!(Filter::All.matches(&Status::Paused));
+        assert!(Filter::Finished.matches(&Status::Finished));
+        assert!(!Filter::Finished.matches(&Status::Downloading));
+        assert!(!Filter::Paused.matches(&Status::Downloading));
+        assert!(!Filter::Downloading.matches(&Status::Paused));
     }
 
     #[test]

@@ -77,11 +77,13 @@ mod tests {
         assert_eq!(fit(here, "..."), "download");
         let long = format!("{}.mp4", "a".repeat(400));
         let fitted = fit(here, &long);
-        assert!(fitted.len() <= NAME_BYTES && fitted.ends_with(".mp4"), "{}", fitted.len());
-        // Cut on a character, never inside one.
-        let wide = format!("{}.mkv", "é".repeat(300));
-        let fitted = fit(here, &wide);
-        assert!(fitted.len() <= NAME_BYTES && fitted.ends_with(".mkv") && fitted.starts_with('é'));
+        assert_eq!(fitted, format!("{}.mp4", "a".repeat(NAME_BYTES - 4)), "shortened to the limit, extension kept");
+        // Cut on a character, never inside one: 225 bytes of "é" would split one, so 224 are kept.
+        let wide = format!("{}.flac", "é".repeat(300));
+        assert_eq!(fit(here, &wide), format!("{}.flac", "é".repeat(112)));
+        // A long "extension" is part of the name, so the cut takes it with the rest.
+        let tail = format!("{}.{}", "a".repeat(200), "b".repeat(100));
+        assert_eq!(fit(here, &tail), format!("{}.{}", "a".repeat(200), "b".repeat(NAME_BYTES - 201)));
     }
 
     #[cfg(windows)]
