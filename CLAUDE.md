@@ -24,6 +24,7 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   anything but main shows main's number plus `+branch.N`.
   After `gh pr merge`, confirm the PR says MERGED before removing its worktree or branch: a merge refused for a
   conflict, then the branch deleted, closed #100 unmerged and the installs built main without it (2026-11-10).
+- `scripts/mutants.sh` runs mutation testing (cargo-mutants) on `hd-core`'s code that the branch changes against `origin/main` (`-f FILE` for one file, `--all` for everything, which takes hours). It reports the mutants the tests missed in `.build/mutants/`; it doesn't block a merge. Run it before merging a change to `hd-core`'s logic and add tests for the missed mutants that matter. Run it in the background: `hd-core`'s tests take about 70 s per mutant, so a changed file takes about 10 minutes.
 - Other sessions often work in this same folder: do your own work in a worktree of your own from the start (`git
   worktree add ~/Projects/wt-hdm-<topic> -b <branch> origin/main`), and run `scripts/check.sh` there. In the shared
   checkout, another session switched the branch under a running task: a commit landed on local main and the check
