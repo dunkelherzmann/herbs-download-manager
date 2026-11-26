@@ -952,15 +952,42 @@ fn make_main_link_keeps_what_was_downloaded() {
     assert!(!m.make_main(id, "http://127.0.0.1:9/not-a-mirror.bin"), "only a mirror can become the main link");
     assert!(m.make_main(id, &mirror));
     assert_eq!(m.rows()[0].url, mirror);
-    let sent_before = a.stats("/f.bin").bytes + b.stats("/f.bin").bytes;
+    let asked_before = (a.ranges("/f.bin").len(), b.ranges("/f.bin").len());
     for s in [&a, &b] {
         s.update("/f.bin", |f| f.rate = None);
     }
     m.resume(&[id]);
     wait(&m, id, |s| *s == Status::Finished);
     assert_eq!(std::fs::read(m.rows()[0].path.clone().unwrap()).unwrap(), data);
-    let sent_after = a.stats("/f.bin").bytes + b.stats("/f.bin").bytes - sent_before;
-    assert!(sent_after < data.len() as u64, "resumed, not fetched again ({sent_after} bytes after {before} kept)");
+    // Judged by what was asked for, not by bytes sent: a split connection's server has often sent up to 1 MiB past
+    // the split before a busy client reads it, bytes the new connection is sent too (3 of 40 runs on Windows).
+    let mut asked: Vec<Option<String>> = a.ranges("/f.bin").split_off(asked_before.0);
+    asked.extend(b.ranges("/f.bin").split_off(asked_before.1));
+    let asked = asked_bytes(&asked, data.len() as u64);
+    assert!(asked + before <= data.len() as u64, "resumed, not fetched again (asked for {asked} bytes after {before} kept)");
+}
+
+/// How many bytes of a `len`-byte file a list of requests' Range headers asks for, overlaps counted once.
+fn asked_bytes(ranges: &[Option<String>], len: u64) -> u64 {
+    let mut spans: Vec<(u64, u64)> = ranges
+        .iter()
+        .map(|r| {
+            let Some(spec) = r.as_deref().and_then(|r| r.strip_prefix("bytes=")) else { return (0, len) };
+            let (a, b) = spec.split_once('-').unwrap();
+            let end = if b.is_empty() { len } else { b.parse::<u64>().unwrap() + 1 };
+            (a.parse().unwrap(), end.min(len))
+        })
+        .collect();
+    spans.sort();
+    let (mut total, mut reached) = (0, 0);
+    for (a, b) in spans {
+        let a = a.max(reached);
+        if b > a {
+            total += b - a;
+            reached = b;
+        }
+    }
+    total
 }
 
 /// A download that failed while its link and mirror were both down resumes from the mirror once it's back, even
