@@ -307,6 +307,15 @@ mod tests {
     }
 
     #[test]
+    fn a_whole_file_with_nothing_received_fails() {
+        let dir = std::env::temp_dir().join(format!("hd-feed-whole-{}", std::process::id()));
+        let dest = dir.join("Nothing.mp4");
+        assert_eq!(keep_whole(&dir, &dest, &[]), Err("Nothing was received".into()));
+        assert_eq!(keep_whole(&dir, &dest, &[vec![]]), Err("Nothing was received".into()), "a track with no pieces");
+        assert!(!dest.exists());
+    }
+
+    #[test]
     fn a_piece_for_a_download_not_running_waits() {
         assert_eq!(put("nobody", 0, false, b"x"), Err(WAITING.into()));
         assert_eq!(end("nobody", None), Err(STOPPED.into()));
