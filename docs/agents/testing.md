@@ -25,8 +25,12 @@ reinstall your build (theirs may have replaced it) and run again.
   dies midway" tests pass or fail by timing and never exercise recovery (#7).
 - A test that acts once a download reaches N bytes must pick N well before the event it races with: progress counts
   only bytes written in `write_buffer` pieces, so the counter can reach N just as the event fires.
-- Don't bound the bytes a server sent tightly when checking that nothing is fetched twice: data already in flight to
-  a connection that was cut short counts as sent. Compare against a full refetch instead.
+- Don't judge "nothing is fetched twice" by the bytes a server sent: data already in flight to a connection that was
+  cut short counts as sent, and on a busy Windows machine that reached 1 MiB per split connection (8 MB over an 8 MiB
+  file with 32 connections). Check the requests instead (`MockServer::ranges`: a fresh start asks for `bytes=0-`),
+  and make sure the check fails with the feature switched off. `HD_MOCK_TRACE=1` prints each response's range and
+  bytes sent. A Windows flake that passes alone: run several copies of the test binary at once (each has its own
+  scratch folders) to load the machine the way two `scripts/check.sh` runs do.
 - Never compare the engine's own count (connections receiving, bytes kept) with the server's limit while responses
   can finish: the client hangs up about 0.2 ms before it lowers its count, and the server frees the slot on its
   last byte, so a slow CI runner sees one connection too many (#103). Check limits where nothing can finish (a server

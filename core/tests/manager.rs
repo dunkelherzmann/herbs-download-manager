@@ -849,6 +849,8 @@ fn an_early_download_is_adopted_in_another_folder_without_fetching_again() {
     }
     assert!(m.rows().is_empty());
     s.update("/f.bin", |f| f.rate = None);
+    let whole = |s: &MockServer| s.ranges("/f.bin").iter().filter(|r| r.as_deref() == Some("bytes=0-")).count();
+    let asked_before = whole(&s);
     // Download, with another folder and name.
     let other = dir.join("chosen");
     std::fs::create_dir_all(&other).unwrap();
@@ -857,8 +859,11 @@ fn an_early_download_is_adopted_in_another_folder_without_fetching_again() {
     assert_eq!(std::fs::read(other.join("chosen.bin")).unwrap(), data);
     assert!(!dir.join("files/f.bin.hdpart").exists() && !dir.join("files/f.bin").exists());
     assert!(m.early_progress(token).is_none());
-    // Not fetched twice (bytes already in flight to a cut connection count as sent).
-    assert!(s.stats("/f.bin").bytes < 2 * data.len() as u64 - 2 * MIB as u64, "{}", s.stats("/f.bin").bytes);
+    // Not fetched again: a fresh start asks for the whole file (`bytes=0-`); the adopted download asks only for the
+    // ranges it lacks. Not judged by bytes sent: the early download splits the file over Settings' 32
+    // connections, and when the test machine is busy a connection whose range was split has often been sent up to
+    // 1 MiB more than it read (Windows' loopback takes it), which another connection fetches too (bugs.md).
+    assert_eq!(whole(&s), asked_before, "{:?}", s.ranges("/f.bin"));
 }
 
 #[test]

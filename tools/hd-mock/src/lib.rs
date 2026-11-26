@@ -3,6 +3,7 @@
 //! Each file it serves can turn range support on or off, change its contents (and so its ETag), stall after a
 //! number of bytes, limit its speed, or refuse connections over a limit with 503. Several servers on different
 //! ports act as mirrors of the same file. Every response closes its connection, so each request is one connection.
+//! With `HD_MOCK_TRACE` set, each response prints its path, range, speed limit and the bytes it sent to stderr.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -83,6 +84,8 @@ struct Stats {
     active: AtomicUsize,
     refused: AtomicU64,
     bytes: AtomicU64,
+    /// Each request's Range header, in the order they came.
+    ranges: Mutex<Vec<Option<String>>>,
 }
 
 struct State {
@@ -188,6 +191,12 @@ impl MockServer {
             bytes: s.bytes.load(Ordering::SeqCst),
         }
     }
+
+    /// The Range header of every request for a path so far (`None`: none sent), in the order they came. Unlike
+    /// bytes sent, which count data still in flight to a connection the client has cut, it doesn't depend on timing.
+    pub fn ranges(&self, path: &str) -> Vec<Option<String>> {
+        self.state.stats(path).ranges.lock().unwrap().clone()
+    }
 }
 
 impl Drop for MockServer {
@@ -264,6 +273,7 @@ async fn serve(mut stream: TcpStream, state: Arc<State>, mut stop: watch::Receiv
     };
     let stats = state.stats(&req.path);
     let number = stats.requests.fetch_add(1, Ordering::SeqCst) + 1;
+    stats.ranges.lock().unwrap().push(req.headers.get("range").cloned());
 
     let Some(file) = file else {
         return respond_simple(&mut stream, "404 Not Found").await;
@@ -365,7 +375,12 @@ async fn send_file(
             Some(limit) if sent + piece.len() as u64 > limit => &piece[..(limit - sent) as usize],
             _ => piece,
         };
-        stream.write_all(piece).await?;
+        if let Err(e) = stream.write_all(piece).await {
+            if std::env::var_os("HD_MOCK_TRACE").is_some() {
+                eprintln!("TRACE mock {} {:?} rate={:?} sent={sent} cut: {e}", req.path, req.headers.get("range"), file.rate);
+            }
+            return Err(e);
+        }
         sent += piece.len() as u64;
         stats.bytes.fetch_add(piece.len() as u64, Ordering::SeqCst);
         if file.stall_after.is_some_and(|limit| sent >= limit) {
@@ -380,6 +395,9 @@ async fn send_file(
         if file.rate.is_some() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
+    }
+    if std::env::var_os("HD_MOCK_TRACE").is_some() {
+        eprintln!("TRACE mock {} {:?} rate={:?} sent={sent} whole", req.path, req.headers.get("range"), file.rate);
     }
     Ok(())
 }
