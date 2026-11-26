@@ -20,7 +20,8 @@
 #     powershell -ExecutionPolicy Bypass -File install-windows.ps1 [-Version 0.1.212] [-Installer PATH] [-DesktopShortcut]
 # -Installer installs a Setup.exe you already have (it's unblocked first). Without it, the script uses a
 # Herbs-Download-Manager-*-Windows-Setup.exe beside itself, or else downloads the latest release (or -Version's).
-# A copy installed earlier for your account only is replaced by this one; downloads, settings and history stay.
+# A copy installed earlier for your account only is replaced by this one; downloads, settings and history stay. (When
+# a different administrator account approves the UAC prompt, that account's copy is the one looked for.)
 #
 # Plain ASCII on purpose: Windows PowerShell 5.1 misreads other characters in a file without a byte order mark.
 
@@ -45,13 +46,13 @@ function Install-HerbsDownloadManager {
         Write-Host 'Administrator rights are needed to install for all users; Windows will ask for them.'
         $pass = @()
         if ($Version) { $pass += "-Version '$Version'" }
-        if ($Installer) { $pass += "-Installer '$((Resolve-Path $Installer).Path)'" }
+        if ($Installer) { $pass += "-Installer '$((Resolve-Path $Installer).Path -replace "'", "''")'" }
         if ($DesktopShortcut) { $pass += '-DesktopShortcut' }
         if ($PSCommandPath) {
             $argList = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`" $($pass -join ' ')"
         } else {
             # Run with irm | iex: the elevated window fetches the script again.
-            $argList = "-NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& ([scriptblock]::Create((irm '$self'))) $($pass -join ' ')`""
+            $argList = "-NoProfile -ExecutionPolicy Bypass -NoExit -Command `"[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; & ([scriptblock]::Create((irm '$self'))) $($pass -join ' ')`""
         }
         try {
             Start-Process powershell.exe -Verb RunAs -ArgumentList $argList
