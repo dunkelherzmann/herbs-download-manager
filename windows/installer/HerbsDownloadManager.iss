@@ -3,8 +3,9 @@
 ; in Settings ▸ Apps. No administrator rights; nothing outside the user's account. Built by windows\scripts\installer.ps1
 ; with Inno Setup from the files build.ps1 put in dist\.
 ;
-; The installer isn't signed, so Windows SmartScreen stops it the first time with "Windows protected your PC": More
-; info ▸ Run anyway lets it run (README.md, the release notes).
+; Release installers are built by .github/workflows/release-windows.yml, which has SignPath sign them once SignPath
+; Foundation's signing is set up; until then SmartScreen stops them the first time with "Windows protected your PC":
+; More info ▸ Run anyway lets them run (README.md, the release notes).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -24,6 +25,11 @@ AppSupportURL={#Repo}
 AppUpdatesURL={#Repo}/releases
 AppCopyright=Copyright (c) 2026 Herbert Cisneros
 VersionInfoVersion={#AppVersion}
+; The product name and version are the app's, the same as in its programs' file details (SignPath Foundation's rule
+; for signed files: README.md, "Code signing policy").
+VersionInfoTextVersion={#AppVersion}
+VersionInfoProductName={#AppName}
+VersionInfoProductTextVersion={#AppVersion}
 VersionInfoDescription={#AppName} Setup
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes

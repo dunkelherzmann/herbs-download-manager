@@ -27,9 +27,9 @@ each. Or build it yourself (below).
 
 ### Installing on Windows
 
-Download `Herbs-Download-Manager-<version>-Windows-Setup.exe` from the Releases page and open it. The installer
-isn't signed, so the first time Windows SmartScreen stops it with "Windows protected your PC". Click **More info**,
-then **Run anyway**. It installs the app for your account only, so it needs no administrator password, and adds it to
+Download `Herbs-Download-Manager-<version>-Windows-Setup.exe` from the Releases page and open it. Until the Windows
+files are signed (see [Code signing policy](#code-signing-policy)), Windows SmartScreen stops the installer the first
+time with "Windows protected your PC". Click **More info**, then **Run anyway**. It installs the app for your account only, so it needs no administrator password, and adds it to
 the Start menu. You can remove it in Settings ▸ Apps like any other app.
 
 If you'd rather not install anything, the `…-Windows.zip` file holds the same app. Keep `HerbsDownloadManager.exe` and
@@ -98,6 +98,27 @@ and `installer.ps1` turns them into the installer (it needs Inno Setup 6: `winge
 powershell -ExecutionPolicy Bypass -File windows\scripts\build.ps1
 powershell -ExecutionPolicy Bypass -File windows\scripts\installer.ps1
 ```
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
+
+This covers the Windows release files: the installer and the two programs (`HerbsDownloadManager.exe`, `hdm.exe`).
+GitHub Actions builds them from this repository ([release-windows.yml](.github/workflows/release-windows.yml)), and
+each signing request is approved by hand. The Mac and Linux files aren't covered.
+
+Team roles:
+
+- Author (committer): [dunkelherzmann](https://github.com/dunkelherzmann) (Herbert Cisneros)
+- Reviewer: [dunkelherzmann](https://github.com/dunkelherzmann)
+- Approver: [dunkelherzmann](https://github.com/dunkelherzmann)
+
+Privacy: this program will not transfer any information to other networked systems unless specifically requested by
+the user or the person installing or operating it. It connects only to the addresses you give it: the files, pages and
+links you add, paste or drop (and links you copy while Watch the clipboard is on), their mirrors, and the sites you
+sign in to through it. It has no update check, no analytics, no crash reports and no account. When it opens, it tells
+Microsoft Edge where to find its extension on Edge Add-ons, and Edge downloads it from Microsoft. The browser
+extension's own privacy policy is [PRIVACY.md](PRIVACY.md).
 
 ## Support
 
