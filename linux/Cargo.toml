@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "hdm"
-path = "src/hdm.rs"
+path = "../core/src/bin/hdm.rs"
 
 [dependencies]
 hd-core = { path = "../core" }
