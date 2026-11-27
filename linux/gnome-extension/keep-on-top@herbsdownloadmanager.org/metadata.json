@@ -1,0 +1,8 @@
+{
+  "uuid": "keep-on-top@herbsdownloadmanager.org",
+  "name": "Herb's Download Manager: Keep on Top",
+  "description": "Lets Herb's Download Manager keep its windows above other apps' windows (its Keep on Top), which GNOME on Wayland doesn't let an app do itself. Installed by the app; does nothing until the app asks.",
+  "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+  "url": "https://github.com/dunkelherzmann/herbs-download-manager",
+  "version": 1
+}

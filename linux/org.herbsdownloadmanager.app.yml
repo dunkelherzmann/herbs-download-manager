@@ -21,6 +21,10 @@ finish-args:
   - --talk-name=org.kde.StatusNotifierWatcher
   # The scheduler sleeps or shuts down the computer when the queue is done, if chosen in Settings.
   - --system-talk-name=org.freedesktop.login1
+  # Keep on Top: GNOME on Wayland lets no app keep itself above others, so the app installs a small GNOME Shell
+  # extension of its own (under the home folder, already shared), turns it on, and asks it.
+  - --talk-name=org.gnome.Shell.Extensions
+  - --talk-name=org.herbsdownloadmanager.KeepOnTop
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   # Local builds fetch the crates with cargo (a Flathub build would vendor them).
