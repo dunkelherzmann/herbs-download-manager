@@ -48,6 +48,11 @@ is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `b
   `HD_DOWNLOADS_DIR`) set to a scratch folder: it keeps its own list and its own UI settings. Read windows by the
   test copy's pid (`CGWindowListCopyWindowInfo`), or with computer-use when his copy isn't running. `build.sh
   --install` leaves his running copy alone; the new build loads at his next launch.
+- Keys in a Mac test copy: Master Control's `click`/`key` with `window` answer `focus_refused` for it (2026-11-27),
+  though `lsappinfo front` shows its pid in front. Bring it forward with a real click at a point of a screenshot of its
+  window (no `window`), press its buttons with `press`, and send keys with System Events (`key code N`) only after
+  checking `lsappinfo front` is the test copy's pid. Herbert said he yields the Mac for tests when asked with a
+  pop-up (`display dialog ... giving up after 5`); say when it's his again (`display notification`).
 - Code reached while `AppModel` is being made (its first `refresh()`, observers, anything `init` calls) must not read
   `AppModel.shared`: the app traps at launch with "dispatch_once ... trying to lock recursively". Pass the model or its
   manager in instead (hit twice: hdm's control server, the scheduler's countdown).
