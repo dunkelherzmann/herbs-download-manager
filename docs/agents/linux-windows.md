@@ -10,9 +10,10 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   is no `flatpak-builder` command on the Linux machine); Rust comes from the `rust-stable//25.08` SDK extension. For fast
   compile loops, run cargo inside the SDK with a kept target folder: `flatpak run --filesystem=home --share=network
   --command=sh org.gnome.Sdk//49 -c "export PATH=/usr/lib/sdk/rust-stable/bin:\$PATH
-  CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). See the
-  window with `--capture FILE` inside `kwin_wayland --virtual --socket <name> --exit-with-session "flatpak run
-  --env=HD_DATA_DIR=… org.herbsdownloadmanager.app --capture …"` (Master Control's `exec` sets `XDG_RUNTIME_DIR`), never the desktop.
+  CARGO_TARGET_DIR=\$HOME/.cache/hdm-linux-target; cargo build --release"` (the host has no GTK headers). Check the
+  window in Herbert's signed-in session on screen, where he can watch (his rule, 2026-11-27: "I prefer being able to
+  see what's happening when it happens"), not in a virtual or headless compositor; read it with Master Control's
+  `screenshot`, or `--capture FILE`.
   Never change a widget inside a `borrow_mut()` of state its own signal handlers read (`set_active` on a checkbox
   runs its `toggled` handler at once): the app aborts with "RefCell already mutably borrowed". Collect the widgets,
   drop the borrow, then change them (#121, found in testing).
@@ -21,16 +22,17 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   (#80). Check such a key in a field with real input, not only in the list.
   Paths given to the Flatpak (`--capture`, `HD_DATA_DIR`) must be under the home folder: the sandbox has its own
   `/tmp`, so a picture "saved" to `/tmp` never appears on the host.
-- Keep on Top's GNOME helper (`linux/gnome-extension/`, installed by the app): test a fresh login without logging
-  Herbert out by running `dbus-run-session -- gnome-shell --headless --wayland --virtual-monitor 1280x800
-  --wayland-display NAME` and the app with `WAYLAND_DISPLAY=NAME flatpak run --no-documents-portal …` (flatpak binds
-  the display from its own environment, not `--env`; without `--no-documents-portal` bwrap fails on the nested
-  session's document portal). The helper's `IsAbove(app_id)` says whether the windows are kept above. Such a shell
-  writes the real `~/.config/dconf/user` (enabled-extensions gained the helper): afterwards set the key to a
-  different value and then back, since his session's dconf-service skips a write equal to what it holds (2026-11-27).
-  Its document portal also unmounts his session's `/run/user/1000/doc` when it quits (every later `flatpak run` and
-  build then fails in bwrap on `doc/by-app`): run `systemctl --user restart xdg-document-portal` after.
-  Bump `shell-version` in its `metadata.json` when GNOME gets a new major version, or GNOME refuses to run it.
+- Keep on Top's GNOME helper (`linux/gnome-extension/`, installed by the app): GNOME loads a new extension only at
+  login, so test it with a real log-out in his session: `gnome-session-quit --logout --no-prompt`; GDM logs herbert
+  back in by itself (automatic and timed login are on, his choice, 2026-11-27) and Master Control answers again in
+  about 45 s. Windows started through Master Control before the log-out are gone after it, and one started just after
+  the login closed again within a minute (Files quit, the app's window closed): start test copies once Master Control
+  has been back a minute. The helper's `IsAbove(app_id)` says whether an app's windows are kept above; afterwards
+  `UninstallExtension` over org.gnome.Shell.Extensions and take the uuid out of `enabled-extensions`. Don't use a
+  headless `gnome-shell` under `dbus-run-session` instead: he can't see it, it writes his real dconf database, and
+  its document portal unmounts his session's `/run/user/1000/doc` when it quits (fix:
+  `systemctl --user restart xdg-document-portal`). Bump `shell-version` in its `metadata.json` when GNOME gets a new
+  major version, or GNOME refuses to run it.
 - Commands on the Linux and Windows machines go through Master Control: `mc-exec linux|windows "…"` (its exit code is
   the command's; long output keeps only its end), and `mc-exec MACHINE --put LOCAL REMOTE` / `--get REMOTE LOCAL`
   copy files (absolute paths: `echo %USERPROFILE%` gives the Windows home). Windows tests with several steps: write a
