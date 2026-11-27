@@ -89,11 +89,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #59 for Chrome, Edge, Brave, Vivaldi and Firefox: the extension (`extension/`) hands each download to the app through `hdm`, with the browser's cookies and page; each app registers `hdm` with the browsers at launch, and Settings ▸ Browser extension shows the folder to load (SPECIFICATION.md §13). Safari is left: it only keeps extensions signed by an Apple developer.
+- [x] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #59 for Chrome, Edge, Brave, Vivaldi and Firefox: the extension (`extension/`) hands each download to the app through `hdm`, with the browser's cookies and page; each app registers `hdm` with the browsers at launch, and Settings ▸ Browser extension shows the folder to load (SPECIFICATION.md §13). Safari is left: it only keeps extensions signed by an Apple developer.
   - [x] Mac (Chrome, Edge, Brave, Vivaldi, Firefox)
   - [x] Linux
   - [x] Windows
-  - [ ] Safari: on hold until there is an Apple Developer account to sign it (Herbert, 2026-11-10).
+  - [x] Safari: dropped, not to be built now or in the foreseeable future (Herbert, 2026-11-27; it would need a paid Apple Developer account to sign it).
 - [x] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #58: Settings ▸ Scheduler starts and stops the queue at set times on chosen days (running downloads go back to waiting at the stop time), and when the queue is done, quits, sleeps or shuts down after a minute's countdown with Cancel; the footer shows the next start or stop (SPECIFICATION.md §11.1).
   - [x] Mac
   - [x] Linux
