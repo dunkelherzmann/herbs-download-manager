@@ -231,7 +231,7 @@ fn keep_on_top_tool() -> gtk::ToggleButton {
     let b = gtk::ToggleButton::builder()
         .icon_name("view-pin-symbolic")
         .action_name("win.keep-on-top")
-        .tooltip_text("Keep on Top: keep Herb's DM above every other app's windows (Ctrl+Alt+T)")
+        .tooltip_text("Keep on Top: keep Herb's DM above every other app's windows (Ctrl+Super+T)")
         .build();
     b.add_css_class("flat");
     b.update_property(&[gtk::accessible::Property::Label("Keep on Top")]);
@@ -1195,7 +1195,8 @@ fn add_actions(
             });
         });
         window.add_action(&action);
-        app.set_accels_for_action("win.keep-on-top", &["<Control><Alt>t"]);
+        // Ctrl+Super+T, as ⌃⌘T and Show Sidebar's Ctrl+Super+S: Ubuntu keeps Ctrl+Alt+T for its terminal.
+        app.set_accels_for_action("win.keep-on-top", &["<Control><Super>t"]);
         // Remembered from the last launch: turned on quietly (a login still pending says so when it's toggled).
         if crate::keepontop::remembered() {
             crate::keepontop::apply(true, |_| {});

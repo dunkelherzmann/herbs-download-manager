@@ -1,4 +1,4 @@
-//! Keep on Top (§3 T11, View ▸ Keep on Top, Ctrl+Alt+T). GNOME on Wayland lets no app keep its own windows above
+//! Keep on Top (§3 T11, View ▸ Keep on Top, Ctrl+Super+T: Ubuntu's Ctrl+Alt+T opens a terminal). GNOME on Wayland lets no app keep its own windows above
 //! others, so the app installs a small GNOME Shell extension of its own (`linux/gnome-extension/`) and asks it over
 //! the session bus. GNOME loads a newly installed extension only at the next login: until then Keep on Top stays
 //! on as chosen and says to log out and back in once; at that login's first launch the app turns the helper on.
