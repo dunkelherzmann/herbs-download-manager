@@ -13,7 +13,11 @@
 #   lints (real bugs); warnings are left alone, so there is no `-D warnings`.
 # - First, without running anything: if the branch changed extension/, it must raise "version" in
 #   extension/manifest.json too (docs/agents/extension.md), or the install steps never copy the new extension to his Downloads.
-# Prints one line per machine and exits non-zero if any failed. Logs go to .build/check/<machine>.log.
+# - Then, on the Mac only and before the machines: security. `gitleaks detect` scans the whole git history for secrets
+#   and fails on any finding (a false positive goes in .gitleaksignore, with a comment); `cargo audit` checks Cargo.lock
+#   against the RustSec advisories and fails on a vulnerability (warnings such as unmaintained crates are only printed).
+# Prints one line for security and one per machine and exits non-zero if any failed. Logs go to
+# .build/check/<machine>.log and security.log.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # The Linux and Windows machines, by their Master Control names (`mctl machines`): linux and windows, or others from the
@@ -62,6 +66,15 @@ if ! git -C "$ROOT" diff --quiet "$BASE" HEAD -- extension/; then
         exit 1
     fi
 fi
+# Security, on the Mac only (gitleaks and cargo-audit are installed there, ~/.agents/config/tools.json:
+# `python3 ~/.agents/sync/agents.py tools --install`). Its line is printed with the machines' below.
+# Ignored advisory, each with why and until when:
+# - RUSTSEC-2026-0592: url 2.5.8 (through reqwest), a stack overflow in Url::origin() on nested blob: URLs. Fixed
+#   in url 2.5.9, a dependency upgrade left to its own PR (bugs.md, 2026-11-27); drop the ignore once Cargo.lock has it.
+(cd "$ROOT" && PATH="$HOME/.local/bin:$PATH" && gitleaks detect --no-banner --no-color --redact 2>&1 \
+    && cargo audit --ignore RUSTSEC-2026-0592 2>&1) >"$LOGS/security.log" 2>&1
+echo $? >"$LOGS/security.status"
+
 # Each branch checks in its own folder: sessions check their branches at the same time, and one run deleting the
 # shared folder under another's tests failed them (2026-11-10).
 DIR="hdm-check-$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9' '-')"
@@ -90,14 +103,14 @@ echo $? >"$LOGS/mac.status"
 wait
 
 failed=0
-for m in mac linux windows; do
+for m in security mac linux windows; do
     s="$(cat "$LOGS/$m.status" 2>/dev/null || echo 1)"
     if [ "$s" = 0 ]; then
         echo "$m: passed ($COMMIT)"
     else
         failed=1
         echo "$m: FAILED ($COMMIT), see $LOGS/$m.log"
-        grep -E "panicked|FAILED|error(\[|:)" "$LOGS/$m.log" | head -5 | sed 's/^/    /'
+        grep -E "panicked|FAILED|error(\[|:)|leaks found|^(RuleID|File|Crate|ID):|not found" "$LOGS/$m.log" | head -8 | sed 's/^/    /'
     fi
 done
 exit $failed

@@ -205,3 +205,5 @@ No bugs reported yet.
   - [x] Windows
 - [x] **Ctrl+Alt+T, Keep on Top's shortcut on Linux, opened a terminal instead** (*found in testing* 2026-11-27). Linux. Ubuntu keeps Ctrl+Alt+T for its terminal, so the app never saw the key. Linux now uses Ctrl+Super+T, as the Mac's ⌃⌘T (as Show Sidebar's Ctrl+Super+S does); checked in a test copy, where it turned Keep on Top on and off (#78).
   - [x] Linux
+- [ ] **`url` 2.5.8 has a known vulnerability, RUSTSEC-2026-0592** (*found in testing* 2026-11-27, by the new `cargo audit` step of `scripts/check.sh`). Mac. A stack overflow in `Url::origin()` on nested `blob:` URLs; `url` comes in through `reqwest` and `tower-http`. Fixed in `url` 2.5.9: a dependency upgrade (`cargo update -p url`) left to its own PR. Until then `scripts/check.sh` ignores that one advisory, with a comment; drop the ignore with the upgrade.
+  - [ ] Mac
