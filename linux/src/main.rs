@@ -4,6 +4,7 @@
 mod add;
 mod detail;
 mod features;
+mod keepontop;
 mod list;
 mod played;
 mod queuedone;

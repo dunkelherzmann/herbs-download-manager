@@ -123,9 +123,9 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A Keep on Top toggle (📌) between Settings and Search** that keeps the download manager above every other app. *Requested 2026-11-09.* Also View ▸ Keep on Top (⌃⌘T); every window of the app floats above other apps' windows, full-screen ones included; remembered between launches. Done for the Mac in #33. Windows has it (Ctrl+Alt+T); Linux desktops (GTK 4, Wayland) don't let an app keep itself above others, so its item shows, disabled, with a note in its hover text.
+- [x] **A Keep on Top toggle (📌) between Settings and Search** that keeps the download manager above every other app. *Requested 2026-11-09.* Also View ▸ Keep on Top (⌃⌘T); every window of the app floats above other apps' windows, full-screen ones included; remembered between launches. Done for the Mac in #33. Windows has it (Ctrl+Alt+T); Linux (2026-11-27, #78): GNOME on Wayland lets no app keep itself above others, so the app installs a small GNOME Shell extension of its own and asks it (Herbert's choice over opening GNOME's title-bar menu); GNOME starts a newly installed one only at the next login, so the first time says "Log out and back in once to finish Keep on Top" and stays on. On Linux the shortcut is Ctrl+Super+T, as ⌃⌘T (Ubuntu opens a terminal on Ctrl+Alt+T). Checked: in a headless GNOME Shell started twice (two logins), the first launch installed the helper, the next turned it on and kept the test copy's windows above; in Herbert's session a test copy showed the message with 📌 pressed, and turning it off was silent and forgot it.
   - [x] Mac
-  - [ ] Linux
+  - [x] Linux
   - [x] Windows
 - [x] **Delete sends files to the Trash instead of erasing them,** so they can be put back. *Requested 2026-11-09* (after a 6.6 GB file deleted with "Delete Files Too" couldn't be recovered). The button is now "Move to Trash Too"; the Recycle Bin on Windows, the desktop's trash on Linux; a file that can't go to the Trash stays where it is and the footer says so. Done in the shared core, and for the Mac's dialog, in #34; Linux and Windows have it since their delete dialogs (#43, #44), checked by the feature test on all three.
   - [x] Mac

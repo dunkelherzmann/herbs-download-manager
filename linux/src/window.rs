@@ -15,8 +15,7 @@ use crate::list::{COLUMNS, DownloadList};
 const GITHUB: &str = "https://github.com/dunkelherzmann/herbs-download-manager";
 
 /// Commands that arrive with their own windows later in `linux/pending.md`; their items show, disabled.
-/// Keep on Top can't be done on Linux (GTK 4, Wayland); its item shows, disabled, with a note in its hover text.
-const LATER: [&str; 1] = ["keep-on-top"];
+const LATER: [&str; 0] = [];
 
 fn item(menu: &gio::Menu, label: &str, action: &str) {
     menu.append(Some(label), Some(&format!("win.{action}")));
@@ -227,6 +226,18 @@ fn tool(icon: &str, action: &str, label: &str, help: &str) -> gtk::Button {
     b
 }
 
+/// T11 shows whether Keep on Top is on, as the Mac's and Windows' do.
+fn keep_on_top_tool() -> gtk::ToggleButton {
+    let b = gtk::ToggleButton::builder()
+        .icon_name("view-pin-symbolic")
+        .action_name("win.keep-on-top")
+        .tooltip_text("Keep on Top: keep Herb's DM above every other app's windows (Ctrl+Super+T)")
+        .build();
+    b.add_css_class("flat");
+    b.update_property(&[gtk::accessible::Property::Label("Keep on Top")]);
+    b
+}
+
 fn separator() -> gtk::Separator {
     let s = gtk::Separator::new(gtk::Orientation::Vertical);
     s.set_margin_top(10);
@@ -261,8 +272,7 @@ pub fn build(app: &adw::Application, manager: Manager) -> adw::ApplicationWindow
     // T6 Stop All, T5–T4 the queue, T3–T2 Pause and Resume, T1 New Download.
     let tools: Vec<gtk::Widget> = vec![
         tool("system-search-symbolic", "toggle-search", "Search", "Search: show only downloads whose name, link or note contains some text (Ctrl+F)").upcast(),
-        tool("view-pin-symbolic", "keep-on-top", "Keep on Top",
-             "Keep on Top: Linux desktops don't let an app keep itself above others; use the title bar's right-click menu ▸ Always on Top").upcast(),
+        keep_on_top_tool().upcast(),
         tool("emblem-system-symbolic", "settings", "Settings", "Settings (Ctrl+,)").upcast(),
         separator().upcast(),
         tool("user-trash-symbolic", "delete", "Delete", "Delete: remove the selected downloads from the list (Delete)").upcast(),
@@ -1165,7 +1175,33 @@ fn add_actions(
         let ctx = ctx.clone();
         add("settings", &["<Control>comma"], Box::new(move || crate::settings::open(&ctx)));
     }
-    add("keep-on-top", &["<Control><Alt>t"], Box::new(|| {}));
+    {
+        // Stateful, so the View menu shows a check mark and T11 shows pressed while it's on.
+        let action = gio::SimpleAction::new_stateful("keep-on-top", None, &crate::keepontop::remembered().to_variant());
+        let win = window.clone();
+        action.connect_activate(move |a, _| {
+            let on = !a.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
+            a.set_state(&on.to_variant());
+            crate::keepontop::remember(on);
+            let (a, win) = (a.clone(), win.clone());
+            crate::keepontop::apply(on, move |outcome| {
+                if matches!(outcome, crate::keepontop::Outcome::NotGnome | crate::keepontop::Outcome::Failed(_)) {
+                    a.set_state(&false.to_variant());
+                    crate::keepontop::remember(false);
+                }
+                if let Some((heading, body)) = crate::keepontop::message(&outcome) {
+                    crate::add::alert(&win, heading, &body);
+                }
+            });
+        });
+        window.add_action(&action);
+        // Ctrl+Super+T, as ⌃⌘T and Show Sidebar's Ctrl+Super+S: Ubuntu keeps Ctrl+Alt+T for its terminal.
+        app.set_accels_for_action("win.keep-on-top", &["<Control><Super>t"]);
+        // Remembered from the last launch: turned on quietly (a login still pending says so when it's toggled).
+        if crate::keepontop::remembered() {
+            crate::keepontop::apply(true, |_| {});
+        }
+    }
     for name in LATER {
         if let Some(a) = window.lookup_action(name).and_downcast::<gio::SimpleAction>() {
             a.set_enabled(false);

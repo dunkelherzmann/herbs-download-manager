@@ -65,7 +65,7 @@ The Linux version is ported once the Mac version has each feature, item by item 
 - [x] **Project skeleton**: Rust GTK 4 + libadwaita host over the shared core, Flatpak `org.herbsdownloadmanager.app`, `linux/scripts/build.sh --install`. (§1) #35
 - [x] **Download engine, segmentation, pause and resume, mirrors** (the shared core, checked on Linux: `scripts/check.sh` runs every core test there on each pull request, #27). (§7, §8, §10)
 - [x] **Main window, menus, toolbar, context menu**, 1:1 with the Mac, window controls on the right and the main
-  menu in the title bar's left corner. (§2–§4) #38. Keep on Top stays disabled (GTK 4/Wayland).
+  menu in the title bar's left corner. (§2–§4) #38. Keep on Top through a GNOME Shell helper the app installs (2026-11-27).
 - [x] **Adding downloads, Download window, queue, settings, checksums.** (§5, §6, §9, §11) Checksums and S8 in #45.
   - [x] Adding downloads: New Download, Add Links, Batch, Import, clipboard, drop on the window (§5) #41. Links dropped on a row become its mirrors (row-drop PR). Import and drops read .doc, .docx, .odt, .rtfd, web archives and .webloc files as on the Mac #41.
   - [x] Download window (segments, Info, Connections, Mirrors, Options with the speed limit), Add Mirror, Properties, Settings, finish notifications (§6, §7, §9) #43. The queue works through the toolbar and Tasks menu (§11).

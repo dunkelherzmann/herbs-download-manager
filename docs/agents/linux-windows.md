@@ -21,6 +21,16 @@ Part of this project's agent notes (`CLAUDE.md` points here); these rules are as
   (#80). Check such a key in a field with real input, not only in the list.
   Paths given to the Flatpak (`--capture`, `HD_DATA_DIR`) must be under the home folder: the sandbox has its own
   `/tmp`, so a picture "saved" to `/tmp` never appears on the host.
+- Keep on Top's GNOME helper (`linux/gnome-extension/`, installed by the app): test a fresh login without logging
+  Herbert out by running `dbus-run-session -- gnome-shell --headless --wayland --virtual-monitor 1280x800
+  --wayland-display NAME` and the app with `WAYLAND_DISPLAY=NAME flatpak run --no-documents-portal …` (flatpak binds
+  the display from its own environment, not `--env`; without `--no-documents-portal` bwrap fails on the nested
+  session's document portal). The helper's `IsAbove(app_id)` says whether the windows are kept above. Such a shell
+  writes the real `~/.config/dconf/user` (enabled-extensions gained the helper): afterwards set the key to a
+  different value and then back, since his session's dconf-service skips a write equal to what it holds (2026-11-27).
+  Its document portal also unmounts his session's `/run/user/1000/doc` when it quits (every later `flatpak run` and
+  build then fails in bwrap on `doc/by-app`): run `systemctl --user restart xdg-document-portal` after.
+  Bump `shell-version` in its `metadata.json` when GNOME gets a new major version, or GNOME refuses to run it.
 - Commands on the Linux and Windows machines go through Master Control: `mc-exec linux|windows "…"` (its exit code is
   the command's; long output keeps only its end), and `mc-exec MACHINE --put LOCAL REMOTE` / `--get REMOTE LOCAL`
   copy files (absolute paths: `echo %USERPROFILE%` gives the Windows home). Windows tests with several steps: write a
