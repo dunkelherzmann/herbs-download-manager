@@ -1,6 +1,7 @@
 // Keep on Top for Herb's Download Manager on GNOME (§3 T11). GNOME on Wayland lets no app keep its own windows
 // above others, so the app installs this helper and asks it over the session bus: SetAbove(app_id, on) keeps every
-// window of the app with that GTK application id above other windows, the ones it opens later too. The app id
+// window of the app with that GTK application id above other windows, the ones it opens later too; IsAbove(app_id)
+// says whether they are. The app id
 // tells a test copy (org.herbsdownloadmanager.app.Test…) from the user's own copy.
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -13,6 +14,10 @@ const INTERFACE = `<node>
     <method name="SetAbove">
       <arg type="s" direction="in" name="app_id"/>
       <arg type="b" direction="in" name="on"/>
+    </method>
+    <method name="IsAbove">
+      <arg type="s" direction="in" name="app_id"/>
+      <arg type="b" direction="out" name="above"/>
     </method>
     <property name="Version" type="u" access="read"/>
   </interface>
@@ -56,6 +61,12 @@ export default class KeepOnTop extends Extension {
             if (this._appId(window) === appId)
                 this._place(window);
         }
+    }
+
+    // Whether the app has windows and every one is kept above (the app's tests ask).
+    IsAbove(appId) {
+        const windows = this._windows().filter(window => this._appId(window) === appId);
+        return windows.length > 0 && windows.every(window => window.is_above());
     }
 
     _windows() {
