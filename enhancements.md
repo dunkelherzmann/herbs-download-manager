@@ -89,11 +89,11 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #59 for Chrome, Edge, Brave, Vivaldi and Firefox: the extension (`extension/`) hands each download to the app through `hdm`, with the browser's cookies and page; each app registers `hdm` with the browsers at launch, and Settings ▸ Browser extension shows the folder to load (SPECIFICATION.md §13). Safari is left: it only keeps extensions signed by an Apple developer.
+- [x] **A browser extension that hands the browser's downloads to the app,** for Safari, Chrome, Firefox and the browsers built on Chromium; the browser keeps a download the app doesn't take. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #59 for Chrome, Edge, Brave, Vivaldi and Firefox: the extension (`extension/`) hands each download to the app through `hdm`, with the browser's cookies and page; each app registers `hdm` with the browsers at launch, and Settings ▸ Browser extension shows the folder to load (SPECIFICATION.md §13). Safari is left: it only keeps extensions signed by an Apple developer.
   - [x] Mac (Chrome, Edge, Brave, Vivaldi, Firefox)
   - [x] Linux
   - [x] Windows
-  - [ ] Safari: on hold until there is an Apple Developer account to sign it (Herbert, 2026-11-10).
+  - [x] Safari: dropped, not to be built now or in the foreseeable future (Herbert, 2026-11-27; it would need a paid Apple Developer account to sign it).
 - [x] **A scheduler for the queue:** start and stop it at set times, and when it's done, sleep, shut down or quit. *Requested 2026-11-09, from studying Mister Download Manager.* Done in #58: Settings ▸ Scheduler starts and stops the queue at set times on chosen days (running downloads go back to waiting at the stop time), and when the queue is done, quits, sleeps or shuts down after a minute's countdown with Cancel; the footer shows the next start or stop (SPECIFICATION.md §11.1).
   - [x] Mac
   - [x] Linux
@@ -241,8 +241,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Mac
   - [x] Linux
   - [x] Windows
-- [ ] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); Windows checked 2026-11-11 in a test copy (a link copied in another app opened Add 1 Link; the clipboard was put back after). The Mac waits for a try (its clipboard isn't overwritten in a test).
-  - [ ] Mac
+- [x] **Watch the clipboard, off by default:** when switched on, links copied in any app open in Add Links; what was already copied when it was switched on is left alone. *Requested 2026-11-10, from studying JDownloader 2.* Built in #122: Settings ▸ Watch the clipboard for links (S16), on all three, through each system's own change signal; copies made in the app itself are left alone. Checked on Linux in a test copy (an earlier copy is left alone; a link copied in another app opens Add Links with just it); Windows checked 2026-11-11 in a test copy (a link copied in another app opened Add 1 Link; the clipboard was put back after). The Mac checked 2026-11-27 in a test copy (its clipboard saved first and put back after): a link copied before it started was left alone, and a link copied in another app opened Add 1 Link with just it.
+  - [x] Mac
   - [x] Linux
   - [x] Windows
 - [x] **Find a page's media without playing it, in the extension and the app, the way JDownloader does:** the extension looks through the page as soon as its list opens and hands the app every frame as the browser shows it, with its cookies; the app's scan reads embedded players, decodes hidden addresses (escapes, entities, percent-encoding, base64, packed scripts), takes a player's media by its key, lists DASH, and takes links that are themselves files or streams; pages are read with a browser's User-Agent. *Requested 2026-11-11, from testing Facebook and Instagram reels and two streaming sites against JDownloader and Video DownloadHelper.* JDownloader's site plugins aren't imported (Java, GPL, changed daily); their common methods are done generically instead, nothing site-specific and nothing that gets round a site's protection.
@@ -262,8 +262,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [x] Linux
   - [x] Windows
 - [x] **Download a section of a long video:** **Download Section…** in the ▾ menu beside Download asks From and To (hours, minutes and seconds) and downloads only that part. *Requested 2026-11-11.* HLS streams, cut on the stream's piece boundaries (never re-encoded), named after the part; also `hdm add --from --to` and the MCP tool. Not yet: DASH, live streams, whole video files. Extension 1.19. Shipped in #113.
-- [ ] **Choose a button in an alert with the keyboard:** Tab and the arrow keys move the highlight, Return or Enter presses it, Esc cancels, in the Mac app's alerts (as Linux's and Windows' dialogs already do) and the browser extension's ▾ menu (↑ ↓, Tab, Home, End, Return, Esc; extension 1.20). *Requested 2026-11-11, with a picture of the Delete alert.* The Mac's keys couldn't be pressed in a test here; they wait for Herbert's try.
-  - [ ] Mac
+- [x] **Choose a button in an alert with the keyboard:** Tab and the arrow keys move the highlight, Return or Enter presses it, Esc cancels, in the Mac app's alerts (as Linux's and Windows' dialogs already do) and the browser extension's ▾ menu (↑ ↓, Tab, Home, End, Return, Esc; extension 1.20). *Requested 2026-11-11, with a picture of the Delete alert.* The Mac checked 2026-11-27 in a test copy's Delete alert: ↓ moved the highlight from Remove from List to Move to Trash Too, Tab to Cancel, ↑ ↑ back; Esc closed it and kept the download; Return pressed the highlighted Remove from List.
+  - [x] Mac
   - [x] Linux
   - [x] Windows
 - [x] **The GitHub link in About, as in PTZ Control,** instead of its own Help item. *Requested 2026-11-11.* About shows the name, version, what it is, "By dunkelherzmann" and the link (clickable on every platform). Shipped in #114 (Linux #116); checked on Linux.
