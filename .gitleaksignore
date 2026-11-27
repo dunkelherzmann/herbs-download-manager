@@ -1,0 +1,2 @@
+# extension/manifest.json "key" is the extension's public key (it fixes the Chrome extension ID), public by design, not a secret.
+34dbc8cc262ddbe40620833f30b5ece9eba2df83:extension/manifest.json:generic-api-key:7

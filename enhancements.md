@@ -334,3 +334,8 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] **Security and dependency checks in scripts/check.sh: gitleaks on the history, cargo audit on the dependencies** *Requested 2026-11-27 · Mac.* Before the machines, `scripts/check.sh` runs `gitleaks detect` on the whole git history (failing on any finding; the extension's public `key` in `extension/manifest.json` is allowed in `.gitleaksignore`) and `cargo audit` on `Cargo.lock` (failing on a vulnerability; unmaintained crates are only printed), and prints a `security:` line. Done in #81.
+- [ ] **Local crash reports: when the app crashes it saves a report (what happened, the version, the stack) in its own data folder on that machine, never sent anywhere, and shows it at the next start so the agent can read it.** *Requested 2026-11-27 · Mac, Linux, Windows.*
+  - [ ] Mac
+  - [ ] Linux
+  - [ ] Windows
