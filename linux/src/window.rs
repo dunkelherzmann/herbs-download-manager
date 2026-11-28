@@ -14,7 +14,7 @@ use crate::list::{COLUMNS, DownloadList};
 
 const GITHUB: &str = "https://github.com/dunkelherzmann/herbs-download-manager";
 
-/// Commands that arrive with their own windows later in `linux/pending.md`; their items show, disabled.
+/// Commands that arrive with their own windows later (see `enhancements.md`); their items show, disabled.
 const LATER: [&str; 0] = [];
 
 fn item(menu: &gio::Menu, label: &str, action: &str) {

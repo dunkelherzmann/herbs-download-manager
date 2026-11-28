@@ -342,3 +342,7 @@ A box is ticked once the change has shipped. A request that covers several platf
   - [ ] Mac
   - [ ] Linux
   - [ ] Windows
+- [x] 2026-11-28 (Mac, Linux, Windows): **One set of trackers for every platform.** His request: SPECIFICATION.md as the spec, no pending.md; open port items moved into the trackers. In branch docs/tracker-standard.
+  - [x] Mac
+  - [x] Linux
+  - [x] Windows

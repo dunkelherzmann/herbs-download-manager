@@ -1,6 +1,6 @@
 # Builds Herb's Download Manager for Windows: one static, portable .exe (SPECIFICATION.md §1).
 #   powershell -File windows\scripts\build.ps1 [-NoDesktop]
-# Puts it in dist\ and, unless -NoDesktop, on the Desktop (windows\pending.md: copied there on every build), then
+# Puts it in dist\ and, unless -NoDesktop, on the Desktop (copied there on every build), then
 # runs its --self-check. Needs Rust (rustup, per user) and the Visual Studio Build Tools.
 param([switch]$NoDesktop)
 $ErrorActionPreference = 'Stop'

@@ -1,7 +1,7 @@
 # Notes for agents working on Herb's Download Manager
 
 Read `~/.agents/library/herberts-preferences/SKILL.md` first (Herbert's global CLAUDE.md says so). `SPECIFICATION.md`
-is the product, `macos/pending.md` the Mac build order, `enhancements.md` and `bugs.md` the record of requests.
+is the product, `enhancements.md` and `bugs.md` the record of requests.
 
 ## Checking and merging
 

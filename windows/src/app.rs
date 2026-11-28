@@ -107,7 +107,7 @@ thread_local! {
     static A11Y_REPORT: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
-/// Commands that arrive with their own windows later in `windows\pending.md`; their items show, disabled.
+/// Commands that arrive with their own windows later (see `enhancements.md`); their items show, disabled.
 const LATER: [u16; 0] = [];
 
 /// L1–L11: title, width; Date Finished and Location start hidden, as on the Mac. Note (L11) is the last column here
