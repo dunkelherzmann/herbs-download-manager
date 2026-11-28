@@ -50,8 +50,7 @@ only, with no administrator password. SmartScreen stops it the first time with "
 **More info**, then **Run anyway**. Either way you can remove the app in Settings ▸ Apps.
 
 If you'd rather not install anything, the `…-Windows.zip` file holds the same app. Keep `HerbsDownloadManager.exe` and
-`hdm.exe` in the same folder. What each version still lacks is in [macos/pending.md](macos/pending.md), [linux/pending.md](linux/pending.md) and
-[windows/pending.md](windows/pending.md).
+`hdm.exe` in the same folder. What each version still lacks is in [enhancements.md](enhancements.md) and [bugs.md](bugs.md).
 
 ## Command line and MCP server
 

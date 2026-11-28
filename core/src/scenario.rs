@@ -1,4 +1,4 @@
-//! Feature tests (macos, linux and windows pending.md): one scenario file, `tests/features.scenario`, run by each app.
+//! Feature tests (results per platform go to `parity/results/`): one scenario file, `tests/features.scenario`, run by each app.
 //! The app carries out every action through its own command code (the code its buttons and menus run) on its UI
 //! thread, through `Host`; this runner, on a background thread, waits on the download list and checks the results
 //! and the files, and reports pass or fail per feature.
